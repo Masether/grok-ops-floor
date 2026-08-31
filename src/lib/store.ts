@@ -130,6 +130,7 @@ export type FloorState = {
   sessionEndsAt: number | null;
   chartInterval: ChartInterval;
   chartsOpen: boolean;
+  deskOpen: boolean;
   chartType: ChartType;
   chartIndicators: ChartIndicatorState[];
   chartTool: ChartTool;
@@ -141,15 +142,17 @@ export type FloorState = {
   setLiveArmed: (v: boolean) => void;
   setVenueId: (id: VenueId) => void;
   setHumanVerified: (v: boolean) => void;
-  launchDesk: (input: Partial<{
-    startingCash: number;
-    sizePct: number;
-    stopPct: number;
-    takePct: number;
-    maxDailyLossPct: number;
-    maxPositions: number;
-    sessionMinutes: number;
-  }>) => void;
+  launchDesk: (
+    input: Partial<{
+      startingCash: number;
+      sizePct: number;
+      stopPct: number;
+      takePct: number;
+      maxDailyLossPct: number;
+      maxPositions: number;
+      sessionMinutes: number;
+    }>,
+  ) => void;
   stopDesk: () => void;
   setKeys: (keys: Keys) => void;
   setKeysOk: (v: boolean | null) => void;
@@ -172,6 +175,7 @@ export type FloorState = {
   setSessionMinutes: (minutes: number) => void;
   setChartInterval: (n: ChartInterval) => void;
   setChartsOpen: (v: boolean) => void;
+  setDeskOpen: (v: boolean) => void;
   setChartType: (t: ChartType) => void;
   toggleChartIndicator: (id: IndicatorId) => void;
   setChartIndicatorParams: (id: IndicatorId, params: Partial<ChartIndicatorState>) => void;
@@ -272,6 +276,7 @@ export const useFloor = create<FloorState>()(
       sessionEndsAt: null,
       chartInterval: DEFAULT_CHART_INTERVAL,
       chartsOpen: false,
+      deskOpen: false,
       chartType: DEFAULT_CHART_TYPE,
       chartIndicators: DEFAULT_CHART_INDICATORS.map((x) => ({ ...x })),
       chartTool: DEFAULT_CHART_TOOL,
@@ -291,9 +296,7 @@ export const useFloor = create<FloorState>()(
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
         const payload = clampLaunch(input);
-        const minutes = normalizeSessionMinutes(
-          input.sessionMinutes ?? get().sessionMinutes,
-        );
+        const minutes = normalizeSessionMinutes(input.sessionMinutes ?? get().sessionMinutes);
         set({
           launched: true,
           floorOpen: true,
@@ -365,6 +368,7 @@ export const useFloor = create<FloorState>()(
       },
       setChartInterval: (n) => set({ chartInterval: asChartInterval(n) }),
       setChartsOpen: (v) => set({ chartsOpen: v }),
+      setDeskOpen: (v) => set({ deskOpen: v }),
       setChartType: (t) => set({ chartType: asChartType(t) }),
       toggleChartIndicator: (id) =>
         set((s) => ({
@@ -433,9 +437,7 @@ export const useFloor = create<FloorState>()(
         const p = (persisted ?? {}) as Partial<FloorState>;
         const oldFour = ["XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD"];
         const pairs =
-          p.pairs &&
-          p.pairs.length === 4 &&
-          p.pairs.every((id) => oldFour.includes(id))
+          p.pairs && p.pairs.length === 4 && p.pairs.every((id) => oldFour.includes(id))
             ? DEFAULT_PAIRS
             : (p.pairs ?? current.pairs);
         const shift = hydratePersistedShift(
@@ -478,6 +480,7 @@ export const useFloor = create<FloorState>()(
           shiftStartedAt: shift.shiftStartedAt,
           settingsOpen: false,
           chartsOpen: false,
+          deskOpen: false,
           sessionMinutes: normalizeSessionMinutes(p.sessionMinutes ?? current.sessionMinutes),
           sessionEndsAt:
             typeof p.sessionEndsAt === "number"

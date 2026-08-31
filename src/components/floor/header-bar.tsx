@@ -1,4 +1,4 @@
-import { CandlestickChart, Power, Settings2 } from "lucide-react";
+import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive } from "@/lib/engine";
@@ -37,6 +37,8 @@ export function HeaderBar() {
   const sessionEndsAt = useFloor((s) => s.sessionEndsAt);
   const chartsOpen = useFloor((s) => s.chartsOpen);
   const setChartsOpen = useFloor((s) => s.setChartsOpen);
+  const deskOpen = useFloor((s) => s.deskOpen);
+  const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -69,14 +71,8 @@ export function HeaderBar() {
 
         <div className="ml-auto flex flex-wrap items-center gap-4">
           <Stat label="Desk" value={money(desk.equity)} />
-          {mode === "live" ? (
-            <Stat label="Kraken" value={money(usdOnBook(liveBalance))} />
-          ) : null}
-          <Stat
-            label="Day"
-            value={money(desk.dayPnl)}
-            tone={desk.dayPnl >= 0 ? "good" : "bad"}
-          />
+          {mode === "live" ? <Stat label="Kraken" value={money(usdOnBook(liveBalance))} /> : null}
+          <Stat label="Day" value={money(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} />
           <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />
           <Stat
             label="Brain"
@@ -99,11 +95,7 @@ export function HeaderBar() {
           ) : null}
           <Stat label="Shift" value={clock(now - shiftStartedAt)} />
           {sessionEndsAt != null ? (
-            <Stat
-              label="Left"
-              value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)}
-              always
-            />
+            <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
           <div className="flex items-center gap-1.5">
             <Button
@@ -113,6 +105,15 @@ export function HeaderBar() {
               onClick={() => setFloorOpen(!floorOpen)}
             >
               {floorOpen ? "Floor open" : "Floor closed"}
+            </Button>
+            <Button
+              size="sm"
+              variant={deskOpen ? "default" : "outline"}
+              aria-pressed={deskOpen}
+              onClick={() => setDeskOpen(!deskOpen)}
+            >
+              <Wallet className="size-3.5" />
+              Desk
             </Button>
             <Button
               size="sm"

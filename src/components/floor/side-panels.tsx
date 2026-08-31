@@ -1,5 +1,6 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, YAxis } from "recharts";
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
+import { pctOfCapital } from "@/lib/desk-pnl";
 import { px, money, moneyFull, pct, qty } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
@@ -140,10 +141,42 @@ export function TokenFlow() {
                 }}
                 labelFormatter={() => "heat"}
               />
-              <Area type="monotone" dataKey="scanner" stackId="1" stroke="#ff4d8d" fill="#ff4d8d" fillOpacity={0.55} isAnimationActive={false} />
-              <Area type="monotone" dataKey="signal" stackId="1" stroke="#3dffc8" fill="#3dffc8" fillOpacity={0.5} isAnimationActive={false} />
-              <Area type="monotone" dataKey="risk" stackId="1" stroke="#ffe14d" fill="#ffe14d" fillOpacity={0.45} isAnimationActive={false} />
-              <Area type="monotone" dataKey="runner" stackId="1" stroke="#ff8a3d" fill="#ff8a3d" fillOpacity={0.5} isAnimationActive={false} />
+              <Area
+                type="monotone"
+                dataKey="scanner"
+                stackId="1"
+                stroke="#ff4d8d"
+                fill="#ff4d8d"
+                fillOpacity={0.55}
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="signal"
+                stackId="1"
+                stroke="#3dffc8"
+                fill="#3dffc8"
+                fillOpacity={0.5}
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="risk"
+                stackId="1"
+                stroke="#ffe14d"
+                fill="#ffe14d"
+                fillOpacity={0.45}
+                isAnimationActive={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="runner"
+                stackId="1"
+                stroke="#ff8a3d"
+                fill="#ff8a3d"
+                fillOpacity={0.5}
+                isAnimationActive={false}
+              />
             </AreaChart>
           </ResponsiveContainer>
         )}
@@ -162,15 +195,28 @@ export function TheDesk() {
   const mode = useFloor((s) => s.mode);
   const liveBalance = useFloor((s) => s.liveBalance);
   const liveArmed = useFloor((s) => s.liveArmed);
+  const startingCash = useFloor((s) => s.startingCash);
+  const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
   const krakenUsd = usdOnBook(liveBalance);
+  const cap = startingCash > 0 ? startingCash : desk.equity;
+  const eqPct = pctOfCapital(desk.equity - cap, cap);
+  const unrlPct = pctOfCapital(desk.unrealized, cap);
+  const realPct = pctOfCapital(desk.realized, cap);
+  const dayPct = pctOfCapital(desk.dayPnl, cap);
+  const toneOf = (n: number): "good" | "bad" | undefined =>
+    n > 0 ? "good" : n < 0 ? "bad" : undefined;
   const rows: { k: string; v: string; tone?: "good" | "bad" }[] = [
-    { k: "Equity", v: moneyFull(desk.equity) },
+    { k: "Equity", v: `${moneyFull(desk.equity)} ${pct(eqPct, 1)}`, tone: toneOf(eqPct) },
     { k: "Cash", v: money(desk.cash) },
     { k: "Exposure", v: money(desk.exposure) },
-    { k: "Unrealized", v: money(desk.unrealized), tone: desk.unrealized >= 0 ? "good" : "bad" },
-    { k: "Realized", v: money(desk.realized), tone: desk.realized >= 0 ? "good" : "bad" },
-    { k: "Day PnL", v: money(desk.dayPnl), tone: desk.dayPnl >= 0 ? "good" : "bad" },
+    {
+      k: "Unrealized",
+      v: `${money(desk.unrealized)} ${pct(unrlPct, 1)}`,
+      tone: toneOf(desk.unrealized),
+    },
+    { k: "Realized", v: `${money(desk.realized)} ${pct(realPct, 1)}`, tone: toneOf(desk.realized) },
+    { k: "Day PnL", v: `${money(desk.dayPnl)} ${pct(dayPct, 1)}`, tone: toneOf(desk.dayPnl) },
     { k: "Fills", v: String(desk.fills) },
     { k: "TP / SL", v: `${desk.wins} / ${desk.losses}` },
   ];
@@ -185,7 +231,11 @@ export function TheDesk() {
     <section className="panel min-h-[160px]">
       <div className="panel-head">
         <div>
-          <h2 className="panel-kicker">The desk</h2>
+          <h2 className="panel-kicker">
+            <button type="button" className="hover:text-accent" onClick={() => setDeskOpen(true)}>
+              The desk
+            </button>
+          </h2>
           <p className="panel-sub">
             {mode === "live"
               ? liveArmed
@@ -194,7 +244,14 @@ export function TheDesk() {
               : "paper rehearsal · fund Kraken, then arm live"}
           </p>
         </div>
-        <span className="stat-num text-sm text-good">{money(desk.equity)}</span>
+        <span
+          className={cn(
+            "stat-num text-sm",
+            eqPct > 0 ? "text-good" : eqPct < 0 ? "text-danger" : "text-muted",
+          )}
+        >
+          {money(desk.equity)}
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2">
         {rows.map((r) => (
@@ -260,7 +317,9 @@ export function TheDesk() {
           </ul>
         ) : null}
         <div className="mt-1.5 flex justify-between text-micro text-subtle">
-          <span>RSI {brain.rsiBuy.toFixed(0)}/{brain.rsiSell.toFixed(0)}</span>
+          <span>
+            RSI {brain.rsiBuy.toFixed(0)}/{brain.rsiSell.toFixed(0)}
+          </span>
           <span>conf {(brain.minConf * 100).toFixed(0)}%</span>
           <span>size {brain.sizeTilt.toFixed(2)}x</span>
         </div>
@@ -321,9 +380,7 @@ export function PairStrip() {
                 {PAIR_BY_ID[id].base}
               </span>
               <span className="text-micro text-subtle uppercase">
-                {PAIR_BY_ID[id].sleeve === "stock"
-                  ? "stk"
-                  : PAIR_BY_ID[id].sleeve}
+                {PAIR_BY_ID[id].sleeve === "stock" ? "stk" : PAIR_BY_ID[id].sleeve}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -347,9 +404,7 @@ export function PairStrip() {
                 <span className="stat-num">{(sig.confidence * 100).toFixed(0)}%</span>
               </div>
             ) : (
-              <div className="text-micro text-subtle">
-                {t ? pct(t.changePct, 1) : "waiting"}
-              </div>
+              <div className="text-micro text-subtle">{t ? pct(t.changePct, 1) : "waiting"}</div>
             )}
           </button>
         );

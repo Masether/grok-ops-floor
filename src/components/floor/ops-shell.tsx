@@ -4,6 +4,7 @@ import { startEngine, stopEngine } from "@/lib/engine";
 import { useFloor } from "@/lib/store";
 import { TooltipProvider } from "@/components/ui/overlay";
 import { ChartsBubble } from "./charts-bubble";
+import { DeskBubble } from "./desk-bubble";
 import { FundingRail } from "./funding-rail";
 import { HeaderBar } from "./header-bar";
 import { LaunchSetup } from "./launch-setup";
@@ -61,6 +62,7 @@ export function OpsShell() {
         </main>
         <SettingsPanel />
         <ChartsBubble />
+        <DeskBubble />
         {boot && !launched ? <LaunchSetup /> : null}
         <Toaster
           theme="dark"
