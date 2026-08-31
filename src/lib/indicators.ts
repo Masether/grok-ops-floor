@@ -196,3 +196,80 @@ export function macdHistSeries(values: number[]): number[] {
   return line.map((v, i) => v - (signal[i] ?? 0));
 }
 
+
+export function smaSeries(values: number[], period: number): number[] {
+  const p = Math.max(1, Math.floor(period));
+  const out: number[] = [];
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i]!;
+    if (i >= p) sum -= values[i - p]!;
+    const n = i < p - 1 ? i + 1 : p;
+    out.push(sum / n);
+  }
+  return out;
+}
+
+export function bollingerBands(
+  values: number[],
+  period = 20,
+  k = 2,
+): { mid: number[]; upper: number[]; lower: number[] } {
+  const mid = smaSeries(values, period);
+  const p = Math.max(1, Math.floor(period));
+  const upper: number[] = [];
+  const lower: number[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const start = Math.max(0, i - p + 1);
+    const n = i - start + 1;
+    const m = mid[i]!;
+    let ss = 0;
+    for (let j = start; j <= i; j++) {
+      const d = values[j]! - m;
+      ss += d * d;
+    }
+    const sd = Math.sqrt(ss / n);
+    upper.push(m + k * sd);
+    lower.push(m - k * sd);
+  }
+  return { mid, upper, lower };
+}
+
+export function macdSeries(
+  values: number[],
+  fast = 12,
+  slow = 26,
+  signalPeriod = 9,
+): { line: number[]; signal: number[]; hist: number[] } {
+  if (values.length === 0) return { line: [], signal: [], hist: [] };
+  const f = ema(values, fast);
+  const s = ema(values, slow);
+  const line = f.map((v, i) => v - (s[i] ?? v));
+  const signal = ema(line, signalPeriod);
+  const hist = line.map((v, i) => v - (signal[i] ?? 0));
+  return { line, signal, hist };
+}
+
+export function stochasticSeries(
+  highs: number[],
+  lows: number[],
+  closes: number[],
+  kPeriod = 14,
+  dPeriod = 3,
+): { k: number[]; d: number[] } {
+  const n = closes.length;
+  const kp = Math.max(1, Math.floor(kPeriod));
+  const k: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const start = Math.max(0, i - kp + 1);
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = start; j <= i; j++) {
+      hh = Math.max(hh, highs[j]!);
+      ll = Math.min(ll, lows[j]!);
+    }
+    const range = hh - ll;
+    k.push(range === 0 ? 50 : ((closes[i]! - ll) / range) * 100);
+  }
+  return { k, d: smaSeries(k, dPeriod) };
+}

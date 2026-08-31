@@ -7,6 +7,22 @@ import { DEFAULT_PAIRS } from "./kraken";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import {
+  DEFAULT_CHART_TYPE,
+  DEFAULT_CHART_TOOL,
+  DEFAULT_CHART_INDICATORS,
+  asChartType,
+  asChartTool,
+  capChartDrawings,
+  normalizeChartDrawings,
+  normalizeChartIndicators,
+  type ChartDrawing,
+  type ChartDrawings,
+  type ChartIndicatorState,
+  type ChartTool,
+  type ChartType,
+  type IndicatorId,
+} from "./charts";
+import {
   DEFAULT_CHART_INTERVAL,
   DEFAULT_SESSION_MINUTES,
   asChartInterval,
@@ -114,6 +130,10 @@ export type FloorState = {
   sessionEndsAt: number | null;
   chartInterval: ChartInterval;
   chartsOpen: boolean;
+  chartType: ChartType;
+  chartIndicators: ChartIndicatorState[];
+  chartTool: ChartTool;
+  chartDrawings: ChartDrawings;
 
   setFloorOpen: (open: boolean) => void;
   setMode: (mode: TradeMode) => void;
@@ -152,6 +172,12 @@ export type FloorState = {
   setSessionMinutes: (minutes: number) => void;
   setChartInterval: (n: ChartInterval) => void;
   setChartsOpen: (v: boolean) => void;
+  setChartType: (t: ChartType) => void;
+  toggleChartIndicator: (id: IndicatorId) => void;
+  setChartIndicatorParams: (id: IndicatorId, params: Partial<ChartIndicatorState>) => void;
+  setChartTool: (t: ChartTool) => void;
+  addChartDrawing: (pair: PairId, drawing: ChartDrawing) => void;
+  clearChartDrawings: (pair: PairId) => void;
 };
 
 export function computeDesk(s: FloorState): DeskSnapshot {
@@ -246,6 +272,10 @@ export const useFloor = create<FloorState>()(
       sessionEndsAt: null,
       chartInterval: DEFAULT_CHART_INTERVAL,
       chartsOpen: false,
+      chartType: DEFAULT_CHART_TYPE,
+      chartIndicators: DEFAULT_CHART_INDICATORS.map((x) => ({ ...x })),
+      chartTool: DEFAULT_CHART_TOOL,
+      chartDrawings: {},
 
       setFloorOpen: (open) => {
         if (open && !get().launched) return;
@@ -335,6 +365,33 @@ export const useFloor = create<FloorState>()(
       },
       setChartInterval: (n) => set({ chartInterval: asChartInterval(n) }),
       setChartsOpen: (v) => set({ chartsOpen: v }),
+      setChartType: (t) => set({ chartType: asChartType(t) }),
+      toggleChartIndicator: (id) =>
+        set((s) => ({
+          chartIndicators: s.chartIndicators.map((ind) =>
+            ind.id === id ? { ...ind, on: !ind.on } : ind,
+          ),
+        })),
+      setChartIndicatorParams: (id, params) =>
+        set((s) => ({
+          chartIndicators: s.chartIndicators.map((ind) =>
+            ind.id === id ? { ...ind, ...params, id: ind.id } : ind,
+          ),
+        })),
+      setChartTool: (t) => set({ chartTool: asChartTool(t) }),
+      addChartDrawing: (pair, drawing) =>
+        set((s) => ({
+          chartDrawings: capChartDrawings({
+            ...s.chartDrawings,
+            [pair]: [...(s.chartDrawings[pair] ?? []), drawing],
+          }),
+        })),
+      clearChartDrawings: (pair) =>
+        set((s) => {
+          const next = { ...s.chartDrawings };
+          delete next[pair];
+          return { chartDrawings: next };
+        }),
     }),
     {
       name: "grok-ops-floor",
@@ -367,6 +424,9 @@ export const useFloor = create<FloorState>()(
           sessionMinutes: s.sessionMinutes,
           sessionEndsAt: s.sessionEndsAt,
           chartInterval: s.chartInterval,
+          chartType: s.chartType,
+          chartIndicators: s.chartIndicators,
+          chartDrawings: capChartDrawings(s.chartDrawings),
         };
       },
       merge: (persisted, current) => {
@@ -426,6 +486,10 @@ export const useFloor = create<FloorState>()(
                 ? null
                 : current.sessionEndsAt,
           chartInterval: asChartInterval(p.chartInterval ?? current.chartInterval),
+          chartType: asChartType(p.chartType ?? current.chartType),
+          chartIndicators: normalizeChartIndicators(p.chartIndicators ?? current.chartIndicators),
+          chartDrawings: normalizeChartDrawings(p.chartDrawings ?? current.chartDrawings),
+          chartTool: DEFAULT_CHART_TOOL,
           brain: {
             ...DEFAULT_BRAIN,
             ...(p.brain ?? {}),
