@@ -1,0 +1,223 @@
+import { createServerFn } from "@tanstack/react-start";
+import { findPairResult, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken";
+import type { Candle, PairId, Ticker } from "./types";
+
+const KRAKEN = "https://api.kraken.com";
+
+type KrakenEnvelope<T> = { error: string[]; result?: T };
+
+let lastNonce = 0;
+
+function nextNonce(): string {
+  const n = Date.now() * 1000;
+  lastNonce = n <= lastNonce ? lastNonce + 1 : n;
+  return String(lastNonce);
+}
+
+async function sign(path: string, nonce: string, body: string, secret: string): Promise<string> {
+  const { createHash, createHmac } = await import("node:crypto");
+  const sha256 = createHash("sha256").update(nonce + body).digest();
+  const hmac = createHmac("sha512", Buffer.from(secret, "base64"));
+  hmac.update(path);
+  hmac.update(sha256);
+  return hmac.digest("base64");
+}
+
+async function publicGet<T>(path: string, query: Record<string, string>): Promise<T> {
+  const url = new URL(KRAKEN + path);
+  for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Kraken ${res.status}`);
+  const json = (await res.json()) as KrakenEnvelope<T>;
+  if (json.error?.length) throw new Error(json.error.join("; "));
+  if (!json.result) throw new Error("Kraken empty result");
+  return json.result;
+}
+
+async function privatePost<T>(
+  path: string,
+  params: Record<string, string>,
+  apiKey: string,
+  apiSecret: string,
+): Promise<T> {
+  const nonce = nextNonce();
+  const body = new URLSearchParams({ nonce, ...params }).toString();
+  const res = await fetch(KRAKEN + path, {
+    method: "POST",
+    headers: {
+      "API-Key": apiKey,
+      "API-Sign": await sign(path, nonce, body, apiSecret),
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body,
+  });
+  if (!res.ok) throw new Error(`Kraken ${res.status}`);
+  const json = (await res.json()) as KrakenEnvelope<T>;
+  if (json.error?.length) throw new Error(json.error.join("; "));
+  if (!json.result) throw new Error("Kraken empty result");
+  return json.result;
+}
+
+type RawTicker = {
+  a: string[];
+  b: string[];
+  c: string[];
+  v: string[];
+  p: string[];
+  t: number[];
+  l: string[];
+  h: string[];
+  o: string;
+};
+
+function toTicker(pair: PairDef, raw: RawTicker): Ticker {
+  const last = Number(raw.c[0]);
+  const open = Number(raw.o);
+  return {
+    pair: pair.id,
+    last,
+    bid: Number(raw.b[0]),
+    ask: Number(raw.a[0]),
+    open,
+    high: Number(raw.h[1] ?? raw.h[0]),
+    low: Number(raw.l[1] ?? raw.l[0]),
+    volume: Number(raw.v[1] ?? raw.v[0]),
+    vwap: Number(raw.p[1] ?? raw.p[0]),
+    changePct: open ? ((last - open) / open) * 100 : 0,
+    ts: Date.now(),
+  };
+}
+
+export const fetchTickers = createServerFn({ method: "POST" })
+  .validator((input: { pairs: PairId[] }) => input)
+  .handler(async ({ data }) => {
+    const defs = data.pairs
+      .map((id) => PAIR_BY_ID[id])
+      .filter((d): d is PairDef => Boolean(d));
+    if (defs.length === 0) return [] as Ticker[];
+    const groups = [
+      defs.filter((d) => d.sleeve !== "stock"),
+      defs.filter((d) => d.sleeve === "stock"),
+    ].filter((g) => g.length > 0);
+    const out: Ticker[] = [];
+    for (const group of groups) {
+      try {
+        const result = await publicGet<Record<string, RawTicker>>("/0/public/Ticker", {
+          pair: group.map((d) => d.kraken).join(","),
+        });
+        for (const def of group) {
+          const raw = findPairResult(result, def);
+          if (raw) out.push(toTicker(def, raw));
+        }
+      } catch {
+        for (const def of group) {
+          try {
+            const result = await publicGet<Record<string, RawTicker>>("/0/public/Ticker", {
+              pair: def.kraken,
+            });
+            const raw = findPairResult(result, def);
+            if (raw) out.push(toTicker(def, raw));
+          } catch {
+            /* pair not listed in this region */
+          }
+        }
+      }
+    }
+    return out;
+  });
+
+export const fetchOhlc = createServerFn({ method: "POST" })
+  .validator((input: { pair: PairId; interval?: number }) => input)
+  .handler(async ({ data }) => {
+    const def = PAIR_BY_ID[data.pair];
+    if (!def) return [] as Candle[];
+    const result = await publicGet<Record<string, unknown>>("/0/public/OHLC", {
+      pair: def.kraken,
+      interval: String(data.interval ?? 5),
+    });
+    const rows = findPairResult(result, def);
+    if (!Array.isArray(rows)) return [] as Candle[];
+    const candles: Candle[] = [];
+    for (const row of rows) {
+      if (!Array.isArray(row) || row.length < 7) continue;
+      candles.push({
+        time: Number(row[0]) * 1000,
+        open: Number(row[1]),
+        high: Number(row[2]),
+        low: Number(row[3]),
+        close: Number(row[4]),
+        volume: Number(row[6]),
+      });
+    }
+    return candles;
+  });
+
+export const fetchBalance = createServerFn({ method: "POST" })
+  .validator((input: { apiKey: string; apiSecret: string }) => input)
+  .handler(async ({ data }) => {
+    const result = await privatePost<Record<string, string>>(
+      "/0/private/Balance",
+      {},
+      data.apiKey.trim(),
+      data.apiSecret.trim(),
+    );
+    return result;
+  });
+
+export const placeMarketOrder = createServerFn({ method: "POST" })
+  .validator(
+    (input: {
+      apiKey: string;
+      apiSecret: string;
+      pair: PairId;
+      side: "buy" | "sell";
+      volume: string;
+    }) => input,
+  )
+  .handler(async ({ data }) => {
+    const def = PAIR_BY_ID[data.pair];
+    if (!def) throw new Error("Unknown pair");
+    const result = await privatePost<{ txid?: string[]; descr?: { order?: string } }>(
+      "/0/private/AddOrder",
+      {
+        pair: def.kraken,
+        type: data.side,
+        ordertype: "market",
+        volume: data.volume,
+      },
+      data.apiKey.trim(),
+      data.apiSecret.trim(),
+    );
+    return {
+      txid: result.txid?.[0] ?? "",
+      descr: result.descr?.order ?? "",
+    };
+  });
+
+export const cancelAllOrders = createServerFn({ method: "POST" })
+  .validator((input: { apiKey: string; apiSecret: string }) => input)
+  .handler(async ({ data }) => {
+    const result = await privatePost<{ count?: number }>(
+      "/0/private/CancelAll",
+      {},
+      data.apiKey.trim(),
+      data.apiSecret.trim(),
+    );
+    return { count: result.count ?? 0 };
+  });
+
+export const fetchOpenOrders = createServerFn({ method: "POST" })
+  .validator((input: { apiKey: string; apiSecret: string }) => input)
+  .handler(async ({ data }) => {
+    const result = await privatePost<{ open?: Record<string, { descr?: { order?: string } }> }>(
+      "/0/private/OpenOrders",
+      {},
+      data.apiKey.trim(),
+      data.apiSecret.trim(),
+    );
+    const open = result.open ?? {};
+    return { ids: Object.keys(open), count: Object.keys(open).length };
+  });
+
+export const pairUniverse = PAIRS.map((p) => p.id);
