@@ -125,6 +125,22 @@
   .hairline {
     box-shadow: 0 0 0 1px var(--color-border);
   }
+
+  .trade-toast {
+    max-width: min(100vw - 24px, 22rem);
+    font-size: 0.875rem;
+    line-height: 1.35;
+  }
+
+  .trade-toast [data-title] {
+    font-family: var(--font-display);
+    letter-spacing: 0.04em;
+  }
+
+  .trade-toast [data-description] {
+    color: var(--color-muted);
+    font-size: 0.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

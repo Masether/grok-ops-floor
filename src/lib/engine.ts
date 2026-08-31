@@ -12,6 +12,14 @@ import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
 import { markEquity, useFloor, type FloorState } from "./store";
+import {
+  toastDailyLossHalt,
+  toastKillSwitch,
+  toastLiveReject,
+  toastOrderFill,
+  toastSessionEnded,
+  toastVenueBlock,
+} from "./trade-toast";
 import type {
   AgentId,
   Order,
@@ -120,6 +128,7 @@ function applySessionEnd() {
     detail: "Clock ran out — new entries stopped, book kept. Stops still watch open lots.",
     tone: "warn",
   });
+  toastSessionEnded();
 }
 
 function bookNeedsProtect(s: FloorState): boolean {
@@ -552,6 +561,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         detail: "max daily loss",
         tone: "bad",
       });
+      toastDailyLossHalt();
       return;
     }
 
@@ -741,6 +751,7 @@ export async function executeOrder(order: Order) {
         severity: "stall",
         pair: order.pair,
       });
+      toastLiveReject(order, rejected.reason);
     }
     return;
   }
@@ -779,6 +790,7 @@ function applyFill(order: Order) {
   let realized = s.realized;
   let reason = order.reason;
   let brain = s.brain;
+  let closePnl: number | undefined;
 
   if (order.side === "sell") {
     if (!existing) {
@@ -791,6 +803,7 @@ function applyFill(order: Order) {
       return;
     }
     const pnl = (fill - existing.entry) * existing.qty - fee;
+    closePnl = pnl;
     realized += pnl;
     cash += fill * existing.qty - fee;
     positions = positions.filter((p) => p.pair !== order.pair);
@@ -859,6 +872,7 @@ function applyFill(order: Order) {
   bumpAgent("archivist", "journal fill", 0.85);
   emitPulse({ from: "runner", to: "archivist" });
   sampleEquity(true);
+  toastOrderFill(order, closePnl);
 }
 
 function checkStops() {
@@ -1023,6 +1037,7 @@ export async function haltLive() {
     detail: "Kill switch — runner frozen",
     tone: "bad",
   });
+  toastKillSwitch();
   if (s.mode === "live" && s.keys.apiKey && s.keys.apiSecret) {
     try {
       const venue = getLiveVenue(s.venueId);
@@ -1043,6 +1058,7 @@ export async function haltLive() {
         detail: err instanceof Error ? err.message : "Kraken error",
         severity: "stall",
       });
+      toastVenueBlock(err instanceof Error ? err.message : "CancelAll failed");
     }
   }
 }

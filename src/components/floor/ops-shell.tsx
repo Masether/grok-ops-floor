@@ -65,11 +65,22 @@ export function OpsShell() {
         <Toaster
           theme="dark"
           position="bottom-right"
+          visibleToasts={3}
+          gap={8}
+          offset={16}
+          mobileOffset={{ bottom: 16, right: 12, left: 12 }}
+          style={{ zIndex: 90 }}
           toastOptions={{
             style: {
               background: "#12141e",
               border: "1px solid rgba(255,255,255,0.1)",
               color: "#e8edf5",
+              fontSize: "0.875rem",
+            },
+            classNames: {
+              toast: "trade-toast",
+              title: "font-display tracking-wide text-sm",
+              description: "text-xs text-muted",
             },
           }}
         />
