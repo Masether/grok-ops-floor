@@ -7,6 +7,13 @@ import { DEFAULT_PAIRS } from "./kraken";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import {
+  GOAL_DEFAULTS,
+  asGoalLevel,
+  normalizeGoalDays,
+  normalizeGoalProfit,
+  type GoalLevelId,
+} from "./goal";
+import {
   DEFAULT_CHART_TYPE,
   DEFAULT_CHART_TOOL,
   DEFAULT_CHART_INDICATORS,
@@ -135,6 +142,9 @@ export type FloorState = {
   chartIndicators: ChartIndicatorState[];
   chartTool: ChartTool;
   chartDrawings: ChartDrawings;
+  goalProfit: number;
+  goalDays: number;
+  goalLevel: GoalLevelId;
 
   setFloorOpen: (open: boolean) => void;
   setMode: (mode: TradeMode) => void;
@@ -151,6 +161,9 @@ export type FloorState = {
       maxDailyLossPct: number;
       maxPositions: number;
       sessionMinutes: number;
+      goalProfit: number;
+      goalDays: number;
+      goalLevel: GoalLevelId;
     }>,
   ) => void;
   stopDesk: () => void;
@@ -281,6 +294,9 @@ export const useFloor = create<FloorState>()(
       chartIndicators: DEFAULT_CHART_INDICATORS.map((x) => ({ ...x })),
       chartTool: DEFAULT_CHART_TOOL,
       chartDrawings: {},
+      goalProfit: GOAL_DEFAULTS.goalProfit,
+      goalDays: GOAL_DEFAULTS.days,
+      goalLevel: GOAL_DEFAULTS.level,
 
       setFloorOpen: (open) => {
         if (open && !get().launched) return;
@@ -297,6 +313,9 @@ export const useFloor = create<FloorState>()(
       launchDesk: (input) => {
         const payload = clampLaunch(input);
         const minutes = normalizeSessionMinutes(input.sessionMinutes ?? get().sessionMinutes);
+        const goalProfit = normalizeGoalProfit(input.goalProfit ?? get().goalProfit);
+        const goalDays = normalizeGoalDays(input.goalDays ?? get().goalDays);
+        const goalLevel = asGoalLevel(input.goalLevel ?? get().goalLevel);
         set({
           launched: true,
           floorOpen: true,
@@ -314,6 +333,9 @@ export const useFloor = create<FloorState>()(
           },
           sessionMinutes: minutes,
           sessionEndsAt: sessionEndsAtFromMinutes(minutes),
+          goalProfit,
+          goalDays,
+          goalLevel,
         });
         get().resetPaper();
       },
@@ -431,6 +453,9 @@ export const useFloor = create<FloorState>()(
           chartType: s.chartType,
           chartIndicators: s.chartIndicators,
           chartDrawings: capChartDrawings(s.chartDrawings),
+          goalProfit: s.goalProfit,
+          goalDays: s.goalDays,
+          goalLevel: s.goalLevel,
         };
       },
       merge: (persisted, current) => {
@@ -481,6 +506,9 @@ export const useFloor = create<FloorState>()(
           settingsOpen: false,
           chartsOpen: false,
           deskOpen: false,
+          goalProfit: normalizeGoalProfit(p.goalProfit ?? current.goalProfit),
+          goalDays: normalizeGoalDays(p.goalDays ?? current.goalDays),
+          goalLevel: asGoalLevel(p.goalLevel ?? current.goalLevel),
           sessionMinutes: normalizeSessionMinutes(p.sessionMinutes ?? current.sessionMinutes),
           sessionEndsAt:
             typeof p.sessionEndsAt === "number"

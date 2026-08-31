@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive } from "@/lib/engine";
 import { clock, money, pct } from "@/lib/format";
+import { goalChipLine } from "@/lib/goal";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
@@ -39,6 +40,8 @@ export function HeaderBar() {
   const setChartsOpen = useFloor((s) => s.setChartsOpen);
   const deskOpen = useFloor((s) => s.deskOpen);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
+  const goalProfit = useFloor((s) => s.goalProfit);
+  const goalDays = useFloor((s) => s.goalDays);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -73,6 +76,14 @@ export function HeaderBar() {
           <Stat label="Desk" value={money(desk.equity)} />
           {mode === "live" ? <Stat label="Kraken" value={money(usdOnBook(liveBalance))} /> : null}
           <Stat label="Day" value={money(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} />
+          {launched && goalProfit > 0 ? (
+            <Stat
+              label="Goal"
+              value={goalChipLine({ goalProfit, goalDays, dayPnl: desk.dayPnl })}
+              tone={desk.dayPnl >= 0 ? "good" : "bad"}
+              always
+            />
+          ) : null}
           <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />
           <Stat
             label="Brain"
