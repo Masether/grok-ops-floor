@@ -4,6 +4,21 @@ Multi-agent Kraken trading desk. Paper by default. Live only after you paste key
 
 Twelve desks read the Kraken tape, size tickets, journal fills, and watch news that moves names on the book.
 
+## Pull this into Grok
+
+Repo: **https://github.com/Masether/grok-ops-floor** (private, owner `Masether`).
+
+In the Grok app: **Projects / code** → attach this GitHub repo (same GitHub account is already connected). Then tell Grok to work from `grok-ops-floor`.
+
+Local clone:
+
+```bash
+git clone https://github.com/Masether/grok-ops-floor.git
+cd grok-ops-floor
+npm install
+npm run dev
+```
+
 ## What it does
 
 - **Paper / demo** — live Kraken 1-minute prices, fake cash. Auto-trade on.
@@ -13,17 +28,6 @@ Twelve desks read the Kraken tape, size tickets, journal fills, and watch news t
 - **The Wire** — headlines, org catalysts (MicroStrategy, BlackRock, Fed, NVIDIA…), CoinGecko trending, Fear & Greed. Hunter uses that to rank the book.
 
 This is not a promise to multiply capital. Memes can go to zero. Live can lose real USD.
-
-## Run it
-
-```bash
-git clone https://github.com/Masether/grok-ops-floor.git
-cd grok-ops-floor
-npm install
-npm run dev
-```
-
-Open the printed local URL. Floor starts in **paper**.
 
 ### Paper rehearsal
 
