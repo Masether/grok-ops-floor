@@ -239,6 +239,26 @@ export function TheDesk() {
                   />
                 ))}
         </div>
+        {brain.lessons.length > 0 ? (
+          <ul className="mt-1.5 space-y-0.5">
+            {brain.lessons.slice(0, 8).map((l, i) => (
+              <li key={`${l.ts}-${i}`} className="flex items-baseline gap-2">
+                <span className="font-display shrink-0 text-micro tracking-[0.1em] uppercase">
+                  {PAIR_BY_ID[l.pair]?.label ?? l.pair}
+                </span>
+                <span
+                  className={cn(
+                    "stat-num w-12 shrink-0 text-right text-micro",
+                    l.win ? "text-good" : "text-danger",
+                  )}
+                >
+                  {money(l.pnl)}
+                </span>
+                <span className="min-w-0 truncate text-micro text-muted">{l.note}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="mt-1.5 flex justify-between text-micro text-subtle">
           <span>RSI {brain.rsiBuy.toFixed(0)}/{brain.rsiSell.toFixed(0)}</span>
           <span>conf {(brain.minConf * 100).toFixed(0)}%</span>

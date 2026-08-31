@@ -10,12 +10,16 @@ import {
   Sheet,
   SheetContent,
 } from "@/components/ui/overlay";
+import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, scanLiveTape } from "@/lib/engine";
 import { secondRead } from "@/lib/grok-brief";
-import { fetchBalance } from "@/lib/kraken-api";
+import { testVenueKeys } from "@/lib/human-gate-api";
 import { PAIRS, SLEEVE_META, USD_BALANCE_KEYS } from "@/lib/kraken";
+import { readHumanToken } from "@/lib/human-gate.mjs";
+import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor } from "@/lib/store";
 import type { BookSleeve, PairId } from "@/lib/types";
+import { COMING_SOON_VENUES } from "@/lib/venues";
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);
@@ -26,6 +30,12 @@ export function SettingsPanel() {
   const setAutoTrade = useFloor((s) => s.setAutoTrade);
   const liveArmed = useFloor((s) => s.liveArmed);
   const setLiveArmed = useFloor((s) => s.setLiveArmed);
+  const venueId = useFloor((s) => s.venueId);
+  const setVenueId = useFloor((s) => s.setVenueId);
+  const humanVerified = useFloor((s) => s.humanVerified);
+  const launched = useFloor((s) => s.launched);
+  const floorOpen = useFloor((s) => s.floorOpen);
+  const stopDesk = useFloor((s) => s.stopDesk);
   const keys = useFloor((s) => s.keys);
   const setKeys = useFloor((s) => s.setKeys);
   const keysOk = useFloor((s) => s.keysOk);
@@ -54,16 +64,33 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
 
   async function testKeys() {
+    const token = readHumanToken();
+    if (!humanVerified || !token) {
+      toast.error("Verify you're human before linking an account.");
+      return;
+    }
+    const seedErr = rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret);
+    if (seedErr) {
+      toast.error(seedErr);
+      return;
+    }
     setBusy(true);
     try {
-      const bal = await fetchBalance({ data: keys });
-      setLiveBalance(bal);
+      const res = await testVenueKeys({
+        data: {
+          venueId,
+          apiKey: keys.apiKey,
+          apiSecret: keys.apiSecret,
+          humanToken: token,
+        },
+      });
+      setLiveBalance(res.balance);
       setKeysOk(true);
-      const usd = USD_BALANCE_KEYS.map((k) => Number(bal[k] ?? 0)).reduce((a, b) => a + b, 0);
-      toast.success(`Kraken connected · USD ${usd.toFixed(2)}`);
+      const usd = USD_BALANCE_KEYS.map((k) => Number(res.balance[k] ?? 0)).reduce((a, b) => a + b, 0);
+      toast.success(`${venueId === "kraken" ? "Kraken" : "Venue"} connected · USD ${usd.toFixed(2)}`);
     } catch (err) {
       setKeysOk(false);
-      toast.error(err instanceof Error ? err.message : "Kraken auth failed");
+      toast.error(err instanceof Error ? err.message : "Venue auth failed");
     } finally {
       setBusy(false);
     }
@@ -96,6 +123,41 @@ export function SettingsPanel() {
     }
   }
 
+  function exportJournal() {
+    const snap = useFloor.getState();
+    const filled = snap.orders.filter((o) => o.status === "filled").slice(-40);
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      mode: snap.mode,
+      desk: {
+        equity: desk.equity,
+        cash: desk.cash,
+        exposure: desk.exposure,
+        unrealized: desk.unrealized,
+        realized: desk.realized,
+        dayPnl: desk.dayPnl,
+        fills: desk.fills,
+        wins: desk.wins,
+        losses: desk.losses,
+        briefs: desk.briefs,
+        openPositions: desk.openPositions,
+      },
+      brain: snap.brain,
+      lessons: snap.brain.lessons,
+      orders: filled,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `grok-ops-journal-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.message("Journal downloaded");
+  }
+
   function togglePair(id: PairId) {
     if (pairs.includes(id)) {
       if (pairs.length === 1) return;
@@ -112,26 +174,38 @@ export function SettingsPanel() {
               <Label>How the floor works your money</Label>
               <ol className="space-y-2 text-2xs text-muted">
                 <li>
-                  <span className="text-treasury">1.</span> Deposit USD on Kraken (Funding →
-                  deposit). The bot cannot move money in or out.
+                  <span className="text-treasury">1.</span> Paper: set capital and risk %, then
+                  start the desk. The bot cannot deposit or withdraw.
                 </li>
                 <li>
-                  <span className="text-treasury">2.</span> Create an API key with Query + Create
-                  & Modify Orders. Leave Withdrawal off.
+                  <span className="text-treasury">2.</span> Live: verify you're human, then attach
+                  an exchange account with Query + Orders keys. Withdrawal stays off.
                 </li>
                 <li>
-                  <span className="text-treasury">3.</span> Paste the key here, test it, switch to
-                  Live, then Arm.
+                  <span className="text-treasury">3.</span> Test the connection, switch to Live,
+                  then Arm. Live still needs test + arm. No withdrawal.
                 </li>
                 <li>
-                  <span className="text-treasury">4.</span> Auto-trade on. Hunter, Signal, Regime,
-                  Flow, Risk, Treasury and Runner work the book. Stops and the daily-loss halt stay
-                  on.
+                  <span className="text-treasury">4.</span> Auto-trade on. Stops and the daily-loss
+                  halt stay on. On-chain wallets are not in this build.
                 </li>
               </ol>
               <p className="text-2xs text-subtle">
-                Paper is the rehearsal. Live spends real Kraken cash. This desk can lose money.
+                Paper is the rehearsal. Live spends real venue cash. This desk can lose money. Not
+                financial advice.
               </p>
+              {launched ? (
+                <Button
+                  size="sm"
+                  variant={floorOpen ? "danger" : "outline"}
+                  onClick={() => {
+                    stopDesk();
+                    toast.message("Desk stopped — book kept");
+                  }}
+                >
+                  Stop desk
+                </Button>
+              ) : null}
             </section>
 
             <section className="space-y-3">
@@ -149,7 +223,7 @@ export function SettingsPanel() {
                   variant={mode === "live" ? "live" : "outline"}
                   onClick={() => setMode("live")}
                 >
-                  Live Kraken
+                  Live
                 </Button>
               </div>
               <div className="flex items-center justify-between gap-3">
@@ -179,23 +253,61 @@ export function SettingsPanel() {
             </section>
 
             <section className="space-y-3">
-              <Label>Kraken API</Label>
+              <Label>Venue</Label>
+              {mode === "paper" ? (
+                <p className="text-2xs text-subtle">
+                  Paper needs no venue. Attach an exchange when you switch to Live.
+                </p>
+              ) : (
+                <>
+                  <p className="text-2xs text-muted">
+                    Attach an exchange account with Query + Orders keys. Withdrawal stays off.
+                    On-chain wallets are not in this build.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button
+                      size="micro"
+                      variant={venueId === "kraken" ? "default" : "outline"}
+                      onClick={() => setVenueId("kraken")}
+                    >
+                      Kraken
+                    </Button>
+                    {COMING_SOON_VENUES.map((v) => (
+                      <Button key={v.id} size="micro" variant="outline" disabled>
+                        {v.label} · next
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="space-y-3">
+              <Label>Exchange API</Label>
+              <HumanGate />
               <Input
                 type="text"
                 autoComplete="off"
                 placeholder="API key"
+                disabled={!humanVerified}
                 value={keys.apiKey}
                 onChange={(e) => setKeys({ ...keys, apiKey: e.target.value })}
               />
               <Input
                 type="password"
                 autoComplete="off"
-                placeholder="Private key (base64)"
+                placeholder="API secret (base64) — not a wallet key"
+                disabled={!humanVerified}
                 value={keys.apiSecret}
                 onChange={(e) => setKeys({ ...keys, apiSecret: e.target.value })}
               />
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" disabled={busy || !keys.apiKey} onClick={() => void testKeys()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy || !keys.apiKey || !humanVerified}
+                  onClick={() => void testKeys()}
+                >
                   {busy ? "Testing…" : "Test connection"}
                 </Button>
                 <Button
@@ -213,8 +325,8 @@ export function SettingsPanel() {
                 <p className="text-2xs text-danger">Kraken rejected the keys.</p>
               ) : (
                 <p className="text-2xs text-subtle">
-                  Create a Kraken key with Query + Create & Modify Orders. Withdrawal keys are not
-                  needed and should stay off.
+                  Verify you're human, then paste Query + Orders keys. Withdrawal stays off. Seed
+                  phrases and wallet private keys are rejected.
                 </p>
               )}
               {liveBalance ? (
@@ -269,7 +381,7 @@ export function SettingsPanel() {
             <section className="space-y-4">
               <Label>Risk</Label>
               <RiskRow
-                label={`Size ${(risk.sizePct * 100).toFixed(1)}%`}
+                label={`Size per ticket ${(risk.sizePct * 100).toFixed(1)}% of capital`}
                 value={risk.sizePct}
                 min={0.005}
                 max={0.08}
@@ -277,7 +389,7 @@ export function SettingsPanel() {
                 onChange={(v) => setRisk({ sizePct: v })}
               />
               <RiskRow
-                label={`Stop ${(risk.stopPct * 100).toFixed(1)}%`}
+                label={`Stop loss ${(risk.stopPct * 100).toFixed(1)}% of capital`}
                 value={risk.stopPct}
                 min={0.005}
                 max={0.05}
@@ -285,7 +397,7 @@ export function SettingsPanel() {
                 onChange={(v) => setRisk({ stopPct: v })}
               />
               <RiskRow
-                label={`Take ${(risk.takePct * 100).toFixed(1)}%`}
+                label={`Take profit ${(risk.takePct * 100).toFixed(1)}% of capital`}
                 value={risk.takePct}
                 min={0.008}
                 max={0.08}
@@ -293,7 +405,7 @@ export function SettingsPanel() {
                 onChange={(v) => setRisk({ takePct: v })}
               />
               <RiskRow
-                label={`Max daily loss ${(risk.maxDailyLossPct * 100).toFixed(0)}%`}
+                label={`Max daily loss ${(risk.maxDailyLossPct * 100).toFixed(0)}% of capital`}
                 value={risk.maxDailyLossPct}
                 min={0.01}
                 max={0.15}
@@ -314,10 +426,10 @@ export function SettingsPanel() {
               <Label>Paper cash</Label>
               <Input
                 type="number"
-                min={1000}
-                step={1000}
+                min={100}
+                step={100}
                 value={startingCash}
-                onChange={(e) => setStartingCash(Number(e.target.value) || 10_000)}
+                onChange={(e) => setStartingCash(Math.max(100, Number(e.target.value) || 10_000))}
               />
               <Button size="sm" variant="outline" onClick={resetPaper}>
                 Reset paper book
@@ -359,9 +471,14 @@ export function SettingsPanel() {
               {brain.lessons[0] ? (
                 <p className="text-2xs text-muted">{brain.lessons[0].note}</p>
               ) : null}
-              <Button size="sm" variant="outline" onClick={resetBrain}>
-                Reset brain
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={resetBrain}>
+                  Reset brain
+                </Button>
+                <Button size="sm" variant="outline" onClick={exportJournal}>
+                  Export journal
+                </Button>
+              </div>
             </section>
 
             <section className="space-y-3">

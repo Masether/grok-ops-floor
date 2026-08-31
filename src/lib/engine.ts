@@ -3,13 +3,8 @@ import { emitPulse } from "./bus";
 import { uid, px } from "./format";
 import { readSignal } from "./indicators";
 import { PAIR_BY_ID } from "./kraken";
-import {
-  cancelAllOrders,
-  fetchBalance,
-  fetchOhlc,
-  fetchTickers,
-  placeMarketOrder,
-} from "./kraken-api";
+import { fetchOhlc, fetchTickers } from "./kraken-api";
+import { getLiveVenue } from "./venues";
 import { connectTickerFeed } from "./kraken-ws";
 import { learnFromClose, pairMinConf } from "./learn";
 import { makeSimCandles, stepSim } from "./sim-feed";
@@ -303,7 +298,7 @@ function enqueueEval(pair: PairId, candles: { close: number; volume: number }[])
 
 async function evaluatePair(pair: PairId, candles: { close: number; volume: number }[]) {
   const s0 = useFloor.getState();
-  if (!s0.floorOpen) return;
+  if (!s0.launched || !s0.floorOpen) return;
   evaluating.add(pair);
   try {
     const closes = candles.map((c) => c.close);
@@ -682,14 +677,13 @@ export async function executeOrder(order: Order) {
     try {
       const def = PAIR_BY_ID[order.pair];
       const volume = order.qty.toFixed(Math.min(def.decimals, 8));
-      const res = await placeMarketOrder({
-        data: {
-          apiKey: s.keys.apiKey,
-          apiSecret: s.keys.apiSecret,
-          pair: order.pair,
-          side: order.side,
-          volume,
-        },
+      const venue = getLiveVenue(s.venueId);
+      const res = await venue.placeMarketOrder({
+        apiKey: s.keys.apiKey,
+        apiSecret: s.keys.apiSecret,
+        pair: order.pair,
+        side: order.side,
+        volume,
       });
       const filled: Order = {
         ...order,
@@ -844,7 +838,7 @@ function applyFill(order: Order) {
 
 function checkStops() {
   const s = useFloor.getState();
-  if (!s.floorOpen) return;
+  if (!s.launched || !s.floorOpen) return;
   for (const p of s.positions) {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     const hitStop = p.side === "buy" ? mark <= p.stop : mark >= p.stop;
@@ -930,7 +924,12 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
   demoLock = true;
   try {
     const s = useFloor.getState();
-    if (!s.floorOpen) patch({ floorOpen: true });
+    if (!s.launched) {
+      return { ok: true, acted: false, note: "Desk not started — finish launch setup first" };
+    }
+    if (!s.floorOpen) {
+      return { ok: true, acted: false, note: "Floor closed — open the desk to scan" };
+    }
     bumpAgent("scanner", s.mode === "paper" ? "1m Kraken scan" : "5m Kraken scan", 1);
     await refreshOhlcAll();
     const sigs = useFloor.getState().signals;
@@ -969,7 +968,8 @@ async function refreshTreasury() {
   const s = useFloor.getState();
   if (!s.keys.apiKey || !s.keys.apiSecret) return;
   try {
-    const bal = await fetchBalance({ data: s.keys });
+    const venue = getLiveVenue(s.venueId);
+    const bal = await venue.fetchBalance(s.keys);
     useFloor.getState().setLiveBalance(bal);
     useFloor.getState().setKeysOk(true);
     const usd = usdOnBook(bal);
@@ -997,8 +997,10 @@ export async function haltLive() {
   });
   if (s.mode === "live" && s.keys.apiKey && s.keys.apiSecret) {
     try {
-      const res = await cancelAllOrders({
-        data: { apiKey: s.keys.apiKey, apiSecret: s.keys.apiSecret },
+      const venue = getLiveVenue(s.venueId);
+      const res = await venue.cancelAll({
+        apiKey: s.keys.apiKey,
+        apiSecret: s.keys.apiSecret,
       });
       pushEvent({
         agent: "runner",
@@ -1031,7 +1033,8 @@ export function startEngine(): () => void {
   }, 250);
   const chatter = window.setInterval(idleChatter, 1600);
   const rest = window.setInterval(() => {
-    if (!useFloor.getState().floorOpen) return;
+    const st = useFloor.getState();
+    if (!st.launched || !st.floorOpen) return;
     const src = useFloor.getState().feedSource;
     if (src === "sim") {
       runSimTick();
@@ -1041,19 +1044,21 @@ export function startEngine(): () => void {
     void refreshTickersRest().then(() => checkStops());
   }, 5000);
   const ohlc = window.setInterval(() => {
-    if (!useFloor.getState().floorOpen) return;
+    const st = useFloor.getState();
+    if (!st.launched || !st.floorOpen) return;
     void refreshOhlcAll();
   }, useFloor.getState().mode === "paper" ? 7_000 : 15_000);
   const stageSpin = window.setInterval(() => {
     const s = useFloor.getState();
-    if (!s.floorOpen) return;
+    if (!s.launched || !s.floorOpen) return;
     const i = STAGE_CYCLE.indexOf(s.stage);
     const busy = Object.values(s.agents).some((a) => a.heat > 0.55);
     if (!busy) patch({ stage: STAGE_CYCLE[(i + 1) % STAGE_CYCLE.length]! });
   }, 3800);
   const simPulse = window.setInterval(() => {
     if (useFloor.getState().feedSource !== "sim") return;
-    if (!useFloor.getState().floorOpen) return;
+    const st = useFloor.getState();
+    if (!st.launched || !st.floorOpen) return;
     runSimTick();
     checkStops();
   }, 1200);
@@ -1084,7 +1089,9 @@ export function startEngine(): () => void {
 
   void (async () => {
     await refreshTickersRest();
-    await refreshOhlcAll();
+    if (useFloor.getState().launched && useFloor.getState().floorOpen) {
+      await refreshOhlcAll();
+    }
     await refreshTreasury();
     await refreshWire();
     sampleEquity(true);

@@ -4,6 +4,9 @@ import { useShallow } from "zustand/react/shallow";
 import { AGENTS } from "./agents";
 import { DEFAULT_BRAIN, type Brain } from "./learn";
 import { DEFAULT_PAIRS } from "./kraken";
+import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
+import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
+import type { VenueId } from "./venues/types";
 import type {
   AgentId,
   AgentState,
@@ -54,10 +57,13 @@ export const DEFAULT_RISK: RiskConfig = {
 type Keys = { apiKey: string; apiSecret: string };
 
 export type FloorState = {
+  launched: boolean;
   floorOpen: boolean;
   mode: TradeMode;
   autoTrade: boolean;
   liveArmed: boolean;
+  venueId: VenueId;
+  humanVerified: boolean;
   keys: Keys;
   keysOk: boolean | null;
   pairs: PairId[];
@@ -101,6 +107,17 @@ export type FloorState = {
   setMode: (mode: TradeMode) => void;
   setAutoTrade: (v: boolean) => void;
   setLiveArmed: (v: boolean) => void;
+  setVenueId: (id: VenueId) => void;
+  setHumanVerified: (v: boolean) => void;
+  launchDesk: (input: Partial<{
+    startingCash: number;
+    sizePct: number;
+    stopPct: number;
+    takePct: number;
+    maxDailyLossPct: number;
+    maxPositions: number;
+  }>) => void;
+  stopDesk: () => void;
   setKeys: (keys: Keys) => void;
   setKeysOk: (v: boolean | null) => void;
   setPairs: (pairs: PairId[]) => void;
@@ -164,10 +181,13 @@ export function useDesk(): DeskSnapshot {
 export const useFloor = create<FloorState>()(
   persist(
     (set, get) => ({
-      floorOpen: true,
+      launched: false,
+      floorOpen: false,
       mode: "paper",
-      autoTrade: true,
+      autoTrade: false,
       liveArmed: false,
+      venueId: "kraken",
+      humanVerified: false,
       keys: { apiKey: "", apiSecret: "" },
       keysOk: null,
       pairs: DEFAULT_PAIRS,
@@ -207,11 +227,44 @@ export const useFloor = create<FloorState>()(
       fearGreed: null,
       wireAt: 0,
 
-      setFloorOpen: (open) => set({ floorOpen: open }),
+      setFloorOpen: (open) => {
+        if (open && !get().launched) return;
+        set({ floorOpen: open });
+      },
       setMode: (mode) => set({ mode, liveArmed: mode === "live" ? get().liveArmed : false }),
-      setAutoTrade: (v) => set({ autoTrade: v }),
+      setAutoTrade: (v) => {
+        if (v && !get().launched) return;
+        set({ autoTrade: v });
+      },
       setLiveArmed: (v) => set({ liveArmed: v }),
-      setKeys: (keys) => set({ keys, keysOk: null }),
+      setVenueId: (id) => set({ venueId: id === "paper" ? "paper" : "kraken" }),
+      setHumanVerified: (v) => set({ humanVerified: v }),
+      launchDesk: (input) => {
+        const payload = clampLaunch(input);
+        set({
+          launched: true,
+          floorOpen: true,
+          autoTrade: true,
+          mode: "paper",
+          liveArmed: false,
+          startingCash: payload.startingCash,
+          risk: {
+            ...get().risk,
+            sizePct: payload.sizePct,
+            stopPct: payload.stopPct,
+            takePct: payload.takePct,
+            maxDailyLossPct: payload.maxDailyLossPct,
+            maxPositions: payload.maxPositions,
+          },
+        });
+        get().resetPaper();
+      },
+      stopDesk: () => set({ floorOpen: false, autoTrade: false }),
+      setKeys: (keys) => {
+        if (!get().humanVerified) return;
+        if (rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret)) return;
+        set({ keys, keysOk: null });
+      },
       setKeysOk: (v) => set({ keysOk: v }),
       setPairs: (pairs) => set({ pairs: pairs.length ? pairs : DEFAULT_PAIRS }),
       setRisk: (risk) => set({ risk: { ...get().risk, ...risk } }),
@@ -251,26 +304,33 @@ export const useFloor = create<FloorState>()(
     {
       name: "grok-ops-floor",
       skipHydration: true,
-      partialize: (s) => ({
-        mode: s.mode,
-        autoTrade: s.autoTrade,
-        liveArmed: false,
-        keys: s.keys,
-        pairs: s.pairs,
-        risk: s.risk,
-        startingCash: s.startingCash,
-        cash: s.cash,
-        realized: s.realized,
-        dayStartEquity: s.dayStartEquity,
-        positions: s.positions,
-        orders: s.orders.slice(-80),
-        events: s.events.slice(-40),
-        shiftStartedAt: s.shiftStartedAt,
-        briefs: s.briefs,
-        floorOpen: s.floorOpen,
-        brain: s.brain,
-        selfLearn: s.selfLearn,
-      }),
+      partialize: (s) => {
+        const shift = sliceShiftForPersist(s);
+        return {
+          launched: s.launched,
+          venueId: s.venueId,
+          mode: s.mode,
+          autoTrade: s.autoTrade,
+          liveArmed: false,
+          keys: s.keys,
+          pairs: s.pairs,
+          risk: s.risk,
+          startingCash: s.startingCash,
+          cash: s.cash,
+          realized: s.realized,
+          dayStartEquity: s.dayStartEquity,
+          positions: s.positions,
+          orders: s.orders.slice(-80),
+          events: s.events.slice(-40),
+          shiftStartedAt: s.shiftStartedAt,
+          briefs: s.briefs,
+          floorOpen: s.floorOpen,
+          brain: s.brain,
+          selfLearn: s.selfLearn,
+          equityHistory: shift.equityHistory,
+          signals: shift.signals,
+        };
+      },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<FloorState>;
         const oldFour = ["XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD"];
@@ -280,15 +340,44 @@ export const useFloor = create<FloorState>()(
           p.pairs.every((id) => oldFour.includes(id))
             ? DEFAULT_PAIRS
             : (p.pairs ?? current.pairs);
+        const shift = hydratePersistedShift(
+          {
+            cash: p.cash,
+            positions: p.positions,
+            dayStartEquity: p.dayStartEquity,
+            shiftStartedAt: p.shiftStartedAt,
+            equityHistory: p.equityHistory,
+            signals: p.signals,
+            liveArmed: p.liveArmed,
+          },
+          {
+            cash: current.cash,
+            positions: current.positions,
+            dayStartEquity: current.dayStartEquity,
+            shiftStartedAt: current.shiftStartedAt,
+            equityHistory: current.equityHistory,
+            signals: current.signals,
+          },
+        );
+        const launched = inferLaunched(p);
+        const venueId: VenueId = p.venueId === "paper" ? "paper" : "kraken";
         return {
           ...current,
           ...p,
           pairs,
+          launched,
+          venueId,
+          floorOpen: launched ? Boolean(p.floorOpen ?? current.floorOpen) : false,
+          autoTrade: launched ? Boolean(p.autoTrade ?? current.autoTrade) : false,
           agents: freshAgents(),
           liveArmed: false,
+          humanVerified: false,
           pendingLive: null,
           queue: [],
-          equityHistory: [],
+          equityHistory: shift.equityHistory,
+          signals: shift.signals,
+          dayStartEquity: shift.dayStartEquity,
+          shiftStartedAt: shift.shiftStartedAt,
           settingsOpen: false,
           brain: {
             ...DEFAULT_BRAIN,

@@ -13,6 +13,7 @@ export function HeaderBar() {
   const desk = useDesk();
   const floorOpen = useFloor((s) => s.floorOpen);
   const setFloorOpen = useFloor((s) => s.setFloorOpen);
+  const launched = useFloor((s) => s.launched);
   const mode = useFloor((s) => s.mode);
   const liveArmed = useFloor((s) => s.liveArmed);
   const autoTrade = useFloor((s) => s.autoTrade);
@@ -97,6 +98,7 @@ export function HeaderBar() {
             <Button
               size="sm"
               variant={floorOpen ? "good" : "outline"}
+              disabled={!launched}
               onClick={() => setFloorOpen(!floorOpen)}
             >
               {floorOpen ? "Floor open" : "Floor closed"}
