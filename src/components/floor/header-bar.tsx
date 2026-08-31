@@ -1,9 +1,10 @@
-import { Power, Settings2 } from "lucide-react";
+import { CandlestickChart, Power, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive } from "@/lib/engine";
 import { clock, money, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
+import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,9 @@ export function HeaderBar() {
   const liveBalance = useFloor((s) => s.liveBalance);
   const fearGreed = useFloor((s) => s.fearGreed);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
+  const sessionEndsAt = useFloor((s) => s.sessionEndsAt);
+  const chartsOpen = useFloor((s) => s.chartsOpen);
+  const setChartsOpen = useFloor((s) => s.setChartsOpen);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -94,6 +98,13 @@ export function HeaderBar() {
             />
           ) : null}
           <Stat label="Shift" value={clock(now - shiftStartedAt)} />
+          {sessionEndsAt != null ? (
+            <Stat
+              label="Left"
+              value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)}
+              always
+            />
+          ) : null}
           <div className="flex items-center gap-1.5">
             <Button
               size="sm"
@@ -102,6 +113,15 @@ export function HeaderBar() {
               onClick={() => setFloorOpen(!floorOpen)}
             >
               {floorOpen ? "Floor open" : "Floor closed"}
+            </Button>
+            <Button
+              size="sm"
+              variant={chartsOpen ? "default" : "outline"}
+              aria-pressed={chartsOpen}
+              onClick={() => setChartsOpen(!chartsOpen)}
+            >
+              <CandlestickChart className="size-3.5" />
+              Charts
             </Button>
             <Button
               size="icon"
@@ -204,13 +224,15 @@ function Stat({
   label,
   value,
   tone,
+  always,
 }: {
   label: string;
   value: string;
   tone?: "good" | "bad";
+  always?: boolean;
 }) {
   return (
-    <div className="hidden min-w-[4.5rem] sm:block">
+    <div className={always ? "min-w-[4.5rem]" : "hidden min-w-[4.5rem] sm:block"}>
       <div className="font-display text-micro tracking-[0.16em] text-subtle uppercase">{label}</div>
       <div
         className={cn(

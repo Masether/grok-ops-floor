@@ -10,6 +10,7 @@ import { learnFromClose, pairMinConf } from "./learn";
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { fetchWire } from "./wire-api";
+import { sessionEnded } from "./session";
 import { markEquity, useFloor, type FloorState } from "./store";
 import type {
   AgentId,
@@ -103,6 +104,26 @@ function pushEvent(e: Omit<TapeEvent, "id" | "ts">) {
 function pushQueue(item: Omit<QueueItem, "id" | "ts">) {
   const q: QueueItem = { ...item, id: uid("q"), ts: Date.now() };
   patch({ queue: [q, ...useFloor.getState().queue].slice(0, 24) });
+}
+
+function applySessionEnd() {
+  const s = useFloor.getState();
+  if (!sessionEnded(s.sessionEndsAt)) return;
+  const already = !s.floorOpen && !s.autoTrade;
+  patch({ floorOpen: false, autoTrade: false, sessionEndsAt: null });
+  if (already) return;
+  bumpAgent("sentinel", "session ended", 1);
+  pushEvent({
+    agent: "sentinel",
+    stage: "second",
+    title: "SESSION ENDED",
+    detail: "Clock ran out — new entries stopped, book kept. Stops still watch open lots.",
+    tone: "warn",
+  });
+}
+
+function bookNeedsProtect(s: FloorState): boolean {
+  return s.launched && (s.floorOpen || s.positions.length > 0);
 }
 
 function setStage(stage: PipelineStage) {
@@ -237,7 +258,7 @@ async function refreshOhlcAll() {
   const s = useFloor.getState();
   if (s.pairs.length === 0) return;
   const useSim = s.feedSource === "sim";
-  const interval = s.mode === "live" ? 5 : 1;
+  const interval = s.chartInterval;
   const open = new Set(s.positions.map((p) => p.pair));
   const ranked = s.pairs
     .map((pair) => ({
@@ -250,6 +271,10 @@ async function refreshOhlcAll() {
   const picked: typeof ranked = [];
   for (const row of ranked) {
     if (open.has(row.pair) || picked.length < take) picked.push(row);
+  }
+  const inspect = s.inspectPair;
+  if (inspect && s.pairs.includes(inspect) && !picked.some((row) => row.pair === inspect)) {
+    picked.push({ pair: inspect, score: 0 });
   }
 
   const top = picked[0];
@@ -266,7 +291,7 @@ async function refreshOhlcAll() {
     picked.map(async (row) => {
       try {
         const candles = useSim
-          ? makeSimCandles(row.pair)
+          ? makeSimCandles(row.pair, 120, interval * 60_000)
           : await fetchOhlc({ data: { pair: row.pair, interval } });
         if (candles.length < 30) return;
         patch({ candles: { ...useFloor.getState().candles, [row.pair]: candles } });
@@ -838,7 +863,10 @@ function applyFill(order: Order) {
 
 function checkStops() {
   const s = useFloor.getState();
-  if (!s.launched || !s.floorOpen) return;
+  if (!s.launched || s.positions.length === 0) return;
+  // Session end / stop-desk still protect paper (and live if still armed).
+  // Kill switch disarms live — do not send more venue orders.
+  if (s.mode === "live" && !s.liveArmed && !s.floorOpen) return;
   for (const p of s.positions) {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     const hitStop = p.side === "buy" ? mark <= p.stop : mark >= p.stop;
@@ -930,7 +958,7 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
     if (!s.floorOpen) {
       return { ok: true, acted: false, note: "Floor closed — open the desk to scan" };
     }
-    bumpAgent("scanner", s.mode === "paper" ? "1m Kraken scan" : "5m Kraken scan", 1);
+    bumpAgent("scanner", `${s.chartInterval}m Kraken scan`, 1);
     await refreshOhlcAll();
     const sigs = useFloor.getState().signals;
     const latestByPair = new Map<string, (typeof sigs)[number]>();
@@ -1026,6 +1054,7 @@ export function startEngine(): () => void {
     patch({ shiftStartedAt: Date.now() });
   }
   seedHistory();
+  applySessionEnd();
 
   const tick = window.setInterval(() => {
     coolAgents(0.25);
@@ -1033,9 +1062,10 @@ export function startEngine(): () => void {
   }, 250);
   const chatter = window.setInterval(idleChatter, 1600);
   const rest = window.setInterval(() => {
+    applySessionEnd();
     const st = useFloor.getState();
-    if (!st.launched || !st.floorOpen) return;
-    const src = useFloor.getState().feedSource;
+    if (!bookNeedsProtect(st)) return;
+    const src = st.feedSource;
     if (src === "sim") {
       runSimTick();
       checkStops();
@@ -1058,10 +1088,11 @@ export function startEngine(): () => void {
   const simPulse = window.setInterval(() => {
     if (useFloor.getState().feedSource !== "sim") return;
     const st = useFloor.getState();
-    if (!st.launched || !st.floorOpen) return;
+    if (!bookNeedsProtect(st)) return;
     runSimTick();
     checkStops();
   }, 1200);
+  const session = window.setInterval(applySessionEnd, 1000);
   const treasury = window.setInterval(() => {
     void refreshTreasury();
   }, 45_000);
@@ -1069,7 +1100,7 @@ export function startEngine(): () => void {
     void refreshWire();
   }, 180_000);
 
-  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, treasury, wire];
+  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire];
 
   stopWs = connectTickerFeed(
     useFloor.getState().pairs,

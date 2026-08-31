@@ -20,6 +20,7 @@ import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor } from "@/lib/store";
 import type { BookSleeve, PairId } from "@/lib/types";
 import { COMING_SOON_VENUES } from "@/lib/venues";
+import { DurationPills } from "./duration-pills";
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);
@@ -60,6 +61,8 @@ export function SettingsPanel() {
   const selfLearn = useFloor((s) => s.selfLearn);
   const setSelfLearn = useFloor((s) => s.setSelfLearn);
   const resetBrain = useFloor((s) => s.resetBrain);
+  const sessionMinutes = useFloor((s) => s.sessionMinutes);
+  const setSessionMinutes = useFloor((s) => s.setSessionMinutes);
   const [armAsk, setArmAsk] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -209,6 +212,27 @@ export function SettingsPanel() {
             </section>
 
             <section className="space-y-3">
+              <Label>Session duration</Label>
+              <DurationPills
+                value={sessionMinutes}
+                onChange={(m) => {
+                  setSessionMinutes(m);
+                  toast.message(
+                    m === 0
+                      ? "Runs until you stop"
+                      : launched
+                        ? "Clock reset from now"
+                        : `Session ${m}m on launch`,
+                  );
+                }}
+              />
+              <p className="text-2xs text-subtle">
+                Changing this mid-session restarts the clock from now. When it hits zero the desk
+                stops new entries and keeps the book. Stops still protect open lots.
+              </p>
+            </section>
+
+            <section className="space-y-3">
               <Label>Book</Label>
               <div className="flex gap-2">
                 <Button
@@ -231,8 +255,8 @@ export function SettingsPanel() {
                 <Switch id="auto" checked={autoTrade} onCheckedChange={setAutoTrade} />
               </div>
               <p className="text-2xs text-subtle">
-                Paper is demo on live Kraken 1-minute candles — real RSI/EMA/MACD, fake cash. Live
-                uses 5-minute bars and sends real market orders after you arm.
+                Paper is demo on live Kraken candles — real RSI/EMA/MACD, fake cash. Bar size is
+                the Charts interval. Live sends real market orders only after you arm.
               </p>
               {mode === "paper" ? (
                 <Button

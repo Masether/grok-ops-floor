@@ -6,6 +6,14 @@ import { DEFAULT_BRAIN, type Brain } from "./learn";
 import { DEFAULT_PAIRS } from "./kraken";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
+import {
+  DEFAULT_CHART_INTERVAL,
+  DEFAULT_SESSION_MINUTES,
+  asChartInterval,
+  normalizeSessionMinutes,
+  sessionEndsAtFromMinutes,
+  type ChartInterval,
+} from "./session";
 import type { VenueId } from "./venues/types";
 import type {
   AgentId,
@@ -102,6 +110,10 @@ export type FloorState = {
   wire: WireItem[];
   fearGreed: { value: number; label: string } | null;
   wireAt: number;
+  sessionMinutes: number;
+  sessionEndsAt: number | null;
+  chartInterval: ChartInterval;
+  chartsOpen: boolean;
 
   setFloorOpen: (open: boolean) => void;
   setMode: (mode: TradeMode) => void;
@@ -116,6 +128,7 @@ export type FloorState = {
     takePct: number;
     maxDailyLossPct: number;
     maxPositions: number;
+    sessionMinutes: number;
   }>) => void;
   stopDesk: () => void;
   setKeys: (keys: Keys) => void;
@@ -136,6 +149,9 @@ export type FloorState = {
   setSelfLearn: (v: boolean) => void;
   resetBrain: () => void;
   setWire: (items: WireItem[], fearGreed: { value: number; label: string } | null) => void;
+  setSessionMinutes: (minutes: number) => void;
+  setChartInterval: (n: ChartInterval) => void;
+  setChartsOpen: (v: boolean) => void;
 };
 
 export function computeDesk(s: FloorState): DeskSnapshot {
@@ -226,6 +242,10 @@ export const useFloor = create<FloorState>()(
       wire: [],
       fearGreed: null,
       wireAt: 0,
+      sessionMinutes: DEFAULT_SESSION_MINUTES,
+      sessionEndsAt: null,
+      chartInterval: DEFAULT_CHART_INTERVAL,
+      chartsOpen: false,
 
       setFloorOpen: (open) => {
         if (open && !get().launched) return;
@@ -241,6 +261,9 @@ export const useFloor = create<FloorState>()(
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
         const payload = clampLaunch(input);
+        const minutes = normalizeSessionMinutes(
+          input.sessionMinutes ?? get().sessionMinutes,
+        );
         set({
           launched: true,
           floorOpen: true,
@@ -256,10 +279,12 @@ export const useFloor = create<FloorState>()(
             maxDailyLossPct: payload.maxDailyLossPct,
             maxPositions: payload.maxPositions,
           },
+          sessionMinutes: minutes,
+          sessionEndsAt: sessionEndsAtFromMinutes(minutes),
         });
         get().resetPaper();
       },
-      stopDesk: () => set({ floorOpen: false, autoTrade: false }),
+      stopDesk: () => set({ floorOpen: false, autoTrade: false, sessionEndsAt: null }),
       setKeys: (keys) => {
         if (!get().humanVerified) return;
         if (rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret)) return;
@@ -300,6 +325,16 @@ export const useFloor = create<FloorState>()(
       setSelfLearn: (v) => set({ selfLearn: v, brain: { ...get().brain, enabled: v } }),
       resetBrain: () => set({ brain: { ...DEFAULT_BRAIN, enabled: get().selfLearn } }),
       setWire: (items, fearGreed) => set({ wire: items, fearGreed, wireAt: Date.now() }),
+      setSessionMinutes: (minutes) => {
+        const n = normalizeSessionMinutes(minutes);
+        const launched = get().launched;
+        set({
+          sessionMinutes: n,
+          sessionEndsAt: launched ? sessionEndsAtFromMinutes(n) : null,
+        });
+      },
+      setChartInterval: (n) => set({ chartInterval: asChartInterval(n) }),
+      setChartsOpen: (v) => set({ chartsOpen: v }),
     }),
     {
       name: "grok-ops-floor",
@@ -329,6 +364,9 @@ export const useFloor = create<FloorState>()(
           selfLearn: s.selfLearn,
           equityHistory: shift.equityHistory,
           signals: shift.signals,
+          sessionMinutes: s.sessionMinutes,
+          sessionEndsAt: s.sessionEndsAt,
+          chartInterval: s.chartInterval,
         };
       },
       merge: (persisted, current) => {
@@ -379,6 +417,15 @@ export const useFloor = create<FloorState>()(
           dayStartEquity: shift.dayStartEquity,
           shiftStartedAt: shift.shiftStartedAt,
           settingsOpen: false,
+          chartsOpen: false,
+          sessionMinutes: normalizeSessionMinutes(p.sessionMinutes ?? current.sessionMinutes),
+          sessionEndsAt:
+            typeof p.sessionEndsAt === "number"
+              ? p.sessionEndsAt
+              : p.sessionEndsAt === null
+                ? null
+                : current.sessionEndsAt,
+          chartInterval: asChartInterval(p.chartInterval ?? current.chartInterval),
           brain: {
             ...DEFAULT_BRAIN,
             ...(p.brain ?? {}),

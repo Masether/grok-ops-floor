@@ -6,7 +6,9 @@ import {
   clampLaunch,
   launchPreviewLine,
 } from "@/lib/launch.mjs";
+import { DEFAULT_SESSION_MINUTES } from "@/lib/session";
 import { useFloor } from "@/lib/store";
+import { DurationPills } from "./duration-pills";
 
 export function LaunchSetup() {
   const launchDesk = useFloor((s) => s.launchDesk);
@@ -18,6 +20,7 @@ export function LaunchSetup() {
     LAUNCH_DEFAULTS.maxDailyLossPct,
   );
   const [maxPositions, setMaxPositions] = useState(LAUNCH_DEFAULTS.maxPositions);
+  const [sessionMinutes, setSessionMinutes] = useState(DEFAULT_SESSION_MINUTES);
 
   const payload = useMemo(
     () =>
@@ -53,7 +56,7 @@ export function LaunchSetup() {
           className="space-y-5 px-4 py-4"
           onSubmit={(e) => {
             e.preventDefault();
-            launchDesk(payload);
+            launchDesk({ ...payload, sessionMinutes });
           }}
         >
           <div className="space-y-1.5">
@@ -109,6 +112,14 @@ export function LaunchSetup() {
             step={1}
             onChange={(v) => setMaxPositions(Math.round(v))}
           />
+
+          <div className="space-y-1.5">
+            <Label>Session duration</Label>
+            <DurationPills value={sessionMinutes} onChange={setSessionMinutes} />
+            <p className="text-2xs text-subtle">
+              Desk runs this long then stops new entries. Open lots stay on the book; stops still fire.
+            </p>
+          </div>
 
           <p className="text-2xs text-muted">{preview}</p>
 

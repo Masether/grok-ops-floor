@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 import { startEngine, stopEngine } from "@/lib/engine";
 import { useFloor } from "@/lib/store";
 import { TooltipProvider } from "@/components/ui/overlay";
+import { ChartsBubble } from "./charts-bubble";
 import { FundingRail } from "./funding-rail";
 import { HeaderBar } from "./header-bar";
 import { LaunchSetup } from "./launch-setup";
@@ -59,6 +60,7 @@ export function OpsShell() {
           </div>
         </main>
         <SettingsPanel />
+        <ChartsBubble />
         {boot && !launched ? <LaunchSetup /> : null}
         <Toaster
           theme="dark"
