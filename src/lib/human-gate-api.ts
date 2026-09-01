@@ -8,7 +8,7 @@ import {
   powMeets,
 } from "./human-gate.mjs";
 import { rejectWalletSecret } from "./launch.mjs";
-import { fetchBalance } from "./kraken-api";
+import { fetchBalance } from "./kraken-api.ts";
 
 const globalRef = globalThis as typeof globalThis & {
   __opsHumanSecret__?: string;

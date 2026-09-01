@@ -1,4 +1,4 @@
-import type { AgentId, PipelineStage } from "./types";
+import type { AgentId, PipelineStage } from "./types.ts";
 
 export type AgentShape =
   | "eyes"

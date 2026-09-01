@@ -1,4 +1,4 @@
-import type { EquityPoint, TradeSignal } from "./types";
+import type { EquityPoint, TradeSignal } from "./types.ts";
 
 export const EQUITY_PERSIST_CAP = 90;
 export const SIGNAL_PERSIST_CAP = 12;

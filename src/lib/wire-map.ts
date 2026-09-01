@@ -1,4 +1,4 @@
-import type { PairId, WireTone } from "./types";
+import type { PairId, WireTone } from "./types.ts";
 
 type Rule = {
   test: RegExp;

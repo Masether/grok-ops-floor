@@ -1,4 +1,4 @@
-import type { PairId } from "./types";
+import type { PairId } from "./types.ts";
 
 export type SetupId = "cross" | "rsi" | "momentum";
 

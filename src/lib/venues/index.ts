@@ -1,9 +1,9 @@
 import { getVenue as getVenueMeta, resolveLiveVenueId } from "./catalog.mjs";
-import { krakenAdapter } from "./kraken";
-import { paperAdapter } from "./paper";
-import type { VenueAdapter, VenueId } from "./types";
+import { krakenAdapter } from "./kraken.ts";
+import { paperAdapter } from "./paper.ts";
+import type { VenueAdapter, VenueId } from "./types.ts";
 
-export type { VenueAdapter, VenueId, VenueKeys } from "./types";
+export type { VenueAdapter, VenueId, VenueKeys } from "./types.ts";
 export {
   COMING_SOON_VENUES,
   DEFAULT_LIVE_VENUE,

@@ -11,7 +11,7 @@ import {
   gateIdentityEnabled,
   gateIdentityFromHeaders,
   sessionBoundToGateIdentity,
-} from "./gate-identity.server";
+} from "./gate-identity.server.ts";
 
 export const GATE_PROVIDER_ID = "grok-gate";
 const GATE_ACCOUNT_ISSUER = "https://grok.com";

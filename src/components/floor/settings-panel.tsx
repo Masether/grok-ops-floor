@@ -20,7 +20,7 @@ import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor } from "@/lib/store";
 import type { BookSleeve, PairId } from "@/lib/types";
 import { COMING_SOON_VENUES } from "@/lib/venues";
-import { DurationPills } from "./duration-pills";
+import { DurationPills } from "./duration-pills.tsx";
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);

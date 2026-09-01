@@ -4,7 +4,7 @@ import { onPulse, type FloorPulse } from "@/lib/bus";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { AgentGlyph, GrokCore } from "./glyphs";
+import { AgentGlyph, GrokCore } from "./glyphs.tsx";
 
 type PulseDraw = FloorPulse & { id: number; born: number };
 

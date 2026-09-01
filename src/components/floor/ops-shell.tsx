@@ -3,16 +3,16 @@ import { Toaster } from "sonner";
 import { startEngine, stopEngine } from "@/lib/engine";
 import { useFloor } from "@/lib/store";
 import { TooltipProvider } from "@/components/ui/overlay";
-import { ChartsBubble } from "./charts-bubble";
-import { DeskBubble } from "./desk-bubble";
-import { FundingRail } from "./funding-rail";
-import { HeaderBar } from "./header-bar";
-import { LaunchSetup } from "./launch-setup";
-import { OrbitStage } from "./orbit-stage";
-import { SettingsPanel } from "./settings-panel";
-import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels";
-import { TheTape } from "./the-tape";
-import { TheWire } from "./the-wire";
+import { ChartsBubble } from "./charts-bubble.tsx";
+import { DeskBubble } from "./desk-bubble.tsx";
+import { FundingRail } from "./funding-rail.tsx";
+import { HeaderBar } from "./header-bar.tsx";
+import { LaunchSetup } from "./launch-setup.tsx";
+import { OrbitStage } from "./orbit-stage.tsx";
+import { SettingsPanel } from "./settings-panel.tsx";
+import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels.tsx";
+import { TheTape } from "./the-tape.tsx";
+import { TheWire } from "./the-wire.tsx";
 
 export function OpsShell() {
   const [boot, setBoot] = useState(false);

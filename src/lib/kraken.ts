@@ -1,4 +1,4 @@
-import type { BookSleeve, PairId } from "./types";
+import type { BookSleeve, PairId } from "./types.ts";
 
 export type PairDef = {
   id: PairId;

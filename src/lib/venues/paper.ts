@@ -1,4 +1,4 @@
-import type { VenueAdapter } from "./types";
+import type { VenueAdapter } from "./types.ts";
 
 /** Paper fills stay in the engine. This adapter is a no-op live book. */
 export const paperAdapter: VenueAdapter = {

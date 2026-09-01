@@ -1,5 +1,5 @@
-import { PAIR_BY_ID, PAIR_BY_WS } from "./kraken";
-import type { PairId, Ticker } from "./types";
+import { PAIR_BY_ID, PAIR_BY_WS } from "./kraken.ts";
+import type { PairId, Ticker } from "./types.ts";
 
 type WsTicker = {
   symbol: string;

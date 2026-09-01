@@ -1,4 +1,4 @@
-import type { AgentId } from "./types";
+import type { AgentId } from "./types.ts";
 
 export type FloorPulse = {
   from: AgentId;

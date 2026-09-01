@@ -129,10 +129,17 @@ describe("describeFillToast copy", () => {
 
 describe("dedupe and queue", () => {
   it("skips identical toasts inside the 2s window", () => {
-    assert.equal(shouldSkipDuplicate(1000, 2500), false);
-    assert.equal(shouldSkipDuplicate(1000, 2999), true);
-    assert.equal(shouldSkipDuplicate(1000, 3000), false);
     assert.equal(TRADE_TOAST_DEDUPE_MS, 2000);
+    // Both arguments are absolute clock readings: (lastShownAt, now).
+    assert.equal(shouldSkipDuplicate(1000, 1000), true); // same tick
+    assert.equal(shouldSkipDuplicate(1000, 2500), true); // 1.5s later, inside
+    assert.equal(shouldSkipDuplicate(1000, 2999), true); // 1.999s, still inside
+    assert.equal(shouldSkipDuplicate(1000, 3000), false); // 2s exactly, window over
+    assert.equal(shouldSkipDuplicate(1000, 9000), false); // long past
+  });
+
+  it("never skips a toast it has not shown before", () => {
+    assert.equal(shouldSkipDuplicate(undefined, 3000), false);
   });
 
   it("collapses P3 when a P1 is up or the queue is busy", () => {

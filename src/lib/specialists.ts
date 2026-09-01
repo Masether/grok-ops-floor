@@ -1,7 +1,7 @@
-import { ema, sma } from "./indicators";
-import { PAIR_BY_ID } from "./kraken";
-import type { PairId, Ticker, WireItem } from "./types";
-import type { Brain } from "./learn";
+import { ema, sma } from "./indicators.ts";
+import { PAIR_BY_ID } from "./kraken.ts";
+import type { PairId, Ticker, WireItem } from "./types.ts";
+import type { Brain } from "./learn.ts";
 
 export type RegimeState = "trend-up" | "trend-down" | "chop";
 

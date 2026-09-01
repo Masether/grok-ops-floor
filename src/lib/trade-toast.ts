@@ -1,8 +1,8 @@
 import { toast } from "sonner";
-import { money, px, qty } from "./format";
-import { PAIR_BY_ID } from "./kraken";
-import { useFloor } from "./store";
-import type { Order, Side, TradeMode } from "./types";
+import { money, px, qty } from "./format.ts";
+import { PAIR_BY_ID } from "./kraken.ts";
+import { useFloor } from "./store.ts";
+import type { Order, Side, TradeMode } from "./types.ts";
 
 export type TradeToastPriority = 1 | 2 | 3;
 export type TradeToastTone = "danger" | "good" | "warn" | "info";

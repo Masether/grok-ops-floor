@@ -1,5 +1,5 @@
-import { PAIR_BY_ID, SEED_PRICE } from "./kraken";
-import type { Candle, PairId, Ticker } from "./types";
+import { PAIR_BY_ID, SEED_PRICE } from "./kraken.ts";
+import type { Candle, PairId, Ticker } from "./types.ts";
 
 type Walk = { price: number; open: number; high: number; low: number; volume: number };
 

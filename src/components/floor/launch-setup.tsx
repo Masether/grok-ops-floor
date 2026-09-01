@@ -22,7 +22,7 @@ import {
 import { DEFAULT_SESSION_MINUTES } from "@/lib/session";
 import { useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { DurationPills } from "./duration-pills";
+import { DurationPills } from "./duration-pills.tsx";
 
 export function LaunchSetup() {
   const launchDesk = useFloor((s) => s.launchDesk);
@@ -167,7 +167,11 @@ export function LaunchSetup() {
               id="launch-goal"
               type="number"
               min={1}
-              step={100}
+              // `step={100}` with `min={1}` made the valid set 1, 101, 201, …,
+              // so every preset chip ($1k, $5k, $10k …) failed native
+              // validation and the form refused to submit. The copy below
+              // promises any amount, so the value must not be stepped.
+              step="any"
               inputMode="decimal"
               value={goalProfit}
               onChange={(e) => {
@@ -230,7 +234,9 @@ export function LaunchSetup() {
               id="launch-cash"
               type="number"
               min={100}
-              step={100}
+              // Same reason as the goal field: a suggested capital fix must
+              // never land on a value the browser then rejects.
+              step="any"
               inputMode="decimal"
               value={cash}
               onChange={(e) => setCash(Number(e.target.value) || 0)}

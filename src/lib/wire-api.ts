@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
-import { PAIR_BY_ID } from "./kraken";
-import { tagHeadline } from "./wire-map";
-import type { PairId, WireItem } from "./types";
+import { PAIR_BY_ID } from "./kraken.ts";
+import { tagHeadline } from "./wire-map.ts";
+import type { PairId, WireItem } from "./types.ts";
 
 const UA = "GrokOpsFloor/1.0";
 

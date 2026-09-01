@@ -1,4 +1,4 @@
-import { DEFAULT_BRAIN, setupAllowed, type Brain, type SetupId } from "./learn";
+import { DEFAULT_BRAIN, setupAllowed, type Brain, type SetupId } from "./learn.ts";
 
 export function ema(values: number[], period: number): number[] {
   if (values.length === 0) return [];

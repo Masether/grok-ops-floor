@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { AGENTS } from "./agents";
-import { DEFAULT_BRAIN, type Brain } from "./learn";
-import { DEFAULT_PAIRS } from "./kraken";
-import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
+import { AGENTS } from "./agents.ts";
+import { DEFAULT_BRAIN, type Brain } from "./learn.ts";
+import { DEFAULT_PAIRS } from "./kraken.ts";
+import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import {
   GOAL_DEFAULTS,
@@ -12,7 +12,7 @@ import {
   normalizeGoalDays,
   normalizeGoalProfit,
   type GoalLevelId,
-} from "./goal";
+} from "./goal.ts";
 import {
   DEFAULT_CHART_TYPE,
   DEFAULT_CHART_TOOL,
@@ -28,7 +28,7 @@ import {
   type ChartTool,
   type ChartType,
   type IndicatorId,
-} from "./charts";
+} from "./charts.ts";
 import {
   DEFAULT_CHART_INTERVAL,
   DEFAULT_SESSION_MINUTES,
@@ -36,8 +36,8 @@ import {
   normalizeSessionMinutes,
   sessionEndsAtFromMinutes,
   type ChartInterval,
-} from "./session";
-import type { VenueId } from "./venues/types";
+} from "./session.ts";
+import type { VenueId } from "./venues/types.ts";
 import type {
   AgentId,
   AgentState,
@@ -56,7 +56,7 @@ import type {
   TradeMode,
   TradeSignal,
   WireItem,
-} from "./types";
+} from "./types.ts";
 
 function freshAgents(): Record<AgentId, AgentState> {
   const out = {} as Record<AgentId, AgentState>;

@@ -1,17 +1,17 @@
-import { AGENT_BY_ID, AGENTS } from "./agents";
-import { emitPulse } from "./bus";
-import { uid, px } from "./format";
-import { readSignal } from "./indicators";
-import { PAIR_BY_ID } from "./kraken";
-import { fetchOhlc, fetchTickers } from "./kraken-api";
-import { getLiveVenue } from "./venues";
-import { connectTickerFeed } from "./kraken-ws";
-import { learnFromClose, pairMinConf } from "./learn";
-import { makeSimCandles, stepSim } from "./sim-feed";
-import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
-import { fetchWire } from "./wire-api";
-import { sessionEnded } from "./session";
-import { markEquity, useFloor, type FloorState } from "./store";
+import { AGENT_BY_ID, AGENTS } from "./agents.ts";
+import { emitPulse } from "./bus.ts";
+import { uid, px } from "./format.ts";
+import { readSignal } from "./indicators.ts";
+import { PAIR_BY_ID } from "./kraken.ts";
+import { fetchOhlc, fetchTickers } from "./kraken-api.ts";
+import { getLiveVenue } from "./venues/index.ts";
+import { connectTickerFeed } from "./kraken-ws.ts";
+import { learnFromClose, pairMinConf } from "./learn.ts";
+import { makeSimCandles, stepSim } from "./sim-feed.ts";
+import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
+import { fetchWire } from "./wire-api.ts";
+import { sessionEnded } from "./session.ts";
+import { markEquity, useFloor, type FloorState } from "./store.ts";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -19,7 +19,7 @@ import {
   toastOrderFill,
   toastSessionEnded,
   toastVenueBlock,
-} from "./trade-toast";
+} from "./trade-toast.ts";
 import type {
   AgentId,
   Order,
@@ -29,7 +29,7 @@ import type {
   QueueItem,
   TapeEvent,
   Ticker,
-} from "./types";
+} from "./types.ts";
 
 const STAGE_CYCLE: PipelineStage[] = [
   "brief",

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import { findPairResult, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken";
-import type { Candle, PairId, Ticker } from "./types";
+import { findPairResult, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken.ts";
+import type { Candle, PairId, Ticker } from "./types.ts";
 
 const KRAKEN = "https://api.kraken.com";
 

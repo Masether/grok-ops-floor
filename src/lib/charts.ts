@@ -1,5 +1,5 @@
-import { PAIR_BY_ID } from "./kraken";
-import type { PairId } from "./types";
+import { PAIR_BY_ID } from "./kraken.ts";
+import type { PairId } from "./types.ts";
 
 export type ChartType = "candles" | "bars" | "line";
 export type ChartTool = "crosshair" | "hline" | "trend";

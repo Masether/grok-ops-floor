@@ -2,8 +2,8 @@ import {
   cancelAllOrders,
   fetchBalance,
   placeMarketOrder,
-} from "../kraken-api";
-import type { VenueAdapter } from "./types";
+} from "../kraken-api.ts";
+import type { VenueAdapter } from "./types.ts";
 
 /** Thin wrap of existing Kraken REST server functions. Do not rewrite the API. */
 export const krakenAdapter: VenueAdapter = {
