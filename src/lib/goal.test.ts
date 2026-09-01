@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 import { LAUNCH_BOUNDS } from "./launch.mjs";
 import {
   DAY_PRESETS,
+  FEASIBILITY_LABEL,
+  GOAL_DEFAULTS,
   GOAL_PRESETS,
   asGoalLevel,
+  capitalToReach,
+  compoundDailyRate,
+  daysToReach,
   fmtGoalUsd,
   goalChipLine,
   goalProgressPct,
@@ -12,6 +17,7 @@ import {
   normalizeGoalDays,
   normalizeGoalProfit,
   planGoal,
+  reachableProfit,
   sessionMinutesForDays,
   suggestedSessionMinutes,
 } from "./goal.ts";
@@ -49,41 +55,154 @@ describe("fmtGoalUsd", () => {
   });
 });
 
+describe("compounding math", () => {
+  it("quotes the geometric daily rate, not profit / days / capital", () => {
+    // Doubling a book in 7 days is ~10.4%/day compounding, not the 14.3% that
+    // simple division reports.
+    const daily = compoundDailyRate(10_000, 10_000, 7);
+    assert.ok(Math.abs(daily - (Math.pow(2, 1 / 7) - 1)) < 1e-12);
+    assert.ok(daily < 10_000 / 7 / 10_000);
+    assert.ok(Math.abs(daily - 0.104089) < 1e-5);
+  });
+
+  it("reachableProfit, daysToReach and capitalToReach agree with each other", () => {
+    const reach = reachableProfit(10_000, 0.008, 30);
+    assert.ok(Math.abs(reach - 10_000 * (Math.pow(1.008, 30) - 1)) < 1e-9);
+    // The capital that turns that same rate and window into the same profit.
+    assert.ok(Math.abs(capitalToReach(reach, 0.008, 30) - 10_000) < 1e-6);
+    // And the window that gets a $10k book to that profit at that rate.
+    assert.equal(daysToReach(reach, 10_000, 0.008), 30);
+  });
+
+  it("returns Infinity rather than a number nobody can act on", () => {
+    assert.equal(daysToReach(10_000, 10_000, 0), Infinity);
+    assert.equal(capitalToReach(10_000, 0.01, 0), Infinity);
+    assert.equal(reachableProfit(0, 0.01, 7), 0);
+  });
+});
+
 describe("planGoal feasibility", () => {
-  it("is easy when required return per day is under ~1%", () => {
-    // $200 on $10k in 7d → 0.286%/day
+  it("grades the ask against what a level plays for, not against its loss halt", () => {
+    // $200 on $10k in 7d → ~0.28%/day. Balanced aims 0.8%, Steady only 0.4%.
     const plan = planGoal({ capital: 10_000, goalProfit: 200, days: 7 });
-    assert.ok(plan.simpleDaily < 0.01);
-    for (const level of plan.levels) {
-      assert.equal(level.feasibility, "easy");
-    }
+    const by = Object.fromEntries(plan.levels.map((l) => [l.id, l]));
+    assert.equal(by.balanced?.feasibility, "easy");
+    assert.equal(by.push?.feasibility, "easy");
+    assert.equal(by.steady?.feasibility, "stretch");
     assert.equal(plan.recommended, "balanced");
     assert.equal(plan.wild, false);
+    assert.deepEqual(plan.fixes, []);
   });
 
-  it("is stretch under ~4%/day when the halt still covers it", () => {
-    // $2,000 on $10k in 7d → 2.86%/day
-    const plan = planGoal({ capital: 10_000, goalProfit: 2_000, days: 7 });
-    assert.ok(plan.simpleDaily > 0.01 && plan.simpleDaily < 0.04);
+  it("every level carries its own daily aim and what that reaches in the window", () => {
+    const plan = planGoal({ capital: 10_000, goalProfit: 1_000, days: 30 });
     const by = Object.fromEntries(plan.levels.map((l) => [l.id, l]));
-    assert.equal(by.steady?.feasibility, "unrealistic"); // 2.86% > 2% halt
-    assert.equal(by.balanced?.feasibility, "stretch");
-    assert.equal(by.push?.feasibility, "stretch");
-    assert.equal(plan.recommended, "balanced");
+    assert.equal(by.steady?.dailyTargetPct, 0.004);
+    assert.equal(by.balanced?.dailyTargetPct, 0.008);
+    assert.equal(by.push?.dailyTargetPct, 0.015);
+    for (const level of plan.levels) {
+      assert.ok(
+        Math.abs(level.reachableProfit - 10_000 * (Math.pow(1 + level.dailyTargetPct, 30) - 1)) <
+          1e-9,
+      );
+      // A level's aim is always well under the loss halt it trades behind.
+      assert.ok(level.dailyTargetPct < level.maxDailyLossPct);
+    }
   });
 
-  it("is unrealistic above ~4%/day", () => {
+  it("is out of reach when the ask clears every level's aim", () => {
     const plan = planGoal({ capital: 10_000, goalProfit: 10_000, days: 7 });
-    assert.ok(plan.simpleDaily > 0.04);
     assert.equal(plan.wild, true);
     for (const level of plan.levels) {
       assert.equal(level.feasibility, "unrealistic");
+      assert.ok(plan.compoundDaily > level.dailyTargetPct);
+    }
+  });
+});
+
+describe("the opening book", () => {
+  it("defaults to a goal the desk can actually describe", () => {
+    // The gate used to open on $10k in 7 days: three red cards and no way out.
+    const plan = planGoal({
+      capital: GOAL_DEFAULTS.capital,
+      goalProfit: GOAL_DEFAULTS.goalProfit,
+      days: GOAL_DEFAULTS.days,
+    });
+    assert.equal(plan.wild, false);
+    assert.equal(plan.recommended, GOAL_DEFAULTS.level);
+    assert.equal(levelById(plan, plan.recommended).feasibility, "easy");
+    assert.deepEqual(plan.fixes, []);
+    assert.ok(plan.compoundDaily < 0.005);
+  });
+
+  it("reads as a sentence, not a wall of percentages", () => {
+    const plan = planGoal({ capital: 10_000, goalProfit: 10_000, days: 7 });
+    assert.equal(plan.askLine, "That is +100% on a $10k book in 7 days.");
+    assert.match(plan.needLine, /~10\.4% per day, compounding/);
+    assert.match(plan.aimLine, /^Push plays for ~1\.5% a day — about \$1k on this book in 7 days\.$/);
+    assert.match(plan.recommendNote, /Steady is the least-bad book to run/);
+  });
+
+  it("labels feasibility in plain words", () => {
+    assert.equal(FEASIBILITY_LABEL.easy, "In reach");
+    assert.equal(FEASIBILITY_LABEL.stretch, "Stretch");
+    assert.equal(FEASIBILITY_LABEL.unrealistic, "Out of reach");
+  });
+});
+
+describe("fixes for an out-of-reach ask", () => {
+  it("offers more days, more capital, or a smaller goal — measured off the hungriest book", () => {
+    const plan = planGoal({ capital: 10_000, goalProfit: 10_000, days: 7 });
+    assert.deepEqual(
+      plan.fixes.map((f) => f.id),
+      ["days", "capital", "goal"],
+    );
+    const by = Object.fromEntries(plan.fixes.map((f) => [f.id, f]));
+    // Push aims 1.5%/day, so ~47 days — not the 174 that Steady's 0.4% implies.
+    assert.equal(by.days?.days, 47);
+    assert.ok(by.capital!.capital! > 10_000);
+    assert.ok(by.goal!.goalProfit! < 10_000);
+    for (const fix of plan.fixes) {
+      assert.match(fix.label, /\S/);
+      assert.match(fix.detail, /\S/);
+    }
+  });
+
+  it("every fix it offers actually lands a reachable plan", () => {
+    for (const [goalProfit, days, capital] of [
+      [10_000, 7, 10_000],
+      [2_000, 7, 10_000],
+      [5_000, 14, 10_000],
+    ] as const) {
+      const plan = planGoal({ capital, goalProfit, days });
+      assert.equal(plan.wild, true);
+      assert.ok(plan.fixes.length > 0);
+      for (const fix of plan.fixes) {
+        const next = planGoal({
+          capital: fix.capital ?? capital,
+          goalProfit: fix.goalProfit ?? goalProfit,
+          days: fix.days ?? days,
+        });
+        assert.equal(next.wild, false, `${fix.id} fix on ${goalProfit}/${days}d/${capital}`);
+        assert.deepEqual(next.fixes, []);
+      }
+    }
+  });
+
+  it("drops a suggestion it cannot express instead of printing a dead number", () => {
+    // $10k on a $1k book in 7 days needs ~40.9%/day; a day count inside the
+    // 365-day bound still exists, but the capital ask must stay in bounds too.
+    const plan = planGoal({ capital: 1_000, goalProfit: 10_000, days: 7 });
+    for (const fix of plan.fixes) {
+      if (fix.days !== undefined) assert.ok(fix.days <= 365);
+      if (fix.capital !== undefined) assert.ok(fix.capital <= 10_000_000);
+      if (fix.goalProfit !== undefined) assert.ok(fix.goalProfit >= 1);
     }
   });
 });
 
 describe("planGoal 10k/7d/10k-capital", () => {
-  it("computes ~14.3%/day, tickets, and recommends Steady because it is impossible", () => {
+  it("keeps ticket sizing, and recommends Steady because nothing here reaches it", () => {
     const plan = planGoal({ capital: 10_000, goalProfit: 10_000, days: 7 });
     assert.equal(plan.capital, 10_000);
     assert.equal(plan.goalProfit, 10_000);
@@ -92,7 +211,7 @@ describe("planGoal 10k/7d/10k-capital", () => {
     assert.ok(Math.abs(plan.simpleDaily - 10_000 / 7 / 10_000) < 1e-12);
     assert.ok(Math.abs(plan.requiredDailyPct - (100 / 7)) < 1e-9);
     assert.equal(plan.recommended, "steady");
-    assert.match(plan.recommendNote, /add capital or add days/i);
+    assert.match(plan.recommendNote, /least-bad book to run/i);
     assert.match(plan.needLine, /not a promise/i);
     assert.equal(plan.suggestedSessionMinutes, 7 * 8 * 60);
 
@@ -161,6 +280,9 @@ describe("ticketUsd and launch bounds", () => {
     for (const level of plan.levels) {
       assert.ok(level.maxDailyLossPct <= LAUNCH_BOUNDS.maxDailyLossPct.max);
       assert.ok(level.maxDailyLossPct < plan.simpleDaily);
+      // The halt is a stop, never the thing the level says it is playing for.
+      assert.notEqual(level.dailyTargetPct, level.maxDailyLossPct);
+      assert.doesNotMatch(level.note, /halt/i);
     }
   });
 });

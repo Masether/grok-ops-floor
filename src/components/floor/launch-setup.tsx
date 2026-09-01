@@ -4,6 +4,8 @@ import { Input, Label } from "@/components/ui/field";
 import { launchPreviewLine } from "@/lib/launch.mjs";
 import {
   DAY_PRESETS,
+  FEASIBILITY_LABEL,
+  GOAL_DEFAULTS,
   GOAL_PRESETS,
   fmtGoalUsd,
   isDayPreset,
@@ -13,6 +15,7 @@ import {
   normalizeGoalProfit,
   planGoal,
   sessionMinutesForDays,
+  type GoalFix,
   type GoalLevel,
   type GoalLevelId,
 } from "@/lib/goal";
@@ -27,23 +30,21 @@ export function LaunchSetup() {
   const storedGoal = useFloor((s) => s.goalProfit);
   const storedDays = useFloor((s) => s.goalDays);
 
-  const [goalProfit, setGoalProfit] = useState(() =>
-    normalizeGoalProfit(storedGoal || 10_000),
-  );
-  const [days, setDays] = useState(() => normalizeGoalDays(storedDays || 7));
-  const [cash, setCash] = useState(storedCash || 10_000);
-  const [levelId, setLevelId] = useState<GoalLevelId>(() =>
-    planGoal({
-      capital: storedCash || 10_000,
-      goalProfit: storedGoal || 10_000,
-      days: storedDays || 7,
-    }).recommended,
+  const initialGoal = storedGoal || GOAL_DEFAULTS.goalProfit;
+  const initialDays = storedDays || GOAL_DEFAULTS.days;
+  const initialCash = storedCash || GOAL_DEFAULTS.capital;
+
+  const [goalProfit, setGoalProfit] = useState(() => normalizeGoalProfit(initialGoal));
+  const [days, setDays] = useState(() => normalizeGoalDays(initialDays));
+  const [cash, setCash] = useState(initialCash);
+  const [levelId, setLevelId] = useState<GoalLevelId>(
+    () => planGoal({ capital: initialCash, goalProfit: initialGoal, days: initialDays }).recommended,
   );
   const [levelTouched, setLevelTouched] = useState(false);
   const [sessionMinutes, setSessionMinutes] = useState(DEFAULT_SESSION_MINUTES);
   const [sessionTouched, setSessionTouched] = useState(false);
-  const [goalCustom, setGoalCustom] = useState(() => !isGoalPreset(storedGoal || 10_000));
-  const [daysCustom, setDaysCustom] = useState(() => !isDayPreset(storedDays || 7));
+  const [goalCustom, setGoalCustom] = useState(() => !isGoalPreset(initialGoal));
+  const [daysCustom, setDaysCustom] = useState(() => !isDayPreset(initialDays));
 
   const goalInputRef = useRef<HTMLInputElement>(null);
   const daysInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +83,22 @@ export function LaunchSetup() {
   const pickDays = (n: number) => {
     setDays(normalizeGoalDays(n));
     setDaysCustom(false);
+  };
+
+  /** One tap turns an out-of-reach ask into a book the desk can describe. */
+  const applyFix = (fix: GoalFix) => {
+    if (fix.days !== undefined) {
+      const next = normalizeGoalDays(fix.days);
+      setDays(next);
+      setDaysCustom(!isDayPreset(next));
+    }
+    if (fix.capital !== undefined) setCash(fix.capital);
+    if (fix.goalProfit !== undefined) {
+      const next = normalizeGoalProfit(fix.goalProfit);
+      setGoalProfit(next);
+      setGoalCustom(!isGoalPreset(next));
+    }
+    setLevelTouched(false);
   };
 
   return (
@@ -223,6 +240,37 @@ export function LaunchSetup() {
             </p>
           </div>
 
+          <section
+            className={cn(
+              "space-y-2 rounded-sm px-3 py-2.5",
+              plan.wild
+                ? "bg-danger/8 shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-danger)_35%,transparent)]"
+                : "bg-surface-2 shadow-[0_0_0_1px_var(--color-border)]",
+            )}
+            aria-live="polite"
+          >
+            <p className="font-display text-micro tracking-[0.12em] text-subtle uppercase">
+              What you are asking for
+            </p>
+            <p className={cn("text-xs", plan.wild ? "font-semibold text-danger" : "text-fg")}>
+              {plan.askLine}
+            </p>
+            <p className="text-2xs text-muted">{plan.needLine}</p>
+            <p className="text-2xs text-muted">{plan.aimLine}</p>
+            {plan.fixes.length > 0 ? (
+              <div className="space-y-1.5 pt-0.5">
+                <p className="font-display text-micro tracking-[0.12em] text-subtle uppercase">
+                  Bring it in reach
+                </p>
+                <div className="grid gap-1.5 sm:grid-cols-3">
+                  {plan.fixes.map((fix) => (
+                    <FixCard key={fix.id} fix={fix} onApply={() => applyFix(fix)} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
           <fieldset className="space-y-2">
             <Label>Invest level</Label>
             <p
@@ -248,14 +296,6 @@ export function LaunchSetup() {
             </div>
           </fieldset>
 
-          <p
-            className={cn(
-              "text-2xs",
-              plan.wild ? "font-semibold text-danger" : "text-muted",
-            )}
-          >
-            {plan.needLine}
-          </p>
           <p className="text-2xs text-muted">{preview}</p>
 
           <div className="space-y-1.5">
@@ -308,6 +348,21 @@ function Chip({
   );
 }
 
+function FixCard({ fix, onApply }: { fix: GoalFix; onApply: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onApply}
+      className="rounded-xs bg-surface-2 px-2 py-1.5 text-left shadow-[0_0_0_1px_var(--color-border)] transition-[box-shadow,background-color] duration-150 hover:bg-surface-3 hover:shadow-[0_0_0_1px_var(--color-border-strong)]"
+    >
+      <span className="font-display block text-2xs font-semibold tracking-[0.08em] text-fg uppercase">
+        {fix.label}
+      </span>
+      <span className="mt-0.5 block text-micro leading-snug text-subtle">{fix.detail}</span>
+    </button>
+  );
+}
+
 function LevelCard({
   level,
   selected,
@@ -320,10 +375,12 @@ function LevelCard({
   onSelect: () => void;
 }) {
   const red = level.feasibility === "unrealistic";
+  const amber = level.feasibility === "stretch";
   const sizePct = (level.sizePct * 100).toFixed(1).replace(/\.0$/, "");
   const stopPct = (level.stopPct * 100).toFixed(1).replace(/\.0$/, "");
   const takePct = (level.takePct * 100).toFixed(1).replace(/\.0$/, "");
   const haltPct = (level.maxDailyLossPct * 100).toFixed(0);
+  const aimPct = (level.dailyTargetPct * 100).toFixed(1).replace(/\.0$/, "");
 
   return (
     <button
@@ -351,10 +408,14 @@ function LevelCard({
         <span
           className={cn(
             "font-display ml-auto rounded-xs px-1.5 py-0.5 text-micro tracking-[0.12em] uppercase",
-            red ? "bg-danger/20 text-danger" : "bg-good/15 text-good",
+            red
+              ? "bg-danger/20 text-danger"
+              : amber
+                ? "bg-warn/15 text-warn"
+                : "bg-good/15 text-good",
           )}
         >
-          {level.feasibility}
+          {FEASIBILITY_LABEL[level.feasibility]}
         </span>
       </div>
       <p className="stat-num mt-1 text-sm">
@@ -362,7 +423,7 @@ function LevelCard({
         <span className="text-2xs text-muted">{sizePct}% of capital</span>
       </p>
       <p className="mt-0.5 text-2xs text-muted">
-        stop {stopPct}% · take {takePct}% · daily halt {haltPct}%
+        aims ~{aimPct}%/day · stop {stopPct}% · take {takePct}% · daily halt {haltPct}%
       </p>
       <p className={cn("mt-1 text-2xs", red ? "text-danger" : "text-subtle")}>{level.note}</p>
     </button>

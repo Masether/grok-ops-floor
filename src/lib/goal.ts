@@ -3,11 +3,20 @@
  * Pure helper. Never promises the goal will be hit. Does not arm live.
  */
 
-import { clampLaunch, ticketNotional } from "./launch.mjs";
-import { DEFAULT_SESSION_MINUTES } from "./session";
+import { LAUNCH_BOUNDS, clampLaunch, ticketNotional } from "./launch.mjs";
+// Extension-explicit so `node --experimental-strip-types --test` can resolve it;
+// `allowImportingTsExtensions` + bundler resolution keep tsc and Vite happy.
+import { DEFAULT_SESSION_MINUTES } from "./session.ts";
 
 export type Feasibility = "easy" | "stretch" | "unrealistic";
 export type GoalLevelId = "steady" | "balanced" | "push";
+
+/** Badge copy. "Unrealistic" three times in a column reads as a wall, not an answer. */
+export const FEASIBILITY_LABEL: Record<Feasibility, string> = {
+  easy: "In reach",
+  stretch: "Stretch",
+  unrealistic: "Out of reach",
+};
 
 export type GoalLevel = {
   id: GoalLevelId;
@@ -21,6 +30,24 @@ export type GoalLevel = {
   note: string;
   feasibility: Feasibility;
   requiredDailyPct: number;
+  /** What this book aims to compound per day on paper. Not the loss halt. */
+  dailyTargetPct: number;
+  /** Profit this level targets over the window at its own daily aim. */
+  reachableProfit: number;
+  /** Days this level would need for the goal. `Infinity` when it never gets there. */
+  daysToGoal: number;
+  /** Capital this level would need to hit the goal inside the window. */
+  capitalForGoal: number;
+};
+
+/** A one-tap nudge that turns an out-of-reach ask into a reachable one. */
+export type GoalFix = {
+  id: "days" | "capital" | "goal";
+  label: string;
+  detail: string;
+  days?: number;
+  capital?: number;
+  goalProfit?: number;
 };
 
 export type GoalPlan = {
@@ -30,17 +57,30 @@ export type GoalPlan = {
   requiredReturn: number;
   simpleDaily: number;
   requiredDailyPct: number;
+  /** Honest per-day rate: equity compounds, so simple division overstates nothing but flatters the ask. */
+  compoundDaily: number;
   suggestedSessionMinutes: number;
   recommended: GoalLevelId;
   recommendNote: string;
   wild: boolean;
   levels: GoalLevel[];
   needLine: string;
+  /** Plain-language restatement of the ask: "+100% on a $10k book in 7 days." */
+  askLine: string;
+  /** What the recommended book actually aims for over the same window. */
+  aimLine: string;
+  /** Empty unless the recommended level cannot get there. */
+  fixes: GoalFix[];
 };
 
+/**
+ * Opening state of the gate. A $1k goal on a $10k book in 30 days is ~0.32% a
+ * day — a book the desk can actually describe. The old default asked for +100%
+ * in a week and opened on three red cards with no way forward.
+ */
 export const GOAL_DEFAULTS = {
-  goalProfit: 10_000,
-  days: 7,
+  goalProfit: 1_000,
+  days: 30,
   capital: 10_000,
   level: "balanced" as GoalLevelId,
 };
@@ -61,6 +101,15 @@ export const EASY_DAILY = 0.01;
 /** requiredReturn / day under this → stretch; at or above → unrealistic */
 export const STRETCH_DAILY = 0.04;
 
+/**
+ * Feasibility is the ask measured against what a level *aims to win*, not
+ * against its daily loss halt. Comparing a target return to a stop-loss cap is
+ * how every level ended up red on the default book while the copy still called
+ * one of them "recommended".
+ */
+export const EASY_RATIO = 0.6;
+export const STRETCH_RATIO = 1;
+
 const TRADING_DAY_MINUTES = 8 * 60;
 const CALENDAR_DAY_MINUTES = 24 * 60;
 
@@ -73,6 +122,8 @@ type LevelTemplate = {
   takePct: number;
   maxDailyLossPct: number;
   maxPositions: number;
+  /** Daily compounding rate this book plays for on paper. */
+  dailyTargetPct: number;
 };
 
 const LEVEL_TEMPLATES: LevelTemplate[] = [
@@ -85,6 +136,7 @@ const LEVEL_TEMPLATES: LevelTemplate[] = [
     takePct: 0.012,
     maxDailyLossPct: 0.02,
     maxPositions: 3,
+    dailyTargetPct: 0.004,
   },
   {
     id: "balanced",
@@ -95,6 +147,7 @@ const LEVEL_TEMPLATES: LevelTemplate[] = [
     takePct: 0.025,
     maxDailyLossPct: 0.04,
     maxPositions: 5,
+    dailyTargetPct: 0.008,
   },
   {
     id: "push",
@@ -105,6 +158,7 @@ const LEVEL_TEMPLATES: LevelTemplate[] = [
     takePct: 0.06,
     maxDailyLossPct: 0.08,
     maxPositions: 6,
+    dailyTargetPct: 0.015,
   },
 ];
 
@@ -166,30 +220,98 @@ function lerpSize(simpleDaily: number, min: number, max: number): number {
   return min + t * (max - min);
 }
 
-function feasibilityFor(simpleDaily: number, maxDailyLossPct: number): Feasibility {
-  if (simpleDaily > maxDailyLossPct) return "unrealistic";
-  if (simpleDaily < EASY_DAILY) return "easy";
-  if (simpleDaily < STRETCH_DAILY) return "stretch";
+/**
+ * The honest per-day rate: a book that makes X% a day compounds, so the ask is
+ * a geometric rate, not `profit / days / capital`. On $10k → $10k in 7 days
+ * that is ~10.4% a day, not the ~14.3% simple division reports.
+ */
+export function compoundDailyRate(goalProfit: number, capital: number, days: number): number {
+  const g = Number(goalProfit);
+  const c = Number(capital);
+  const d = Number(days);
+  if (!Number.isFinite(g) || !Number.isFinite(c) || !Number.isFinite(d)) return Infinity;
+  if (c <= 0 || d <= 0 || g <= 0) return 0;
+  return Math.pow(1 + g / c, 1 / d) - 1;
+}
+
+/** Profit a book compounding `daily` reaches over `days`. */
+export function reachableProfit(capital: number, daily: number, days: number): number {
+  const c = Number(capital);
+  if (!Number.isFinite(c) || c <= 0 || daily <= 0 || days <= 0) return 0;
+  return c * (Math.pow(1 + daily, days) - 1);
+}
+
+/** Days a book compounding `daily` needs for `goalProfit`. `Infinity` if never. */
+export function daysToReach(goalProfit: number, capital: number, daily: number): number {
+  const g = Number(goalProfit);
+  const c = Number(capital);
+  if (!Number.isFinite(g) || !Number.isFinite(c) || c <= 0 || g <= 0 || daily <= 0) {
+    return Infinity;
+  }
+  return Math.ceil(Math.log(1 + g / c) / Math.log(1 + daily));
+}
+
+/** Capital a book compounding `daily` needs to clear `goalProfit` inside `days`. */
+export function capitalToReach(goalProfit: number, daily: number, days: number): number {
+  const g = Number(goalProfit);
+  if (!Number.isFinite(g) || g <= 0 || daily <= 0 || days <= 0) return Infinity;
+  const growth = Math.pow(1 + daily, days) - 1;
+  if (growth <= 0) return Infinity;
+  return g / growth;
+}
+
+/** Two significant figures, so a suggested number reads as a suggestion. */
+function niceStep(n: number): number {
+  const abs = Math.abs(n);
+  if (!Number.isFinite(abs) || abs < 10) return 1;
+  return Math.max(10, Math.pow(10, Math.floor(Math.log10(abs)) - 1));
+}
+
+function roundUpNice(n: number): number {
+  if (!Number.isFinite(n)) return n;
+  const step = niceStep(n);
+  return Math.ceil(n / step) * step;
+}
+
+function roundDownNice(n: number): number {
+  if (!Number.isFinite(n)) return n;
+  const step = niceStep(n);
+  return Math.max(0, Math.floor(n / step) * step);
+}
+
+function feasibilityFor(requiredDaily: number, dailyTargetPct: number): Feasibility {
+  if (!Number.isFinite(requiredDaily) || dailyTargetPct <= 0) return "unrealistic";
+  if (requiredDaily <= 0) return "easy";
+  const ratio = requiredDaily / dailyTargetPct;
+  if (ratio <= EASY_RATIO) return "easy";
+  if (ratio <= STRETCH_RATIO) return "stretch";
   return "unrealistic";
 }
 
-function noteFor(level: LevelTemplate, feasibility: Feasibility, days: number): string {
+function noteFor(
+  level: LevelTemplate,
+  feasibility: Feasibility,
+  days: number,
+  reach: number,
+): string {
+  const aim = fmtDailyPct(level.dailyTargetPct);
+  const window = `~${aim}% a day → about ${fmtGoalUsd(reach)} in ${days}d`;
   if (level.id === "steady") {
     if (feasibility === "unrealistic") {
-      return `Cannot reach this in ${days}d without hitting the daily halt. Need more capital or more days.`;
+      return `Aims ${window} — short of this goal. Smaller tickets, tighter stops.`;
     }
-    return "Smaller tickets, tighter stops. Slow path. Not a promise.";
+    return `Aims ${window}. Smaller tickets, tighter stops. Not a promise.`;
   }
   if (level.id === "balanced") {
     if (feasibility === "unrealistic") {
-      return "Default book, but the implied daily % is over the halt. Not a plan to win.";
+      return `Aims ${window} — short of this goal. The default book, not a bigger one.`;
     }
-    return "Default-ish book. Recommended unless the math is extreme. Not a promise.";
+    return `Aims ${window}. The default book. Not a promise.`;
   }
   if (feasibility === "unrealistic") {
-    return "Implied daily % is over this halt. Larger tickets are not a plan to win. Not a promise.";
+    return `Aims ${window} — still short. Bigger tickets lose faster, they do not win sooner.`;
   }
-  return "Larger tickets, wider take. Still can lose. Not a promise.";
+  return `Aims ${window}. Bigger tickets, wider take. Can still lose.`;
 }
 
 function pickRecommended(levels: GoalLevel[]): GoalLevelId {
@@ -217,11 +339,20 @@ export function sessionMinutesForDays(days: number): number {
   return DEFAULT_SESSION_MINUTES;
 }
 
-export function goalNeedLine(goalProfit: number, capital: number, days: number, simpleDaily: number): string {
+export function goalNeedLine(goalProfit: number, capital: number, days: number, dailyRate: number): string {
   const g = fmtGoalUsd(goalProfit);
   const c = fmtGoalUsd(capital);
-  const pct = fmtDailyPct(simpleDaily);
-  return `To make ${g} on a ${c} book in ${days} days you need ~${pct}% per day. This is not a promise.`;
+  const pct = fmtDailyPct(dailyRate);
+  return `To make ${g} on a ${c} book in ${days} days you need ~${pct}% per day, compounding. This is not a promise.`;
+}
+
+/** Restates the ask as a percentage of the book, which is what makes it land. */
+export function goalAskLine(goalProfit: number, capital: number, days: number): string {
+  const c = fmtGoalUsd(capital);
+  const ratio = capital > 0 ? goalProfit / capital : 0;
+  const pct = ratio >= 1 ? Math.round(ratio * 100).toLocaleString("en-US") : (ratio * 100).toFixed(ratio < 0.1 ? 1 : 0).replace(/\.0$/, "");
+  const dayWord = days === 1 ? "day" : "days";
+  return `That is +${pct}% on a ${c} book in ${days} ${dayWord}.`;
 }
 
 /** Header / desk chip: "goal $10k · 7d · 12% there". dayPnl vs G, not a forecast. */
@@ -257,8 +388,8 @@ export function planGoal(input?: {
 
   const requiredReturn = goalProfit / capital;
   const simpleDaily = goalProfit / days / capital;
+  const compoundDaily = compoundDailyRate(goalProfit, capital, days);
   const requiredDailyPct = simpleDaily * 100;
-  const wild = simpleDaily >= STRETCH_DAILY;
 
   const levels: GoalLevel[] = LEVEL_TEMPLATES.map((tpl) => {
     const sizePctRaw = lerpSize(simpleDaily, tpl.sizeMin, tpl.sizeMax);
@@ -270,7 +401,8 @@ export function planGoal(input?: {
       maxDailyLossPct: tpl.maxDailyLossPct,
       maxPositions: tpl.maxPositions,
     });
-    const feasibility = feasibilityFor(simpleDaily, clamped.maxDailyLossPct);
+    const feasibility = feasibilityFor(compoundDaily, tpl.dailyTargetPct);
+    const reach = reachableProfit(capital, tpl.dailyTargetPct, days);
     return {
       id: tpl.id,
       label: tpl.label,
@@ -280,21 +412,42 @@ export function planGoal(input?: {
       maxDailyLossPct: clamped.maxDailyLossPct,
       maxPositions: clamped.maxPositions,
       ticketUsd: ticketNotional(capital, clamped.sizePct),
-      note: noteFor(tpl, feasibility, days),
+      note: noteFor(tpl, feasibility, days, reach),
       feasibility,
       requiredDailyPct,
+      dailyTargetPct: tpl.dailyTargetPct,
+      reachableProfit: reach,
+      daysToGoal: daysToReach(goalProfit, capital, tpl.dailyTargetPct),
+      capitalForGoal: capitalToReach(goalProfit, tpl.dailyTargetPct, days),
     };
   });
 
   const recommended = pickRecommended(levels);
+  const best = levels.find((l) => l.id === recommended) ?? levels[0]!;
+  const wild = best.feasibility === "unrealistic";
   const allUnreal = levels.every((l) => l.feasibility === "unrealistic");
+
+  /**
+   * Two different questions. "Which book should I run?" stays conservative and
+   * answers Steady when nothing works. "What is possible here at all?" has to
+   * be answered by the hungriest book on the floor — quoting Steady's 0.4% a
+   * day turns a 47-day fix into a 174-day one and reads as a brush-off.
+   */
+  const ceiling = levels.reduce((a, b) => (b.dailyTargetPct > a.dailyTargetPct ? b : a), levels[0]!);
+  const reference = allUnreal ? ceiling : best;
+  const refAim = fmtDailyPct(reference.dailyTargetPct);
+
   const recommendNote = allUnreal
-    ? "None of these levels can reach this goal without blowing the daily halt. Steady is the least-bad book — add capital or add days. Not a promise."
+    ? `Even ${ceiling.label}, the hungriest book here, plays for ~${refAim}% a day — nothing on this floor reaches ${fmtGoalUsd(goalProfit)} in ${days} days. ${best.label} is the least-bad book to run. Not a promise.`
     : recommended === "balanced"
       ? "Balanced is the default book for this goal. Not a promise."
       : recommended === "steady"
-        ? "Steady is the only level that does not blow the halt on paper. Not a promise."
-        : "Push is the only level whose halt still covers the implied daily %. Still not a promise.";
+        ? "Steady already covers this goal, so the desk keeps tickets small. Not a promise."
+        : "Only Push aims high enough for this window. Still not a promise.";
+
+  const aimLine = `${reference.label} plays for ~${refAim}% a day — about ${fmtGoalUsd(
+    roundDownNice(reference.reachableProfit),
+  )} on this book in ${days} ${days === 1 ? "day" : "days"}.`;
 
   return {
     capital,
@@ -303,13 +456,64 @@ export function planGoal(input?: {
     requiredReturn,
     simpleDaily,
     requiredDailyPct,
+    compoundDaily,
     suggestedSessionMinutes: suggestedSessionMinutes(days),
     recommended,
     recommendNote,
     wild,
     levels,
-    needLine: goalNeedLine(goalProfit, capital, days, simpleDaily),
+    needLine: goalNeedLine(goalProfit, capital, days, compoundDaily),
+    askLine: goalAskLine(goalProfit, capital, days),
+    aimLine,
+    fixes: wild ? buildFixes(reference, goalProfit, capital, days) : [],
   };
+}
+
+/**
+ * Three concrete ways out of an out-of-reach ask, each a real number the gate
+ * can apply on tap: more days, more capital, or a smaller goal. A level that
+ * cannot get there inside the platform's bounds simply drops its suggestion
+ * rather than printing a number nobody can enter.
+ */
+function buildFixes(ref: GoalLevel, goalProfit: number, capital: number, days: number): GoalFix[] {
+  const fixes: GoalFix[] = [];
+  const aim = fmtDailyPct(ref.dailyTargetPct);
+
+  const needDays = ref.daysToGoal;
+  if (Number.isFinite(needDays) && needDays > days && needDays <= GOAL_BOUNDS.days.max) {
+    fixes.push({
+      id: "days",
+      label: `Give it ${needDays} days`,
+      detail: `Same ${fmtGoalUsd(goalProfit)} on the same book at ~${aim}% a day.`,
+      days: needDays,
+    });
+  }
+
+  const needCapital = roundUpNice(ref.capitalForGoal);
+  if (
+    Number.isFinite(needCapital) &&
+    needCapital > capital &&
+    needCapital <= LAUNCH_BOUNDS.startingCash.max
+  ) {
+    fixes.push({
+      id: "capital",
+      label: `Start with ${fmtGoalUsd(needCapital)}`,
+      detail: `Same ${fmtGoalUsd(goalProfit)} inside ${days} days at ~${aim}% a day.`,
+      capital: needCapital,
+    });
+  }
+
+  const smallerGoal = roundDownNice(ref.reachableProfit);
+  if (smallerGoal >= GOAL_BOUNDS.goalProfit.min && smallerGoal < goalProfit) {
+    fixes.push({
+      id: "goal",
+      label: `Aim for ${fmtGoalUsd(smallerGoal)}`,
+      detail: `What ${ref.label} plays for on ${fmtGoalUsd(capital)} in ${days} days.`,
+      goalProfit: smallerGoal,
+    });
+  }
+
+  return fixes;
 }
 
 export function levelById(plan: GoalPlan, id: unknown): GoalLevel {
