@@ -140,6 +140,16 @@ export function TokenFlow() {
                   fontSize: 11,
                 }}
                 labelFormatter={() => "heat"}
+                /*
+                 * Heat is a 0..1 intensity, so without a formatter recharts
+                 * printed the raw float (0.43749999999999994). Show it as a
+                 * whole percent. Not `pct()` from lib/format — that prefixes a
+                 * "+" and expects an already-scaled number, both wrong here.
+                 */
+                formatter={(value, name) => [
+                  `${Math.round(Number(value) * 100)}%`,
+                  String(name).toUpperCase(),
+                ]}
               />
               <Area
                 type="monotone"
