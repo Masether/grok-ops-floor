@@ -40,20 +40,41 @@ export function OpsShell() {
     <TooltipProvider>
       <div className="flex min-h-dvh flex-col bg-bg text-fg lg:h-dvh lg:overflow-hidden">
         <HeaderBar />
+        {/*
+         * The floor wants to be one fixed, non-scrolling screen, but the panels
+         * below add up to ~1200px of intrinsic minimum height. On anything
+         * shorter (a 900px-tall laptop) `overflow-hidden` here did not shrink
+         * them — it just let them collide, and the orbit panel drew straight
+         * over the tape. Scroll instead of overlap; on a tall display
+         * everything still fits and no scrollbar appears.
+         */}
         <main
-          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:overflow-hidden lg:p-3"
+          className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3"
           aria-hidden={boot && !launched}
         >
           <FundingRail />
-          <div className="min-h-[260px] lg:min-h-0 lg:flex-1">
+          {/*
+           * This wrapper must carry the same floor as the panel it holds.
+           * With only `lg:min-h-0` it collapsed to ~39px while OrbitStage kept
+           * its own `lg:min-h-[340px]`, so the panel overflowed its parent and
+           * the following rows were laid out underneath it.
+           */}
+          <div className="min-h-[260px] lg:min-h-[340px] lg:flex-1">
             <OrbitStage />
           </div>
           <PairStrip />
-          <div className="grid min-h-[200px] gap-2 lg:grid-cols-3 lg:overflow-hidden">
+          {/*
+           * An explicit `min-h` replaces a flex item's automatic min-content
+           * floor, so a row that claims less than the panels inside it gets
+           * shrunk under them and the next row is drawn into it. Keep this at
+           * the tallest panel in the row — TheTape, at 320px.
+           */}
+          <div className="grid min-h-[320px] gap-2 lg:grid-cols-3 lg:overflow-hidden">
             <TheTape />
             <TheWire />
             <ReworkQueue />
           </div>
+          {/* Tallest panel in this row is 160px, so 180px has room to spare. */}
           <div className="grid min-h-[180px] gap-2 lg:grid-cols-3 lg:overflow-hidden">
             <RunnerDeck />
             <TokenFlow />

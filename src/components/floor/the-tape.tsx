@@ -22,7 +22,13 @@ export function TheTape() {
   }, [recent, t0]);
 
   return (
-    <section className="panel min-h-[220px]">
+    /*
+     * 320px is the smallest height this panel can honestly draw itself in:
+     * 48px head + 12 lanes at 15px + 12px padding + the 64px footer list.
+     * At 220px the label column overflowed its 108px slot and ran 84px down
+     * into the footer. Adding an agent means adding 15px here.
+     */
+    <section className="panel min-h-[320px]">
       <div className="panel-head">
         <div>
           <h2 className="panel-kicker">The tape</h2>
