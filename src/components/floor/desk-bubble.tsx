@@ -1,29 +1,30 @@
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/field";
 import {
   dayLossAlert,
-  equityMultiple,
+  fillLeg,
+  fillWhy,
   fillWinRatePct,
   lotMetrics,
-  pctOfCapital,
 } from "@/lib/desk-pnl";
-import { money, moneyFull, pct, px, qty } from "@/lib/format";
+import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
+import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine";
 import { PAIR_BY_ID } from "@/lib/kraken";
-import { useDesk, useFloor } from "@/lib/store";
+import { useDesk, useFloor, type DeskTab } from "@/lib/store";
+import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { WalletTab } from "./wallet-tab";
+
+type Tab = DeskTab;
 
 export function DeskBubble() {
   const open = useFloor((s) => s.deskOpen);
   const setOpen = useFloor((s) => s.setDeskOpen);
-  const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
-  const desk = useDesk();
-  const startingCash = useFloor((s) => s.startingCash);
-  const dayStartEquity = useFloor((s) => s.dayStartEquity);
-  const risk = useFloor((s) => s.risk);
-  const positions = useFloor((s) => s.positions);
-  const tickers = useFloor((s) => s.tickers);
-  const cash = useFloor((s) => s.cash);
+  const tab = useFloor((s) => s.deskTab);
+  const setTab = useFloor((s) => s.setDeskTab);
 
   useEffect(() => {
     if (!open) return;
@@ -35,25 +36,6 @@ export function DeskBubble() {
   }, [open, setOpen]);
 
   if (!open) return null;
-
-  const capital = startingCash > 0 ? startingCash : desk.equity;
-  const haltBase = dayStartEquity > 0 ? dayStartEquity : capital;
-  const alert = dayLossAlert({
-    dayPnl: desk.dayPnl,
-    haltBase,
-    maxDailyLossPct: risk.maxDailyLossPct,
-  });
-  const unrlPct = pctOfCapital(desk.unrealized, capital);
-  const realPct = pctOfCapital(desk.realized, capital);
-  const dayPct = pctOfCapital(desk.dayPnl, capital);
-  const eqPct = pctOfCapital(desk.equity - capital, capital);
-  const multiple = equityMultiple(desk.equity, capital);
-  const wr = fillWinRatePct(desk.wins, desk.losses);
-
-  const openSettings = () => {
-    setOpen(false);
-    setSettingsOpen(true);
-  };
 
   return (
     <div
@@ -71,9 +53,13 @@ export function DeskBubble() {
         <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-3 py-2">
           <div className="min-w-0">
             <p className="panel-kicker" id="desk-title">
-              Desk
+              The desk
             </p>
-            <p className="panel-sub">book, lots, and the halt cap — same numbers as the floor</p>
+            <p className="panel-sub">
+              {tab === "money"
+                ? "Bot wallet — profits auto-land here. Convert, then send to Kraken or Coinbase."
+                : "The trading book — same money the floor is showing. Open lots, then every in and out."}
+            </p>
           </div>
           <Button
             size="icon"
@@ -85,161 +71,371 @@ export function DeskBubble() {
           </Button>
         </div>
 
-        <DayBanner
-          level={alert.level}
-          dayPnlPct={alert.dayPnlPct}
-          usedOfHaltPct={alert.usedOfHaltPct}
-        />
+        <div className="flex gap-1 border-b border-border px-3 py-2">
+          {(
+            [
+              ["blotter", "Blotter"],
+              ["money", "Move money"],
+              ["ticket", "Manual ticket"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              type="button"
+              size="sm"
+              className="min-h-11"
+              variant={tab === id ? "default" : "outline"}
+              aria-pressed={tab === id}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-3 py-2.5 sm:grid-cols-3">
-            <Stat
-              label="Equity"
-              value={moneyFull(desk.equity)}
-              extra={pct(eqPct, 2)}
-              tone={signedTone(eqPct)}
-            />
-            <Stat
-              label="Mult"
-              value={`${multiple.toFixed(2)}x`}
-              tone={multiple > 1 ? "good" : multiple < 1 ? "bad" : "flat"}
-            />
-            <Stat label="Cash" value={money(cash)} />
-            <Stat
-              label="Unrealized"
-              value={money(desk.unrealized)}
-              extra={pct(unrlPct, 2)}
-              tone={signedTone(desk.unrealized)}
-            />
-            <Stat
-              label="Realized"
-              value={money(desk.realized)}
-              extra={pct(realPct, 2)}
-              tone={signedTone(desk.realized)}
-            />
-            <Stat
-              label="Day PnL"
-              value={money(desk.dayPnl)}
-              extra={`${pct(dayPct, 2)} · ${alert.usedOfHaltPct.toFixed(0)}% of halt`}
-              tone={signedTone(desk.dayPnl)}
-            />
-          </div>
-
-          <div className="border-b border-border px-3 py-2.5">
-            <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
-              Fills today
-            </p>
-            <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-              <span className="stat-num text-sm text-good">{desk.wins} TP</span>
-              <span className="stat-num text-sm text-danger">{desk.losses} SL</span>
-              <span className="stat-num text-2xs text-muted">{desk.fills} fills</span>
-              <span
-                className={cn(
-                  "stat-num ml-auto text-sm",
-                  wr == null ? "text-muted" : wr >= 50 ? "text-good" : "text-danger",
-                )}
-              >
-                {wr == null ? "—" : `${wr.toFixed(0)}% win`}
-              </span>
-            </div>
-          </div>
-
-          <div className="border-b border-border px-3 py-2.5">
-            <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
-              Open lots
-            </p>
-            {positions.length === 0 ? (
-              <p className="mt-1.5 text-2xs text-subtle">Flat. Runner has no inventory.</p>
-            ) : (
-              <ul className="mt-1.5 space-y-1.5">
-                {positions.map((p) => {
-                  const mark = tickers[p.pair]?.last ?? p.mark;
-                  const m = lotMetrics({
-                    entry: p.entry,
-                    mark,
-                    stop: p.stop,
-                    take: p.take,
-                    qty: p.qty,
-                  });
-                  return (
-                    <li
-                      key={p.id}
-                      className={cn(
-                        "rounded-sm px-2 py-1.5",
-                        m.nearStop
-                          ? "desk-row-near-stop shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-danger)_55%,transparent)]"
-                          : "shadow-[0_0_0_1px_var(--color-border)]",
-                      )}
-                    >
-                      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                        <span className="font-display text-2xs tracking-[0.12em] uppercase">
-                          {PAIR_BY_ID[p.pair].label}
-                          {m.nearStop ? (
-                            <span className="ml-1.5 text-danger">near stop</span>
-                          ) : null}
-                        </span>
-                        <span className="stat-num text-micro text-muted">
-                          {qty(p.qty, 4)} · {p.mode}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-2xs">
-                        <span className="stat-num text-muted">in {px(p.entry)}</span>
-                        <span className="stat-num">mk {px(mark)}</span>
-                        <span className={cn("stat-num", signedClass(m.pnl))}>
-                          {money(m.pnl)} {pct(m.fromEntryPct, 2)}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 text-2xs">
-                        <span
-                          className={cn(
-                            "stat-num",
-                            m.nearStop || m.underwater ? "text-danger" : "text-muted",
-                          )}
-                        >
-                          SL {m.distStopPct.toFixed(2)}%
-                        </span>
-                        <span
-                          className={cn(
-                            "stat-num",
-                            m.nearTake || !m.underwater ? "text-good" : "text-muted",
-                          )}
-                        >
-                          TP {m.distTakePct.toFixed(2)}%
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          <div className="px-3 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
-                Settings snapshot
-              </p>
-              <Button type="button" size="micro" variant="outline" onClick={openSettings}>
-                Desk settings
-              </Button>
-            </div>
-            <p className="mt-1 text-2xs text-subtle">read-only — why a banner fired</p>
-            <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-4">
-              <Snap label="Size" value={fracPct(risk.sizePct)} />
-              <Snap label="Stop" value={fracPct(risk.stopPct)} />
-              <Snap label="Take" value={fracPct(risk.takePct)} />
-              <Snap
-                label="Daily loss"
-                value={fracPct(risk.maxDailyLossPct)}
-                warn={alert.level !== "ok"}
-              />
-            </div>
-          </div>
+          {tab === "blotter" ? <BlotterTab onTicket={() => setTab("ticket")} /> : null}
+          {tab === "money" ? <WalletTab /> : null}
+          {tab === "ticket" ? <TicketTab /> : null}
         </div>
       </div>
     </div>
   );
 }
+
+function BlotterTab({ onTicket }: { onTicket: () => void }) {
+  const desk = useDesk();
+  const positions = useFloor((s) => s.positions);
+  const tickers = useFloor((s) => s.tickers);
+  const orders = useFloor((s) => s.orders);
+  const grokNote = useFloor((s) => s.grokNote);
+  const pending = useFloor((s) => s.pendingLive);
+  const opsMode = useFloor((s) => s.opsMode);
+  const startingCash = useFloor((s) => s.startingCash);
+  const dayStartEquity = useFloor((s) => s.dayStartEquity);
+  const risk = useFloor((s) => s.risk);
+
+  const fills = orders.filter((o) => o.status === "filled");
+  const wr = fillWinRatePct(desk.wins, desk.losses);
+  const haltBase = dayStartEquity > 0 ? dayStartEquity : startingCash;
+  const alert = dayLossAlert({
+    dayPnl: desk.dayPnl,
+    haltBase,
+    maxDailyLossPct: risk.maxDailyLossPct,
+  });
+
+  return (
+    <>
+      <DayBanner
+        level={alert.level}
+        dayPnlPct={alert.dayPnlPct}
+        usedOfHaltPct={alert.usedOfHaltPct}
+      />
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-3 py-2.5 sm:grid-cols-4">
+        <Stat label="Book" value={moneyFull(desk.equity)} extra="live on the floor" />
+        <Stat label="Day" value={money(desk.dayPnl)} tone={signedTone(desk.dayPnl)} />
+        <Stat label="Free cash" value={moneyFull(desk.cash)} />
+        <Stat label="In lots" value={moneyFull(desk.exposure)} extra={`${desk.openPositions} open`} />
+      </div>
+
+      {grokNote ? (
+        <p className="border-b border-border px-3 py-2 text-2xs text-muted">{grokNote}</p>
+      ) : null}
+
+      {pending ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-2 px-3 py-2">
+          <p className="text-2xs text-muted">
+            Waiting: {pending.side === "buy" ? "IN" : "OUT"} {PAIR_BY_ID[pending.pair].base}
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="good" onClick={() => void executeOrder(pending)}>
+              Fill it
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => cancelPendingTicket()}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="border-b border-border px-3 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <h3 className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
+            Open now
+          </h3>
+          <span className="text-micro text-subtle">
+            {opsMode === "auto" ? "bot is trading" : opsMode === "learn" ? "study only" : "you size tickets"}
+          </span>
+        </div>
+        {positions.length === 0 ? (
+          <p className="mt-2 text-2xs text-subtle">
+            Flat. Nothing in the book. When the bot buys, the lot lands here until it sells.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1.5">
+            {positions.map((p) => {
+              const mark = tickers[p.pair]?.last ?? p.mark;
+              const m = lotMetrics({
+                entry: p.entry,
+                mark,
+                stop: p.stop,
+                take: p.take,
+                qty: p.qty,
+              });
+              return (
+                <li
+                  key={p.id}
+                  className={cn(
+                    "rounded-sm px-2 py-2",
+                    m.nearStop
+                      ? "desk-row-near-stop shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-danger)_55%,transparent)]"
+                      : "shadow-[0_0_0_1px_var(--color-border)]",
+                  )}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+                    <span className="font-display text-2xs tracking-[0.12em] uppercase">
+                      IN {PAIR_BY_ID[p.pair].label}
+                      {m.nearStop ? <span className="ml-1.5 text-danger">near stop</span> : null}
+                    </span>
+                    <span className={cn("stat-num text-sm", signedClass(m.pnl))}>{money(m.pnl)}</span>
+                  </div>
+                  <p className="mt-0.5 text-2xs text-muted">
+                    {qty(p.qty, 4)} @ {px(p.entry)} → {px(mark)} · stop {px(p.stop)} · take {px(p.take)} ·{" "}
+                    {pct(m.fromEntryPct, 2)}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="danger"
+                    className="mt-2 min-h-11 w-full"
+                    onClick={() => {
+                      void closeLot(p.id).then((res) => {
+                        if (!res.ok) toast.message(res.reason);
+                        else toast.success(`Closed ${PAIR_BY_ID[p.pair].base}`);
+                      });
+                    }}
+                  >
+                    Close ticket
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="px-3 py-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
+            In and out
+          </h3>
+          <p className="text-micro text-subtle">
+            {desk.fills} fills · {desk.wins} take · {desk.losses} stop
+            {wr != null ? ` · ${wr.toFixed(0)}% win` : ""}
+          </p>
+        </div>
+        {fills.length === 0 ? (
+          <p className="mt-2 text-2xs text-subtle">
+            No fills yet. IN is a buy. OUT is a sell (take, stop, or you). Same tape as the floor.
+          </p>
+        ) : (
+          <ol className="mt-2 divide-y divide-border">
+            {fills.map((o) => (
+              <FillRow key={o.id} order={o} />
+            ))}
+          </ol>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={onTicket}>
+            Place a ticket
+          </Button>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function FillRow({ order }: { order: Order }) {
+  const leg = fillLeg(order);
+  const why = fillWhy(order.reason);
+  const pxn = order.fillPrice ?? order.price;
+  const out = leg === "out";
+  return (
+    <li className="flex items-baseline gap-2 py-2">
+      <span
+        className={cn(
+          "font-display w-8 shrink-0 text-micro tracking-[0.12em] uppercase",
+          out ? "text-danger" : "text-good",
+        )}
+      >
+        {out ? "OUT" : "IN"}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="font-display text-2xs tracking-[0.08em] uppercase">
+          {PAIR_BY_ID[order.pair]?.label ?? order.pair}
+        </span>
+        <span className="ml-1.5 text-2xs text-muted">
+          {qty(order.qty, 4)} @ {px(pxn)} · {why}
+        </span>
+      </span>
+      <span
+        className={cn(
+          "stat-num shrink-0 text-2xs",
+          order.pnl == null ? "text-muted" : signedClass(order.pnl),
+        )}
+      >
+        {order.pnl == null ? (out ? "—" : money(pxn * order.qty)) : money(order.pnl)}
+      </span>
+      <span className="stat-num w-8 shrink-0 text-right text-micro text-subtle">{ago(order.ts)}</span>
+    </li>
+  );
+}
+
+function TicketTab() {
+  const pairs = useFloor((s) => s.pairs);
+  const tickers = useFloor((s) => s.tickers);
+  const cash = useFloor((s) => s.cash);
+  const pending = useFloor((s) => s.pendingLive);
+  const opsMode = useFloor((s) => s.opsMode);
+  const inspect = useFloor((s) => s.inspectPair);
+  const positions = useFloor((s) => s.positions);
+  const [pair, setPair] = useState<PairId>(
+    inspect && pairs.includes(inspect) ? inspect : (pairs[0] ?? "XBTUSD"),
+  );
+  const [side, setSide] = useState<Side>("buy");
+  const [dollars, setDollars] = useState("500");
+  const [busy, setBusy] = useState(false);
+  const mark = tickers[pair]?.last;
+  const held = positions.find((p) => p.pair === pair);
+
+  useEffect(() => {
+    if (inspect && pairs.includes(inspect)) setPair(inspect);
+  }, [inspect, pairs]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await placeManualTicket({
+        pair,
+        side,
+        dollars: Number(dollars),
+      });
+      if (!res.ok) toast.message(res.reason);
+      else toast.success(`${side === "buy" ? "IN" : "OUT"} ${PAIR_BY_ID[pair].base} filled`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 px-3 py-3">
+      <p className="text-2xs text-subtle">
+        Optional. Auto already trades the book. Use this only if you want to buy or sell yourself.
+      </p>
+      {pending ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm bg-surface-2 px-3 py-2">
+          <p className="text-2xs text-muted">
+            Bot ticket {pending.side.toUpperCase()} {PAIR_BY_ID[pending.pair].base}
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="good" onClick={() => void executeOrder(pending)}>
+              Fill it
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => cancelPendingTicket()}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <form className="space-y-3" onSubmit={(e) => void submit(e)}>
+        <div className="flex flex-wrap gap-1.5">
+          {pairs.map((id) => (
+            <Button
+              key={id}
+              type="button"
+              size="sm"
+              variant={id === pair ? "default" : "outline"}
+              aria-pressed={id === pair}
+              onClick={() => setPair(id)}
+            >
+              {PAIR_BY_ID[id].base}
+            </Button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant={side === "buy" ? "good" : "outline"}
+            aria-pressed={side === "buy"}
+            onClick={() => setSide("buy")}
+          >
+            IN · buy
+          </Button>
+          <Button
+            type="button"
+            variant={side === "sell" ? "danger" : "outline"}
+            aria-pressed={side === "sell"}
+            onClick={() => setSide("sell")}
+          >
+            OUT · sell
+          </Button>
+          {held ? (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void closeLot(held.id).then((res) => {
+                  if (!res.ok) toast.message(res.reason);
+                  else toast.success(`Closed ${PAIR_BY_ID[held.pair].base}`);
+                }).finally(() => setBusy(false));
+              }}
+            >
+              Close {PAIR_BY_ID[held.pair].base}
+            </Button>
+          ) : null}
+        </div>
+        <div>
+          <Label htmlFor="ticket-usd">Size $</Label>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {[100, 250, 500, 1000, 2500].map((n) => (
+              <Button
+                key={n}
+                type="button"
+                size="sm"
+                variant={Number(dollars) === n ? "default" : "outline"}
+                onClick={() => setDollars(String(n))}
+              >
+                {money(n)}
+              </Button>
+            ))}
+          </div>
+          <Input
+            id="ticket-usd"
+            className="mt-2"
+            type="number"
+            min={10}
+            step={10}
+            inputMode="decimal"
+            value={dollars}
+            onChange={(e) => setDollars(e.target.value)}
+          />
+          <p className="mt-1 text-2xs text-subtle">
+            Free {moneyFull(cash)}
+            {mark != null ? ` · mark ${px(mark)}` : ""}
+            {opsMode === "paper" ? " · paper" : ""}
+          </p>
+        </div>
+        <Button type="submit" className="w-full" variant="good" disabled={busy}>
+          Place ticket
+        </Button>
+      </form>
+    </div>
+  );
+}
+
 
 function DayBanner({
   level,
@@ -252,8 +448,7 @@ function DayBanner({
 }) {
   if (level === "ok") return null;
   const loss = Math.abs(dayPnlPct).toFixed(1);
-  const used = usedOfHaltPct.toFixed(0);
-  const line = `day loss ${loss}% · ${used}% of halt`;
+  const line = `day loss ${loss}% · ${usedOfHaltPct.toFixed(0)}% of halt`;
   if (level === "halt") {
     return (
       <div className="border-b border-danger bg-danger/25 px-3 py-2 text-2xs font-semibold tracking-wide text-danger uppercase">
@@ -297,33 +492,9 @@ function Stat({
       >
         {value}
       </div>
-      {extra ? (
-        <div
-          className={cn(
-            "stat-num text-micro",
-            tone === "good" && "text-good",
-            tone === "bad" && "text-danger",
-            (tone === "flat" || !tone) && "text-subtle",
-          )}
-        >
-          {extra}
-        </div>
-      ) : null}
+      {extra ? <div className="stat-num text-micro text-subtle">{extra}</div> : null}
     </div>
   );
-}
-
-function Snap({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
-  return (
-    <div>
-      <div className="font-display text-micro tracking-[0.14em] text-subtle uppercase">{label}</div>
-      <div className={cn("stat-num text-2xs", warn ? "text-danger" : "text-fg")}>{value}</div>
-    </div>
-  );
-}
-
-function fracPct(frac: number): string {
-  return `${(frac * 100).toFixed(1)}%`;
 }
 
 function signedTone(n: number): "good" | "bad" | "flat" {

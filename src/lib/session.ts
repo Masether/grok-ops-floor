@@ -1,13 +1,13 @@
 /** Session clock + shared chart interval. Pure helpers for store, engine, and tests. */
 
-export const DEFAULT_SESSION_MINUTES = 240;
+export const DEFAULT_SESSION_MINUTES = 0;
 
 export const SESSION_PRESETS = [
+  { minutes: 0, label: "24/7" },
   { minutes: 15, label: "15m" },
   { minutes: 60, label: "1h" },
   { minutes: 240, label: "4h" },
   { minutes: 480, label: "8h" },
-  { minutes: 0, label: "Until I stop" },
 ] as const;
 
 export const CHART_INTERVALS = [1, 5, 15, 60, 240] as const;

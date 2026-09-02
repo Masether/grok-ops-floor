@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
+import { AGENT_BY_ID } from "@/lib/agents";
 import { onPulse, type FloorPulse } from "@/lib/bus";
+import { moneyFull } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
+import { GUILDS, SWARM_SIZE } from "@/lib/swarm";
+import { IDLE_DEBATE } from "@/lib/coordinate";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { AgentGlyph, GrokCore } from "./glyphs.tsx";
+import { AgentGlyph, GrokCore } from "./glyphs";
+import { SwarmCanvas } from "./swarm-canvas";
 
 type PulseDraw = FloorPulse & { id: number; born: number };
 
@@ -18,13 +22,20 @@ export function OrbitStage() {
   const agents = useFloor((s) => s.agents);
   const selected = useFloor((s) => s.selectedAgent);
   const selectAgent = useFloor((s) => s.selectAgent);
-  const handoff = useFloor((s) => s.handoff);
   const floorOpen = useFloor((s) => s.floorOpen);
   const inspectPair = useFloor((s) => s.inspectPair);
   const pairs = useFloor((s) => s.pairs);
   const tickers = useFloor((s) => s.tickers);
   const stage = useFloor((s) => s.stage);
   const desk = useDesk();
+  const swarm = useFloor((s) => s.swarm);
+  const debate = swarm.debate ?? IDLE_DEBATE;
+  const grokNote = useFloor((s) => s.grokNote);
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    setReduced(window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }, []);
 
   useEffect(() => {
     return onPulse((p) => {
@@ -38,6 +49,10 @@ export function OrbitStage() {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let raf = 0;
     const loop = (t: number) => {
+      if (typeof document !== "undefined" && document.hidden) {
+        raf = 0;
+        return;
+      }
       const el = wrapRef.current;
       const svg = svgRef.current;
       if (!el || !svg) {
@@ -48,47 +63,42 @@ export function OrbitStage() {
       const h = el.clientHeight;
       const cx = w / 2;
       const cy = h / 2 + 4;
-      const rx = Math.min(w * 0.38, 280);
-      const ry = Math.min(h * 0.32, 150);
-      const spin = reduced ? 0 : t / 9000;
+      const base = Math.min(w * 0.42, h * 0.4, 220);
+      const spin = reduced ? 0 : t / 11000;
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      posRef.current.dispatcher = { x: cx, y: cy };
 
+      const ringOf: Record<string, number> = {
+        price: 0.38,
+        liquidity: 0.52,
+        arb: 0.66,
+        inventory: 0.8,
+        risk: 0.94,
+      };
       const pts: { id: string; x: number; y: number }[] = [];
-      for (const a of AGENTS) {
-        const theta = spin + (a.orbit / AGENTS.length) * Math.PI * 2 - Math.PI / 2;
+      const lines: string[] = [];
+      GUILDS.forEach((g, i) => {
+        const theta = spin + (i / GUILDS.length) * Math.PI * 2 - Math.PI / 2;
+        const rx = base * ringOf[g.id]!;
+        const ry = rx * 0.55;
         const x = cx + Math.cos(theta) * rx;
         const y = cy + Math.sin(theta) * ry;
-        posRef.current[a.id] = { x, y };
-        pts.push({ id: a.id, x, y });
-        const node = orbRefs.current[a.id];
+        posRef.current[g.lead] = { x, y };
+        pts.push({ id: g.lead, x, y });
+        const node = orbRefs.current[g.lead];
         if (node) {
           node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
         }
-      }
+        lines.push(
+          `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${g.color}33" stroke-width="1"/>`,
+        );
+      });
 
-      const lines: string[] = [];
-      lines.push(
-        `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="none" stroke="rgba(232,237,245,0.12)" stroke-width="1"/>`,
-      );
-      lines.push(
-        `<ellipse cx="${cx}" cy="${cy}" rx="${rx * 0.62}" ry="${ry * 0.62}" fill="none" stroke="rgba(232,237,245,0.05)" stroke-width="1"/>`,
-      );
-      for (let i = 0; i < pts.length; i++) {
-        const a = pts[i]!;
-        const b = pts[(i + 1) % pts.length]!;
-        const c = pts[(i + 2) % pts.length]!;
-        lines.push(
-          `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="rgba(232,237,245,0.08)" stroke-width="1"/>`,
-        );
-        lines.push(
-          `<line x1="${a.x}" y1="${a.y}" x2="${c.x}" y2="${c.y}" stroke="rgba(232,237,245,0.04)" stroke-width="1"/>`,
-        );
-      }
       const now = performance.now();
       pulses.current = pulses.current.filter((p) => now - p.born < 900);
       for (const p of pulses.current) {
-        const from = posRef.current[p.from];
-        const to = posRef.current[p.to];
+        const from = posRef.current[p.from] ?? posRef.current.dispatcher;
+        const to = posRef.current[p.to] ?? posRef.current.dispatcher;
         if (!from || !to) continue;
         const u = (now - p.born) / 900;
         const x = from.x + (to.x - from.x) * u;
@@ -103,16 +113,28 @@ export function OrbitStage() {
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    const id = window.setInterval(() => setNowTick((n) => n + 1), 800);
+    const onVis = () => {
+      if (document.hidden) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+      } else if (!raf) {
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      setNowTick((n) => n + 1);
+    }, 800);
     return () => {
       cancelAnimationFrame(raf);
       window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 
   const pair = inspectPair ?? pairs[0];
   const ticker = pair ? tickers[pair] : undefined;
-  const active = (handoff ? AGENT_BY_ID[handoff.to] : AGENT_BY_ID.scanner) ?? AGENT_BY_ID.scanner;
   void nowTick;
 
   return (
@@ -127,23 +149,54 @@ export function OrbitStage() {
       />
       <div className="relative z-10 flex items-start justify-between px-3 pt-2">
         <div>
-          <div className="panel-kicker">The floor</div>
-          <ul className="mt-2 hidden flex-col gap-0.5 xl:flex">
-            {AGENTS.map((a) => {
-              const st = agents[a.id];
+          <div className="panel-kicker">The swarm</div>
+          <p className="stat-num mt-1 text-2xs text-muted">
+            {swarm.pending
+              ? `${swarm.reported}/${SWARM_SIZE} in · ping`
+              : `${SWARM_SIZE} agents · ${debate.sourcesLive}/${debate.sourcesTotal} sources${swarm.rttMs ? ` · ${swarm.rttMs}ms` : ""}`}
+          </p>
+          <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-5">
+            {debate.rounds.map((r) => (
+              <li key={r.role} className="min-w-0">
+                <div className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
+                  {r.role}
+                </div>
+                <div
+                  className={cn(
+                    "stat-num truncate text-2xs",
+                    r.role === "challenge" || r.kind === "sell"
+                      ? "text-danger"
+                      : r.kind === "buy"
+                        ? "text-good"
+                        : "text-muted",
+                  )}
+                  title={r.note}
+                >
+                  {r.kind.toUpperCase()}
+                  {r.role === "challenge" && debate.dissent ? ` · ${debate.dissent.bots}` : ""}
+                </div>
+              </li>
+            ))}
+          </ol>
+          <ul className="mt-2 flex flex-wrap gap-1">
+            {GUILDS.map((g) => {
+              const st = swarm.guilds[g.id];
               return (
-                <li key={a.id} className="flex items-center gap-2">
-                  <span
-                    className="size-1.5 rounded-full"
-                    style={{ background: a.color, opacity: 0.4 + (st?.heat ?? 0.15) * 0.6 }}
-                  />
-                  <span
-                    className="font-display w-20 text-micro font-semibold tracking-[0.12em] uppercase"
-                    style={{ color: a.color }}
+                <li key={g.id}>
+                  <button
+                    type="button"
+                    className="font-display flex min-h-11 items-center gap-1.5 px-1.5 text-micro font-semibold tracking-[0.12em] uppercase"
+                    style={{ color: g.color }}
+                    title={st?.note ?? g.role}
+                    onClick={() => selectAgent(selected === g.lead ? null : g.lead)}
                   >
-                    {a.name}
-                  </span>
-                  <span className="stat-num text-micro text-subtle">{st?.handled ?? 0}</span>
+                    <span
+                      className="size-1.5 rounded-full"
+                      style={{ background: g.color, opacity: 0.45 + (st?.heat ?? 0.2) * 0.55 }}
+                    />
+                    {g.name} {st?.reported ?? 0}/{g.count}
+                    {st?.rttMs ? ` · ${st.rttMs}ms` : swarm.pending ? " · …" : ""}
+                  </button>
                 </li>
               );
             })}
@@ -151,12 +204,12 @@ export function OrbitStage() {
         </div>
         <div className="text-right">
           <div className="panel-kicker text-subtle">
-            {floorOpen ? "Loop live" : "Halted"} · {stage}
+            {floorOpen ? "Grok live" : "Halted"} · {stage}
           </div>
           {pair && ticker ? (
             <button
               type="button"
-              className="mt-2 text-right"
+              className="mt-2 min-h-11 text-right"
               onClick={() => useFloor.getState().setInspectPair(pair)}
             >
               <div className="font-display text-2xs tracking-[0.14em] text-muted uppercase">
@@ -176,48 +229,71 @@ export function OrbitStage() {
           ) : (
             <div className="mt-2 text-2xs text-subtle">waiting on tape</div>
           )}
-          <div className="stat-num mt-3 text-micro text-subtle">
-            {desk.openPositions} open · {desk.fills} fills
-          </div>
+          <button
+            type="button"
+            className="mt-3 min-h-11 text-right"
+            onClick={() => useFloor.getState().setDeskOpen(true)}
+          >
+            <div className="font-display text-2xs tracking-[0.14em] text-muted uppercase">
+              Paper book
+            </div>
+            <div
+              className={cn(
+                "stat-num text-lg",
+                desk.dayPnl > 0 ? "text-good" : desk.dayPnl < 0 ? "text-danger" : "text-fg",
+              )}
+            >
+              {moneyFull(desk.equity)}
+            </div>
+            <div className="stat-num text-2xs text-subtle">
+              Day {desk.dayPnl >= 0 ? "+" : ""}
+              {moneyFull(desk.dayPnl)} · Free {moneyFull(desk.cash)}
+            </div>
+            <div className="stat-num mt-1 text-micro text-subtle">
+              {desk.openPositions} open · {desk.fills} fills
+            </div>
+          </button>
         </div>
       </div>
 
       <div ref={wrapRef} className="absolute inset-0">
+        <SwarmCanvas swarm={swarm} reduced={reduced} />
         <svg ref={svgRef} className="absolute inset-0 size-full" />
         <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <GrokCore size={88} />
+          <GrokCore size={96} />
         </div>
-        {AGENTS.map((a) => {
-          const st = agents[a.id];
-          const heat = st?.heat ?? 0.15;
-          const on = selected === a.id || heat > 0.55;
+        {GUILDS.map((g) => {
+          const st = agents[g.lead];
+          const heat = Math.max(st?.heat ?? 0.15, swarm.guilds[g.id]?.heat ?? 0.2);
+          const on = selected === g.lead || heat > 0.55;
+          const shape = AGENT_BY_ID[g.lead]?.shape ?? "pulse";
           return (
             <button
-              key={a.id}
+              key={g.id}
               ref={(n) => {
-                orbRefs.current[a.id] = n;
+                orbRefs.current[g.lead] = n;
               }}
               type="button"
-              onClick={() => selectAgent(selected === a.id ? null : a.id)}
+              onClick={() => selectAgent(selected === g.lead ? null : g.lead)}
               className="absolute top-0 left-0 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
               style={{ willChange: "transform" }}
-              aria-label={a.name}
+              aria-label={`${g.name} ${g.role}`}
             >
               <span
-                className="grid size-9 place-items-center rounded-full sm:size-11"
+                className="grid size-11 place-items-center rounded-full"
                 style={{
-                  background: `radial-gradient(circle, ${a.color}33, transparent 70%)`,
-                  boxShadow: on ? `0 0 18px ${a.color}` : `0 0 8px ${a.color}55`,
+                  background: `radial-gradient(circle, ${g.color}33, transparent 70%)`,
+                  boxShadow: on ? `0 0 18px ${g.color}` : `0 0 8px ${g.color}55`,
                   transform: `scale(${0.92 + heat * 0.18})`,
                 }}
               >
-                <AgentGlyph shape={a.shape} color={a.color} size={22} />
+                <AgentGlyph shape={shape} color={g.color} size={22} />
               </span>
               <span
                 className="font-display mt-0.5 hidden text-micro font-semibold tracking-[0.14em] uppercase sm:block"
-                style={{ color: a.color }}
+                style={{ color: g.color }}
               >
-                {a.name}
+                {g.name}
               </span>
             </button>
           );
@@ -238,13 +314,12 @@ export function OrbitStage() {
             </p>
           ) : (
             <p className="text-2xs text-subtle">
-              {active.name} on the desk
-              {handoff ? ` · ${AGENT_BY_ID[handoff.from]?.name ?? handoff.from} → ${active.name}` : ""}
+              {grokNote ?? swarm.grok}
             </p>
           )}
         </div>
         <div className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
-          {active.name}
+          GROK
         </div>
       </div>
     </section>

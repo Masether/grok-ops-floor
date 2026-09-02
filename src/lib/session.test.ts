@@ -52,9 +52,10 @@ describe("sessionEnded", () => {
 });
 
 describe("normalizeSessionMinutes", () => {
-  it("defaults garbage / negative to 4h", () => {
+  it("defaults garbage / negative to 24/7", () => {
     assert.equal(normalizeSessionMinutes(-1), DEFAULT_SESSION_MINUTES);
     assert.equal(normalizeSessionMinutes("nope"), DEFAULT_SESSION_MINUTES);
+    assert.equal(DEFAULT_SESSION_MINUTES, 0);
   });
 
   it("keeps 0 and positive integers", () => {

@@ -55,7 +55,7 @@ export const INDICATOR_META: Record<
   sma: { label: "SMA", overlay: true, params: "period" },
   ema: { label: "EMA", overlay: true, params: "ema" },
   bb: { label: "BB", overlay: true, params: "bb" },
-  volume: { label: "Vol", overlay: false, params: "none" },
+  volume: { label: "Volume", overlay: false, params: "none" },
   rsi: { label: "RSI", overlay: false, params: "period" },
   macd: { label: "MACD", overlay: false, params: "none" },
   stoch: { label: "Stoch", overlay: false, params: "period" },

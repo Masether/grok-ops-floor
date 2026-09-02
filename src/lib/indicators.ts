@@ -164,6 +164,123 @@ export function readSignal(
   return { kind, confidence, reason, rsi: r, emaFast, emaSlow, macdHist: hist, setup };
 }
 
+/** 1-minute scalp read — more tickets, less "desk holds". */
+export function readScalp(
+  closes: number[],
+  volumes: number[],
+  brain: Brain = DEFAULT_BRAIN,
+): SignalRead {
+  if (closes.length < 8) {
+    const last = closes[closes.length - 1] ?? 0;
+    return {
+      kind: "hold",
+      confidence: 0.2,
+      reason: "warming 1m tape",
+      rsi: 50,
+      emaFast: last,
+      emaSlow: last,
+      macdHist: 0,
+      setup: "unknown",
+    };
+  }
+  const last = closes[closes.length - 1]!;
+  const prev = closes[closes.length - 2]!;
+  const p3 = closes[closes.length - 4] ?? prev;
+  const emaFastArr = ema(closes, 5);
+  const emaSlowArr = ema(closes, 13);
+  const emaFast = emaFastArr[emaFastArr.length - 1] ?? last;
+  const emaSlow = emaSlowArr[emaSlowArr.length - 1] ?? last;
+  const prevFast = emaFastArr[emaFastArr.length - 2] ?? emaFast;
+  const prevSlow = emaSlowArr[emaSlowArr.length - 2] ?? emaSlow;
+  const r = rsi(closes, 7);
+  const hist = macdHist(closes);
+  const ret1 = prev !== 0 ? (last - prev) / prev : 0;
+  const ret3 = p3 !== 0 ? (last - p3) / p3 : 0;
+  const crossedUp = prevFast <= prevSlow && emaFast > emaSlow;
+  const crossedDn = prevFast >= prevSlow && emaFast < emaSlow;
+  const trendUp = emaFast >= emaSlow * 0.999;
+  const vol = volumes[volumes.length - 1] ?? 0;
+  const volAvg = sma(volumes, 12);
+  const volBoost = volAvg > 0 && vol > volAvg * brain.volMult * 0.85 ? 0.08 : 0;
+  const knife = ret3 < -0.0012 && ret1 <= 0;
+
+  if (knife && !crossedUp) {
+    return {
+      kind: "sell",
+      confidence: 0.48,
+      reason: `Scalp skip knife ${(ret3 * 100).toFixed(2)}% · RSI ${r.toFixed(0)}`,
+      rsi: r,
+      emaFast,
+      emaSlow,
+      macdHist: hist,
+      setup: "momentum",
+    };
+  }
+
+  if (crossedUp || (ret1 > 0.00035 && (trendUp || ret3 > 0.00045))) {
+    return {
+      kind: "buy",
+      confidence: Math.min(0.86, 0.5 + volBoost + Math.min(0.2, Math.abs(ret3) * 40) + (crossedUp ? 0.12 : 0)),
+      reason: crossedUp
+        ? `Scalp EMA 5/13 up · RSI ${r.toFixed(0)}`
+        : `Scalp uptick ${(ret1 * 100).toFixed(2)}% · RSI ${r.toFixed(0)}`,
+      rsi: r,
+      emaFast,
+      emaSlow,
+      macdHist: hist,
+      setup: crossedUp ? "cross" : "momentum",
+    };
+  }
+  if (r < 42 && ret1 > 0 && last > prev) {
+    return {
+      kind: "buy",
+      confidence: Math.min(0.78, 0.48 + (42 - r) / 80 + volBoost),
+      reason: `Scalp RSI bounce ${r.toFixed(0)}`,
+      rsi: r,
+      emaFast,
+      emaSlow,
+      macdHist: hist,
+      setup: "rsi",
+    };
+  }
+  if (crossedDn || (ret1 < -0.00045 && r > 58)) {
+    return {
+      kind: "sell",
+      confidence: Math.min(0.84, 0.5 + volBoost + (crossedDn ? 0.12 : 0)),
+      reason: crossedDn
+        ? `Scalp EMA 5/13 down · RSI ${r.toFixed(0)}`
+        : `Scalp fade ${r.toFixed(0)}`,
+      rsi: r,
+      emaFast,
+      emaSlow,
+      macdHist: hist,
+      setup: crossedDn ? "cross" : "momentum",
+    };
+  }
+  if (r > 76 && ret1 <= 0) {
+    return {
+      kind: "sell",
+      confidence: 0.58,
+      reason: `Scalp overbought RSI ${r.toFixed(0)}`,
+      rsi: r,
+      emaFast,
+      emaSlow,
+      macdHist: hist,
+      setup: "rsi",
+    };
+  }
+  return {
+    kind: "hold",
+    confidence: 0.28,
+    reason: `No edge · RSI ${r.toFixed(0)}`,
+    rsi: r,
+    emaFast,
+    emaSlow,
+    macdHist: hist,
+    setup: "unknown",
+  };
+}
+
 export function rsiSeries(values: number[], period = 14): number[] {
   const out: number[] = Array(values.length).fill(50);
   if (values.length < period + 1) return out;

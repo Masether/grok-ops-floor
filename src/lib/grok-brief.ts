@@ -46,3 +46,36 @@ export const secondRead = createServerFn({ method: "POST" })
     };
     return { ok: true as const, text: body.choices?.[0]?.message?.content ?? "" };
   });
+
+export const askBrain = createServerFn({ method: "POST" })
+  .validator((input: { prompt: string; context: string }) => input)
+  .handler(async ({ data }) => {
+    const apiKey = process.env.XAI_API_KEY;
+    if (!apiKey) return { ok: false as const, error: "offline" };
+
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "grok-4.5",
+        max_tokens: 140,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are the MaSether Ops Floor brain. Rapid desk chat. 2-4 short lines. Use the stored pattern memory. No hype. Not financial advice. Paper rehearsal unless they armed live.",
+          },
+          { role: "user", content: `${data.context}\n\nQ: ${data.prompt}` },
+        ],
+      }),
+    });
+    if (!res.ok) return { ok: false as const, error: `xAI ${res.status}` };
+    const body = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    return { ok: true as const, text: body.choices?.[0]?.message?.content ?? "" };
+  });

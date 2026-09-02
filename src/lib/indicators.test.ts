@@ -5,6 +5,7 @@ import {
   ema,
   macdHistSeries,
   macdSeries,
+  readScalp,
   sma,
   smaSeries,
   stochasticSeries,
@@ -62,5 +63,22 @@ describe("ema", () => {
     const e = ema(values, 3);
     const s = smaSeries(values, 3);
     assert.ok(e[5]! > s[5]!);
+  });
+});
+
+describe("readScalp", () => {
+  it("buys a 1m uptick instead of holding", () => {
+    const closes = [100, 100.02, 100.01, 100.05, 100.04, 100.08, 100.1, 100.16];
+    const vols = closes.map(() => 100);
+    const read = readScalp(closes, vols);
+    assert.equal(read.kind, "buy");
+    assert.ok(read.reason.toLowerCase().includes("scalp"));
+  });
+
+  it("does not catch a falling knife", () => {
+    const closes = [100, 99.8, 99.6, 99.4, 99.2, 99.1, 99.05, 99.0];
+    const vols = closes.map(() => 80);
+    const read = readScalp(closes, vols);
+    assert.notEqual(read.kind, "buy");
   });
 });

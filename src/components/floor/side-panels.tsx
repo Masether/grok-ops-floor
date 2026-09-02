@@ -1,7 +1,7 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, YAxis } from "recharts";
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
-import { pctOfCapital } from "@/lib/desk-pnl";
-import { px, money, moneyFull, pct, qty } from "@/lib/format";
+import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
+import { px, money, moneyFull, pct, qty, ago } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
 import { usdOnBook } from "@/lib/specialists";
@@ -204,8 +204,9 @@ export function TheDesk() {
   const selfLearn = useFloor((s) => s.selfLearn);
   const mode = useFloor((s) => s.mode);
   const liveBalance = useFloor((s) => s.liveBalance);
-  const liveArmed = useFloor((s) => s.liveArmed);
   const startingCash = useFloor((s) => s.startingCash);
+  const history = useFloor((s) => s.equityHistory);
+  const orders = useFloor((s) => s.orders);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
   const krakenUsd = usdOnBook(liveBalance);
@@ -216,70 +217,80 @@ export function TheDesk() {
   const dayPct = pctOfCapital(desk.dayPnl, cap);
   const toneOf = (n: number): "good" | "bad" | undefined =>
     n > 0 ? "good" : n < 0 ? "bad" : undefined;
-  const rows: { k: string; v: string; tone?: "good" | "bad" }[] = [
-    { k: "Equity", v: `${moneyFull(desk.equity)} ${pct(eqPct, 1)}`, tone: toneOf(eqPct) },
-    { k: "Cash", v: money(desk.cash) },
-    { k: "Exposure", v: money(desk.exposure) },
-    {
-      k: "Unrealized",
-      v: `${money(desk.unrealized)} ${pct(unrlPct, 1)}`,
-      tone: toneOf(desk.unrealized),
-    },
-    { k: "Realized", v: `${money(desk.realized)} ${pct(realPct, 1)}`, tone: toneOf(desk.realized) },
-    { k: "Day PnL", v: `${money(desk.dayPnl)} ${pct(dayPct, 1)}`, tone: toneOf(desk.dayPnl) },
-    { k: "Fills", v: String(desk.fills) },
-    { k: "TP / SL", v: `${desk.wins} / ${desk.losses}` },
-  ];
-  if (mode === "live") {
-    rows.splice(2, 0, {
-      k: "Kraken USD",
-      v: liveBalance ? money(krakenUsd) : "unread",
-      tone: krakenUsd >= 15 ? "good" : "bad",
-    });
-  }
+  const spark = history.slice(-24);
+  const sparkMin = spark.length ? Math.min(...spark.map((p) => p.equity), cap) : cap;
+  const sparkMax = spark.length ? Math.max(...spark.map((p) => p.equity), cap) : cap;
+  const sparkSpan = Math.max(sparkMax - sparkMin, 1);
   return (
-    <section className="panel min-h-[160px]">
+    <section className="panel flex min-h-[220px] flex-col overflow-hidden">
       <div className="panel-head">
-        <div>
-          <h2 className="panel-kicker">
-            <button type="button" className="hover:text-accent" onClick={() => setDeskOpen(true)}>
-              The desk
-            </button>
-          </h2>
+        <button
+          type="button"
+          className="min-h-11 min-w-0 text-left"
+          onClick={() => setDeskOpen(true)}
+        >
+          <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            {mode === "live"
-              ? liveArmed
-                ? "live — treasury sizes from Kraken"
-                : "live idle — arm to spend the wallet"
-              : "paper rehearsal · fund Kraken, then arm live"}
+            Trading book — same dollars as the header. Tap for in/out history.
           </p>
-        </div>
+        </button>
         <span
           className={cn(
-            "stat-num text-sm",
+            "stat-num text-lg",
             eqPct > 0 ? "text-good" : eqPct < 0 ? "text-danger" : "text-muted",
           )}
         >
-          {money(desk.equity)}
+          {moneyFull(desk.equity)}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 py-2">
-        {rows.map((r) => (
-          <div key={r.k} className="flex items-baseline justify-between gap-2">
-            <span className="text-micro tracking-wide text-subtle uppercase">{r.k}</span>
-            <span
-              className={cn(
-                "stat-num text-2xs",
-                r.tone === "good" && "text-good",
-                r.tone === "bad" && "text-danger",
-              )}
-            >
-              {r.v}
-            </span>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-2 sm:grid-cols-4">
+        <BookStat k="Start" v={moneyFull(cap)} />
+        <BookStat k="Free" v={moneyFull(desk.cash)} />
+        <BookStat k="In lots" v={moneyFull(desk.exposure)} />
+        <BookStat
+          k="Day"
+          v={`${moneyFull(desk.dayPnl)} ${pct(dayPct, 1)}`}
+          tone={toneOf(desk.dayPnl)}
+        />
       </div>
-      <div className="border-t border-border px-3 py-2">
+      {spark.length >= 2 ? (
+        <div className="flex h-8 items-end gap-px border-b border-border px-3 py-1.5" aria-hidden>
+          {spark.map((p, i) => (
+            <span
+              key={`${p.t}-${i}`}
+              className="min-w-px flex-1 rounded-xs"
+              style={{
+                height: `${12 + ((p.equity - sparkMin) / sparkSpan) * 18}px`,
+                background:
+                  p.equity >= cap ? "var(--color-good)" : "var(--color-danger)",
+                opacity: 0.35 + (i / spark.length) * 0.65,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-b border-border px-3 py-2">
+        <BookStat
+          k="Unrealized"
+          v={`${money(desk.unrealized)} ${pct(unrlPct, 1)}`}
+          tone={toneOf(desk.unrealized)}
+        />
+        <BookStat
+          k="Realized"
+          v={`${money(desk.realized)} ${pct(realPct, 1)}`}
+          tone={toneOf(desk.realized)}
+        />
+        <BookStat k="Fills" v={String(desk.fills)} />
+        <BookStat k="TP / SL" v={`${desk.wins} / ${desk.losses}`} />
+        {mode === "live" ? (
+          <BookStat
+            k="Kraken USD"
+            v={liveBalance ? money(krakenUsd) : "unread"}
+            tone={krakenUsd >= 15 ? "good" : "bad"}
+          />
+        ) : null}
+      </div>
+      <div className="border-b border-border px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="font-display text-micro tracking-[0.14em] text-archivist uppercase">
             Brain {selfLearn ? "on" : "off"}
@@ -334,7 +345,7 @@ export function TheDesk() {
           <span>size {brain.sizeTilt.toFixed(2)}x</span>
         </div>
       </div>
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto border-t border-border px-3 py-2">
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-2">
         {positions.length === 0 ? (
           <li className="text-micro text-subtle">No inventory. Runner is flat.</li>
         ) : (
@@ -344,6 +355,7 @@ export function TheDesk() {
             const pnlPct = ((mark - p.entry) / p.entry) * 100;
             return (
               <li key={p.id} className="flex items-center justify-between gap-2 text-2xs">
+                <span className="font-display tracking-[0.08em] text-good uppercase">IN</span>
                 <span className="text-fg">{PAIR_BY_ID[p.pair].label}</span>
                 <span className="stat-num text-muted">{qty(p.qty, 4)}</span>
                 <span className={cn("stat-num", pnl >= 0 ? "text-good" : "text-danger")}>
@@ -353,6 +365,36 @@ export function TheDesk() {
             );
           })
         )}
+        {orders
+          .filter((o) => o.status === "filled")
+          .slice(0, 8)
+          .map((o) => {
+            const leg = fillLeg(o);
+            const out = leg === "out";
+            return (
+              <li key={o.id} className="flex items-center justify-between gap-2 text-2xs">
+                <span
+                  className={cn(
+                    "font-display tracking-[0.08em] uppercase",
+                    out ? "text-danger" : "text-good",
+                  )}
+                >
+                  {out ? "OUT" : "IN"}
+                </span>
+                <span className="min-w-0 truncate text-fg">{PAIR_BY_ID[o.pair]?.label}</span>
+                <span className="stat-num text-muted">{fillWhy(o.reason)}</span>
+                <span
+                  className={cn(
+                    "stat-num",
+                    o.pnl == null ? "text-muted" : o.pnl >= 0 ? "text-good" : "text-danger",
+                  )}
+                >
+                  {o.pnl == null ? "—" : money(o.pnl)}
+                </span>
+                <span className="stat-num text-subtle">{ago(o.ts)}</span>
+              </li>
+            );
+          })}
       </ul>
       {grokNote ? (
         <p className="border-t border-border px-3 py-2 text-micro whitespace-pre-wrap text-muted">
@@ -363,12 +405,39 @@ export function TheDesk() {
   );
 }
 
+function BookStat({
+  k,
+  v,
+  tone,
+}: {
+  k: string;
+  v: string;
+  tone?: "good" | "bad";
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-micro tracking-wide text-subtle uppercase">{k}</span>
+      <span
+        className={cn(
+          "stat-num text-2xs",
+          tone === "good" && "text-good",
+          tone === "bad" && "text-danger",
+        )}
+      >
+        {v}
+      </span>
+    </div>
+  );
+}
+
 export function PairStrip() {
   const pairs = useFloor((s) => s.pairs);
   const tickers = useFloor((s) => s.tickers);
   const signals = useFloor((s) => s.signals);
   const inspect = useFloor((s) => s.inspectPair);
   const setInspect = useFloor((s) => s.setInspectPair);
+  const opsMode = useFloor((s) => s.opsMode);
+  const setDeskOpen = useFloor((s) => s.setDeskOpen);
   return (
     <div className="flex gap-2 overflow-x-auto px-1">
       {pairs.map((id) => {
@@ -379,9 +448,12 @@ export function PairStrip() {
           <button
             key={id}
             type="button"
-            onClick={() => setInspect(on ? null : id)}
+            onClick={() => {
+              setInspect(on ? null : id);
+              if (!on && opsMode === "paper") setDeskOpen(true);
+            }}
             className={cn(
-              "min-w-[7.5rem] rounded-sm px-2.5 py-1.5 text-left shadow-[0_0_0_1px_var(--color-border)]",
+              "min-h-11 min-w-[7.5rem] rounded-sm px-2.5 py-1.5 text-left shadow-[0_0_0_1px_var(--color-border)] transition-transform duration-150 ease-out active:scale-[0.96]",
               on && "bg-surface-2",
             )}
           >

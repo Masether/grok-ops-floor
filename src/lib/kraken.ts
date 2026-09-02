@@ -264,10 +264,10 @@ export const PAIR_BY_WS: Record<string, PairDef> = Object.fromEntries(
 export const DEFAULT_PAIRS: PairId[] = [
   "XBTUSD",
   "ETHUSD",
-  "SOLUSD",
+  "SUIUSD",
+  "TAOUSD",
   "PEPEUSD",
   "WIFUSD",
-  "NVDAxUSD",
 ];
 
 export const SLEEVE_META: Record<BookSleeve, { label: string; blurb: string }> = {

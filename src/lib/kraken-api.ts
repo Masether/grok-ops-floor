@@ -128,14 +128,16 @@ export const fetchTickers = createServerFn({ method: "POST" })
   });
 
 export const fetchOhlc = createServerFn({ method: "POST" })
-  .validator((input: { pair: PairId; interval?: number }) => input)
+  .validator((input: { pair: PairId; interval?: number; since?: number }) => input)
   .handler(async ({ data }) => {
     const def = PAIR_BY_ID[data.pair];
     if (!def) return [] as Candle[];
-    const result = await publicGet<Record<string, unknown>>("/0/public/OHLC", {
+    const params: Record<string, string> = {
       pair: def.kraken,
       interval: String(data.interval ?? 5),
-    });
+    };
+    if (data.since) params.since = String(Math.floor(data.since / 1000));
+    const result = await publicGet<Record<string, unknown>>("/0/public/OHLC", params);
     const rows = findPairResult(result, def);
     if (!Array.isArray(rows)) return [] as Candle[];
     const candles: Candle[] = [];

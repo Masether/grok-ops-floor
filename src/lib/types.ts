@@ -16,6 +16,7 @@ export type AgentStatus = "idle" | "working" | "handoff" | "blocked" | "halted";
 
 export type Side = "buy" | "sell";
 export type TradeMode = "paper" | "live";
+export type OpsMode = "paper" | "auto" | "learn";
 export type OrderStatus = "queued" | "working" | "filled" | "rejected" | "cancelled";
 export type PipelineStage =
   | "brief"
@@ -136,6 +137,7 @@ export type Order = {
   ts: number;
   fillPrice?: number;
   fee?: number;
+  pnl?: number;
   krakenTxid?: string;
 };
 

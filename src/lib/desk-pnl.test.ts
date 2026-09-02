@@ -4,6 +4,8 @@ import {
   NEAR_STOP_PCT,
   dayLossAlert,
   equityMultiple,
+  fillLeg,
+  fillWhy,
   fillWinRatePct,
   lotMetrics,
   pctOfCapital,
@@ -100,5 +102,20 @@ describe("lotMetrics", () => {
     assert.ok(m.distTakePct <= NEAR_STOP_PCT);
     assert.equal(m.nearTake, true);
     assert.equal(m.underwater, false);
+  });
+});
+
+describe("fillLeg / fillWhy", () => {
+  it("buy is IN, sell is OUT", () => {
+    assert.equal(fillLeg({ side: "buy", reason: "rsi cross" }), "in");
+    assert.equal(fillLeg({ side: "sell", reason: "SL" }), "out");
+  });
+
+  it("labels the exit", () => {
+    assert.equal(fillWhy("TIME TP"), "time take");
+    assert.equal(fillWhy("SL"), "stop loss");
+    assert.equal(fillWhy("manual ticket"), "you");
+    assert.equal(fillWhy("CLOSE"), "you closed");
+    assert.equal(fillLeg({ side: "sell", reason: "CLOSE" }), "out");
   });
 });

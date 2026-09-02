@@ -14,13 +14,16 @@ import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, scanLiveTape } from "@/lib/engine";
 import { secondRead } from "@/lib/grok-brief";
 import { testVenueKeys } from "@/lib/human-gate-api";
-import { PAIRS, SLEEVE_META, USD_BALANCE_KEYS } from "@/lib/kraken";
+import { PAIRS, PAIR_BY_ID, SLEEVE_META, USD_BALANCE_KEYS } from "@/lib/kraken";
 import { readHumanToken } from "@/lib/human-gate.mjs";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
-import { useDesk, useFloor } from "@/lib/store";
+import { useDesk, useFloor, ensurePaperDesk } from "@/lib/store";
+import { persistDeskBook } from "@/lib/profile";
 import type { BookSleeve, PairId } from "@/lib/types";
+import { ALL_LANE_IDS, pickHotBook } from "@/lib/universe";
 import { COMING_SOON_VENUES } from "@/lib/venues";
-import { DurationPills } from "./duration-pills.tsx";
+import { DurationPills } from "./duration-pills";
+import { InstallAppButton } from "./install-app";
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);
@@ -43,6 +46,7 @@ export function SettingsPanel() {
   const setKeysOk = useFloor((s) => s.setKeysOk);
   const pairs = useFloor((s) => s.pairs);
   const setPairs = useFloor((s) => s.setPairs);
+  const tickers = useFloor((s) => s.tickers);
   const risk = useFloor((s) => s.risk);
   const setRisk = useFloor((s) => s.setRisk);
   const startingCash = useFloor((s) => s.startingCash);
@@ -58,8 +62,6 @@ export function SettingsPanel() {
   const signals = useFloor((s) => s.signals);
   const desk = useDesk();
   const brain = useFloor((s) => s.brain);
-  const selfLearn = useFloor((s) => s.selfLearn);
-  const setSelfLearn = useFloor((s) => s.setSelfLearn);
   const resetBrain = useFloor((s) => s.resetBrain);
   const sessionMinutes = useFloor((s) => s.sessionMinutes);
   const setSessionMinutes = useFloor((s) => s.setSessionMinutes);
@@ -170,19 +172,25 @@ export function SettingsPanel() {
 
   return (
     <>
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) persistProfile();
+        }}
+      >
         <SheetContent title="Desk settings">
           <div className="space-y-6">
             <section className="space-y-3">
               <Label>How the floor works your money</Label>
               <ol className="space-y-2 text-2xs text-muted">
                 <li>
-                  <span className="text-treasury">1.</span> Paper: set capital and risk %, then
-                  start the desk. The bot cannot deposit or withdraw.
+                  <span className="text-treasury">1.</span> Paper starts with play money. No
+                  wallet. No deposit. Test the twelve desks first.
                 </li>
                 <li>
-                  <span className="text-treasury">2.</span> Live: verify you're human, then attach
-                  an exchange account with Query + Orders keys. Withdrawal stays off.
+                  <span className="text-treasury">2.</span> Live is optional: verify you're human,
+                  then attach an exchange account with Query + Orders keys. Withdrawal stays off.
                 </li>
                 <li>
                   <span className="text-treasury">3.</span> Test the connection, switch to Live,
@@ -208,7 +216,25 @@ export function SettingsPanel() {
                 >
                   Stop desk
                 </Button>
-              ) : null}
+              ) : (
+                <Button
+                  size="sm"
+                  variant="good"
+                  onClick={() => {
+                    if (ensurePaperDesk()) {
+                      toast.success("Paper desk is on — $10k play money. No wallet needed.");
+                      setOpen(false);
+                    }
+                  }}
+                >
+                  Start paper desk
+                </Button>
+              )}
+              <InstallAppButton />
+              <p className="text-2xs text-subtle">
+                Install puts the desk on your phone Home Screen. The book is saved. The bot cannot
+                trade while the phone is closed — it replays the tape when you open it again.
+              </p>
             </section>
 
             <section className="space-y-3">
@@ -219,7 +245,7 @@ export function SettingsPanel() {
                   setSessionMinutes(m);
                   toast.message(
                     m === 0
-                      ? "Runs until you stop"
+                      ? "24/7 — runs until you stop"
                       : launched
                         ? "Clock reset from now"
                         : `Session ${m}m on launch`,
@@ -369,9 +395,25 @@ export function SettingsPanel() {
             </section>
 
             <section className="space-y-3">
-              <Label>Book — grow the wallet</Label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label>Book — grow the wallet</Label>
+                <Button
+                  type="button"
+                  size="micro"
+                  variant="outline"
+                  onClick={() => {
+                    const picked = pickHotBook(tickers, ALL_LANE_IDS);
+                    setPairs(picked);
+                    toast.message(
+                      `All three: ${picked.map((id) => PAIR_BY_ID[id].base).join(" · ")}`,
+                    );
+                  }}
+                >
+                  All three · bot pick
+                </Button>
+              </div>
               <p className="text-2xs text-subtle">
-                Core compounds. Heat only if the meme is actually rising. xStocks are tokenized
+                All three lanes: hot tape, uprising alts, and memes. xStocks are tokenized
                 NVDA/TSLA/AAPL/SPY on Kraken (not available in the US). Nothing here is a promise.
                 Memes can go to zero.
               </p>
@@ -462,13 +504,10 @@ export function SettingsPanel() {
 
             <section className="space-y-3">
               <Label>Self-learning brain</Label>
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="learn">Learn from fills</Label>
-                <Switch id="learn" checked={selfLearn} onCheckedChange={setSelfLearn} />
-              </div>
               <p className="text-2xs text-subtle">
-                Archivist scores every close. RSI bands, confidence floor, size tilt, and pair bias
-                move after wins and losses. Bad setups get retired.
+                Always on. Archivist scores every close in Paper, Auto, and Learn. RSI bands,
+                confidence, size tilt, and pair bias move after wins and losses. Learn walks daily
+                and weekly candles from the first print we can get.
               </p>
               <div className="grid grid-cols-2 gap-1 text-2xs text-muted">
                 <div className="flex justify-between">
@@ -523,8 +562,9 @@ export function SettingsPanel() {
           <DialogTitle>Arm live runner</DialogTitle>
           <DialogDescription>
             This lets the desk send real market orders to your Kraken account when auto-trade is
-            on. Size, stops, and the daily-loss halt still apply. The kill switch cancels open
-            orders.
+            on. Size, stops, and the daily-loss halt still apply. Winning closes auto-sweep into
+            the in-app bot wallet so you can convert, then send to Kraken or Coinbase. The kill
+            switch cancels open orders. This app never holds a seed or a withdrawal key.
           </DialogDescription>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setArmAsk(false)}>
@@ -535,7 +575,7 @@ export function SettingsPanel() {
               onClick={() => {
                 setLiveArmed(true);
                 setArmAsk(false);
-                toast.message("Live runner armed");
+                toast.message("Live armed — profits auto-sweep into the bot wallet");
               }}
             >
               Arm live
@@ -568,6 +608,10 @@ export function SettingsPanel() {
       </Dialog>
     </>
   );
+}
+
+function persistProfile() {
+  persistDeskBook();
 }
 
 function RiskRow({

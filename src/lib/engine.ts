@@ -1,17 +1,20 @@
-import { AGENT_BY_ID, AGENTS } from "./agents.ts";
-import { emitPulse } from "./bus.ts";
-import { uid, px } from "./format.ts";
-import { readSignal } from "./indicators.ts";
-import { PAIR_BY_ID } from "./kraken.ts";
-import { fetchOhlc, fetchTickers } from "./kraken-api.ts";
-import { getLiveVenue } from "./venues/index.ts";
-import { connectTickerFeed } from "./kraken-ws.ts";
-import { learnFromClose, pairMinConf } from "./learn.ts";
-import { makeSimCandles, stepSim } from "./sim-feed.ts";
-import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
-import { fetchWire } from "./wire-api.ts";
-import { sessionEnded } from "./session.ts";
-import { markEquity, useFloor, type FloorState } from "./store.ts";
+import { AGENT_BY_ID, AGENTS } from "./agents";
+import { emitPulse } from "./bus";
+import { uid, px, money } from "./format";
+import { readScalp } from "./indicators";
+import { PAIR_BY_ID } from "./kraken";
+import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
+import { fetchOhlc, fetchTickers } from "./kraken-api";
+import { getLiveVenue } from "./venues";
+import { connectTickerFeed } from "./kraken-ws";
+import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn";
+import { SCALP, scalpManage, scalpStops } from "./scalp";
+import { makeSimCandles, stepSim } from "./sim-feed";
+import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
+import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
+import { fetchWire } from "./wire-api";
+import { sessionEnded } from "./session";
+import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -19,7 +22,9 @@ import {
   toastOrderFill,
   toastSessionEnded,
   toastVenueBlock,
-} from "./trade-toast.ts";
+  toastAwayReplay,
+  toastSweep,
+} from "./trade-toast";
 import type {
   AgentId,
   Order,
@@ -29,7 +34,7 @@ import type {
   QueueItem,
   TapeEvent,
   Ticker,
-} from "./types.ts";
+} from "./types";
 
 const STAGE_CYCLE: PipelineStage[] = [
   "brief",
@@ -48,14 +53,118 @@ let lastEquitySample = 0;
 let restFails = 0;
 let pipelineLock: Promise<void> = Promise.resolve();
 const evaluating = new Set<PairId>();
+let evalBusy = 0;
+const lastEvalAt = new Map<PairId, number>();
+const flattening = new Set<string>();
 let demoLock = false;
+let lastStopCheck = 0;
+const pendingTickers = new Map<PairId, Ticker>();
+let tickerFlush: number | null = null;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+function prefersReduced() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
+  const pings = pingSwarm();
+  const rtt = Math.max(...GUILDS.map((g) => pings[g.id]!));
+  if (prefersReduced()) {
+    const done = finishRoll(vote, pings);
+    patch({ swarm: done, grokNote: done.grok });
+    return done;
+  }
+  let rolling = startRoll(vote);
+  patch({ swarm: rolling, grokNote: rolling.grok });
+  bumpAgent("dispatcher", `ping ${label}`, 0.7);
+  pushEvent({
+    agent: "dispatcher",
+    stage: "brief",
+    pair,
+    title: `SWARM PING ${label}`,
+    detail: `Grok waiting on ${SWARM_SIZE} bots`,
+    tone: "info",
+  });
+  const order = GUILDS.slice().sort((a, b) => pings[a.id]! - pings[b.id]!);
+  let elapsed = 0;
+  for (const g of order) {
+    const wait = Math.max(0, pings[g.id]! - elapsed);
+    await sleep(wait);
+    elapsed = pings[g.id]!;
+    rolling = landGuild(rolling, vote, g.id, pings[g.id]!);
+    patch({ swarm: rolling, grokNote: rolling.grok });
+    bumpAgent(g.lead, `${g.name} ${pings[g.id]}ms`, rolling.guilds[g.id]!.heat);
+    emitPulse({ from: g.lead, to: "dispatcher" });
+    pushEvent({
+      agent: g.lead,
+      next: "dispatcher",
+      stage: "brief",
+      pair,
+      title: `${g.name} IN · ${g.count} bots · ${pings[g.id]}ms`,
+      detail: rolling.guilds[g.id]!.note,
+      tone: "info",
+    });
+  }
+  await sleep(48);
+  const done = finishRoll(vote, pings);
+  patch({ swarm: done, grokNote: done.grok });
+  bumpAgent("dispatcher", `grok ${done.kind} ${rtt}ms`, 1);
+  return done;
+}
+
+async function walkDebate(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
+  const steps: { role: (typeof vote.debate.rounds)[number]["role"]; stage: PipelineStage; agent: AgentId }[] = [
+    { role: "setup", stage: "brief", agent: "scanner" },
+    { role: "challenge", stage: "split", agent: "hunter" },
+    { role: "data", stage: "handout", agent: "flow" },
+    { role: "risk", stage: "tool", agent: "sentinel" },
+    { role: "merge", stage: "second", agent: "dispatcher" },
+  ];
+  const pause = prefersReduced() ? 0 : 90;
+  for (const step of steps) {
+    const round = vote.debate.rounds.find((r) => r.role === step.role);
+    if (!round) continue;
+    setStage(step.stage);
+    bumpAgent(step.agent, `${step.role} ${round.kind}`, 0.95);
+    patch({ grokNote: round.note });
+    pushEvent({
+      agent: step.agent,
+      next: "dispatcher",
+      stage: step.stage,
+      pair,
+      title: `${step.role.toUpperCase()} ${round.kind.toUpperCase()} ${label}`,
+      detail: round.note,
+      tone:
+        step.role === "challenge"
+          ? "warn"
+          : round.kind === "buy"
+            ? "good"
+            : round.kind === "sell"
+              ? "warn"
+              : "info",
+    });
+    emitPulse({ from: step.agent, to: "dispatcher" });
+    await sleep(pause);
+  }
+  patch({ swarm: vote, grokNote: vote.grok });
+  if (vote.debate.dissent) {
+    pushEvent({
+      agent: "dispatcher",
+      stage: "second",
+      pair,
+      title: `DISSENT KEPT · ${vote.debate.dissent.kind.toUpperCase()} · ${vote.debate.dissent.bots} bots`,
+      detail: vote.debate.dissent.note,
+      tone: "warn",
+    });
+  }
+}
+
 function patch(partial: Partial<FloorState>) {
-  useFloor.setState((s) => ({ ...s, ...partial }));
+  if (!running) return;
+  useFloor.setState(partial);
 }
 
 function bumpAgent(id: AgentId, action: string, heat = 1) {
@@ -140,17 +249,50 @@ function setStage(stage: PipelineStage) {
 }
 
 function applyTicker(t: Ticker) {
+  pendingTickers.set(t.pair, t);
+  if (tickerFlush != null) return;
+  tickerFlush = window.setTimeout(flushTickers, 160);
+}
+
+function flushTickers() {
+  tickerFlush = null;
+  if (!running || pendingTickers.size === 0) {
+    pendingTickers.clear();
+    return;
+  }
   const s = useFloor.getState();
-  const tickers = { ...s.tickers, [t.pair]: t };
-  const positions = s.positions.map((p) =>
-    p.pair === t.pair ? { ...p, mark: t.last } : p,
-  );
+  const tickers = { ...s.tickers };
+  let changed = false;
+  for (const [pair, t] of pendingTickers) {
+    const prev = tickers[pair];
+    if (
+      prev &&
+      prev.last === t.last &&
+      prev.bid === t.bid &&
+      prev.ask === t.ask &&
+      prev.changePct === t.changePct
+    ) {
+      continue;
+    }
+    tickers[pair] = t;
+    changed = true;
+  }
+  pendingTickers.clear();
+  if (!changed) return;
+  const positions =
+    s.positions.length === 0
+      ? s.positions
+      : s.positions.map((p) => {
+          const last = tickers[p.pair]?.last;
+          return last != null && last !== p.mark ? { ...p, mark: last } : p;
+        });
   patch({
     tickers,
     positions,
     lastFeedAt: Date.now(),
     ticks: s.ticks + 1,
   });
+  maybeCheckStops();
 }
 
 function sampleEquity(force = false) {
@@ -267,7 +409,7 @@ async function refreshOhlcAll() {
   const s = useFloor.getState();
   if (s.pairs.length === 0) return;
   const useSim = s.feedSource === "sim";
-  const interval = s.chartInterval;
+  const interval = 1;
   const open = new Set(s.positions.map((p) => p.pair));
   const ranked = s.pairs
     .map((pair) => ({
@@ -326,59 +468,66 @@ async function refreshOhlcAll() {
 }
 
 function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
-  if (evaluating.has(pair)) return;
-  pipelineLock = pipelineLock.then(() => evaluatePair(pair, candles)).catch(() => {});
+  if (!running || evaluating.has(pair) || evalBusy >= 2) return;
+  const last = lastEvalAt.get(pair) ?? 0;
+  if (Date.now() - last < 6_000) return;
+  evalBusy += 1;
+  lastEvalAt.set(pair, Date.now());
+  void evaluatePair(pair, candles)
+    .catch(() => {})
+    .finally(() => {
+      evalBusy = Math.max(0, evalBusy - 1);
+    });
 }
 
 async function evaluatePair(pair: PairId, candles: { close: number; volume: number }[]) {
   const s0 = useFloor.getState();
-  if (!s0.launched || !s0.floorOpen) return;
+  if (!running || !s0.launched || !s0.floorOpen) return;
   evaluating.add(pair);
   try {
     const closes = candles.map((c) => c.close);
     const volumes = candles.map((c) => c.volume);
     const brain = s0.brain;
-    const read = readSignal(closes, volumes, brain);
+    const read = readScalp(closes, volumes, brain);
     const ticker = s0.tickers[pair];
     const price = ticker?.last ?? closes[closes.length - 1]!;
     const label = PAIR_BY_ID[pair].label;
     const minConf =
-      s0.mode === "paper" ? Math.min(pairMinConf(brain, pair), 0.42) : pairMinConf(brain, pair);
-
-    setStage("brief");
-    bumpAgent("scanner", `brief ${label}`, 0.85);
-    pushEvent({
-      agent: "scanner",
-      next: "dispatcher",
-      stage: "brief",
+      s0.mode === "paper"
+        ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
+        : Math.min(pairMinConf(brain, pair), SCALP.minConf + 0.04);
+    const equity = markEquity(s0);
+    const vote = await rollInSwarm(
+      tallySwarm({
+        pair,
+        signal: { kind: read.kind, confidence: read.confidence, rsi: read.rsi },
+        ticker,
+        volumes,
+        positions: s0.positions,
+        cash: s0.cash,
+        equity,
+        dayPnl: equity - (s0.dayStartEquity || s0.startingCash),
+        maxDailyLoss: (s0.dayStartEquity || s0.startingCash) * s0.risk.maxDailyLossPct,
+        maxPositions: s0.risk.maxPositions,
+        brain,
+        wire: s0.wire,
+        fearGreed: s0.fearGreed,
+      }),
       pair,
-      title: `${label} on the tape`,
-      detail: `${read.reason} · ${px(price)}`,
-      tone: "info",
-    });
-    await sleep(220);
-
-    setStage("split");
-    bumpAgent("hunter", `rank ${label}`, 0.85);
-    emitPulse({ from: "scanner", to: "hunter" });
-    patch({ handoff: { from: "scanner", to: "hunter" } });
-    await sleep(140);
-    bumpAgent("dispatcher", `split ${pair}`, 0.8);
-    emitPulse({ from: "hunter", to: "dispatcher" });
-    patch({ handoff: { from: "hunter", to: "dispatcher" } });
-    await sleep(140);
-
-    setStage("handout");
-    bumpAgent("signal", read.kind.toUpperCase(), read.kind === "hold" ? 0.45 : 1);
-    emitPulse({ from: "dispatcher", to: "signal" });
-    patch({ handoff: { from: "dispatcher", to: "signal" } });
+      label,
+    );
+    const grokKind = vote.kind;
+    const grokConf =
+      grokKind === read.kind ? read.confidence : grokKind === "hold" ? 0.22 : Math.max(read.confidence, 0.52);
+    const grokReason = vote.grok;
+    await walkDebate(vote, pair, label);
 
     const signal = {
       id: uid("sig"),
       pair,
-      kind: read.kind,
-      confidence: read.confidence,
-      reason: read.reason,
+      kind: grokKind,
+      confidence: grokConf,
+      reason: grokReason,
       rsi: read.rsi,
       emaFast: read.emaFast,
       emaSlow: read.emaSlow,
@@ -388,37 +537,96 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       setup: read.setup,
     };
     patch({ signals: [signal, ...useFloor.getState().signals].slice(0, 40) });
-    await sleep(200);
+    await sleep(160);
+
+    const ops = s0.opsMode ?? (s0.autoTrade ? "auto" : "paper");
+    if (ops === "learn") {
+      bumpAgent("hunter", `study ${label}`, 0.95);
+      bumpAgent("signal", grokKind.toUpperCase(), 0.9);
+      bumpAgent("regime", "pattern walk", 0.8);
+      bumpAgent("flow", "tape memory", 0.75);
+      const candlesFull = useFloor.getState().candles[pair];
+      if (candlesFull && candlesFull.length >= 24) {
+        const mem = studyFromCandles(pair, candlesFull);
+        patch({ brain: mergeAssetMemory(useFloor.getState().brain, mem) });
+      }
+      pushEvent({
+        agent: "archivist",
+        stage: "handout",
+        pair,
+        title: `STUDY ${label}`,
+        detail: `${read.reason} · stored · no ticket`,
+        tone: "info",
+      });
+      bumpAgent("archivist", "pattern stored", 0.85);
+      return;
+    }
 
     const sleeve = PAIR_BY_ID[pair].sleeve;
-    if (sleeve === "heat" && read.kind === "buy" && (ticker?.changePct ?? 0) < 1.2) {
-      bumpAgent("hunter", "heat not rising", 0.7);
+    const stNow = useFloor.getState();
+    const paper = stNow.mode === "paper";
+    const hasPos = stNow.positions.some((p) => p.pair === pair);
+    const haltBase = stNow.dayStartEquity || stNow.startingCash;
+    const haltCap = haltBase * stNow.risk.maxDailyLossPct;
+    const dayNow = markEquity(stNow) - haltBase;
+    const halted = haltCap > 0 && dayNow <= -haltCap;
+
+    let ticketKind: "buy" | "sell" | "hold" =
+      grokKind !== "hold" ? grokKind : read.kind !== "hold" ? read.kind : "hold";
+    if (ticketKind === "sell" && !hasPos) ticketKind = "hold";
+    const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0);
+
+    patch({
+      signals: [
+        { ...signal, kind: ticketKind === "hold" ? grokKind : ticketKind, confidence: ticketConf },
+        ...useFloor.getState().signals.filter((x) => x.id !== signal.id),
+      ].slice(0, 40),
+    });
+
+    if (sleeve === "heat" && ticketKind === "buy" && (ticker?.changePct ?? 0) < 0.4) {
+      bumpAgent("hunter", "heat flat", 0.55);
       pushEvent({
         agent: "hunter",
         next: "archivist",
         stage: "handout",
         pair,
-        title: `HEAT COLD ${label}`,
-        detail: `${px(price)} · 24h ${ticker?.changePct?.toFixed(2) ?? "?"}%. Wait for a rising tape`,
+        title: `HEAT FLAT ${label}`,
+        detail: `${px(price)} · 24h ${ticker?.changePct?.toFixed(2) ?? "?"}%. Need a tick up`,
         tone: "info",
       });
       return;
     }
 
-    if (read.kind === "hold" || read.confidence < minConf) {
-      setStage("tool");
-      bumpAgent("risk", "no ticket", 0.35);
+    if (
+      ticketKind === "buy" &&
+      sleeve === "core" &&
+      (ticker?.changePct ?? 0) < -1.2 &&
+      !read.reason.includes("cross")
+    ) {
+      bumpAgent("hunter", "core dump — skip", 0.5);
       pushEvent({
-        agent: "signal",
+        agent: "hunter",
         next: "archivist",
         stage: "handout",
         pair,
-        title: `HOLD ${label}`,
-        detail:
-          read.confidence < minConf && read.kind !== "hold"
-            ? `brain wants ${(minConf * 100).toFixed(0)}% conf · ${read.reason}`
-            : read.reason,
+        title: `SKIP DUMP ${label}`,
+        detail: `24h ${ticker?.changePct?.toFixed(2) ?? "?"}%. Waiting for a turn`,
         tone: "info",
+      });
+      return;
+    }
+
+    if (halted || (vote.veto && !paper) || ticketKind === "hold" || ticketConf < minConf) {
+      setStage("tool");
+      bumpAgent("risk", vote.veto ? "swarm veto" : "no ticket", 0.35);
+      pushEvent({
+        agent: "dispatcher",
+        next: "archivist",
+        stage: "handout",
+        pair,
+        title: vote.veto || halted ? `GROK VETO ${label}` : `HOLD ${label}`,
+        detail: halted ? "daily halt — no new tickets" : grokReason,
+        tone: vote.veto || halted ? "warn" : "info",
       });
       bumpAgent("archivist", "journal hold", 0.4);
       emitPulse({ from: "signal", to: "archivist" });
@@ -430,9 +638,9 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       next: "regime",
       stage: "handout",
       pair,
-      title: `${read.kind.toUpperCase()} ${label}`,
-      detail: `${read.reason} · conf ${(read.confidence * 100).toFixed(0)}% · ${read.setup}`,
-      tone: read.kind === "buy" ? "good" : "warn",
+      title: `${ticketKind.toUpperCase()} ${label}`,
+      detail: `${grokReason} · ${read.reason}`,
+      tone: ticketKind === "buy" ? "good" : "warn",
     });
 
     setStage("tool");
@@ -440,7 +648,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     bumpAgent("regime", regime.state, 0.9);
     emitPulse({ from: "signal", to: "regime" });
     await sleep(140);
-    if (read.kind === "buy" && !regime.allowBuy && read.confidence < 0.78) {
+    if (ticketKind === "buy" && !regime.allowBuy && !paper && ticketConf < 0.4) {
       bumpAgent("regime", "fade blocked", 1);
       pushQueue({
         title: "REGIME BLOCK",
@@ -465,8 +673,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     bumpAgent("flow", flow.ok ? "book clean" : "thin book", flow.ok ? 0.7 : 1);
     emitPulse({ from: "regime", to: "flow" });
     await sleep(120);
-    if (!flow.ok && read.kind === "buy") {
-      const hard = s0.mode === "live" || flow.spreadPct > 0.004;
+    if (!flow.ok && ticketKind === "buy") {
+      const hard = !paper && (s0.mode === "live" || flow.spreadPct > 0.004);
       if (hard) {
         pushQueue({
           title: "FLOW BLOCK",
@@ -492,7 +700,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     emitPulse({ from: "flow", to: "risk" });
     await sleep(160);
 
-    const verdict = sizeTicket(pair, read.kind === "buy" ? "buy" : "sell", price, read.confidence);
+    const verdict = sizeTicket(pair, ticketKind === "buy" ? "buy" : "sell", price, ticketConf);
     if (!verdict.ok) {
       bumpAgent("risk", verdict.why, 0.9);
       pushQueue({
@@ -566,7 +774,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     }
 
     const lastAt = lastSignalAt.get(pair) ?? 0;
-    const cooldown = st.mode === "paper" ? 90_000 : st.risk.cooldownMs;
+    const cooldown = st.mode === "paper" ? SCALP.cooldownMs : Math.min(st.risk.cooldownMs, 45_000);
     if (Date.now() - lastAt < cooldown) {
       bumpAgent("sentinel", "cooldown", 0.6);
       pushQueue({
@@ -684,16 +892,22 @@ function sizeTicket(
     const heatOpen = s.positions.filter((p) => PAIR_BY_ID[p.pair].sleeve === "heat").length;
     if (heatOpen >= 2) return { ok: false, why: "heat book full — max 2 meme lots" };
   }
+  if (sleeve === "core") {
+    const coreOpen = s.positions.filter((p) => PAIR_BY_ID[p.pair].sleeve === "core").length;
+    if (coreOpen >= 2) return { ok: false, why: "core book full — max 2 majors" };
+  }
   const tilt = s.brain.enabled ? s.brain.sizeTilt : 1;
-  const streakBoost = s.brain.enabled && s.brain.streak >= 3 ? 1.08 : 1;
-  const sleeveTilt = sleeve === "heat" ? 0.55 : sleeve === "stock" ? 0.8 : 1;
+  const streakBoost = s.brain.enabled && s.brain.streak >= 3 ? 1.12 : 1;
+  const ch = s.tickers[pair]?.changePct ?? 0;
+  const sleeveTilt =
+    sleeve === "heat" ? (ch > 2 ? 1.2 : 0.45) : sleeve === "stock" ? 0.8 : 1;
   const sized =
     (equity *
       s.risk.sizePct *
       tilt *
       sleeveTilt *
       streakBoost *
-      (0.7 + confidence * 0.6) *
+      (0.55 + confidence * 0.9) *
       (1 + bias)) /
     price;
   const maxQty = (equity * s.risk.maxPosPct * (sleeve === "heat" ? 0.7 : 1)) / price;
@@ -706,7 +920,18 @@ function sizeTicket(
   return { ok: true, qty: rounded, side: "buy" };
 }
 
-export async function executeOrder(order: Order) {
+let fillChain: Promise<void> = Promise.resolve();
+
+export function executeOrder(order: Order): Promise<void> {
+  const run = fillChain.then(() => executeOrderNow(order));
+  fillChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+async function executeOrderNow(order: Order) {
   const s = useFloor.getState();
   if (order.mode === "live") {
     try {
@@ -780,127 +1005,332 @@ export async function executeOrder(order: Order) {
   });
 }
 
-function applyFill(order: Order) {
+export async function placeManualTicket(input: {
+  pair: PairId;
+  side: "buy" | "sell";
+  dollars: number;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
   const s = useFloor.getState();
-  const fill = order.fillPrice ?? order.price;
-  const fee = order.fee ?? fill * order.qty * 0.0026;
-  const existing = s.positions.find((p) => p.pair === order.pair);
-  let positions = s.positions.slice();
-  let cash = s.cash;
-  let realized = s.realized;
-  let reason = order.reason;
-  let brain = s.brain;
-  let closePnl: number | undefined;
-
-  if (order.side === "sell") {
-    if (!existing) {
-      patch({
-        orders: [{ ...order, status: "rejected" as const, reason: "no inventory" }, ...s.orders].slice(
-          0,
-          80,
-        ),
-      });
-      return;
-    }
-    const pnl = (fill - existing.entry) * existing.qty - fee;
-    closePnl = pnl;
-    realized += pnl;
-    cash += fill * existing.qty - fee;
-    positions = positions.filter((p) => p.pair !== order.pair);
-    if (!reason.includes("TP") && !reason.includes("SL")) {
-      reason = `${reason} · ${pnl >= 0 ? "TP" : "SL"}`;
-    }
-    const lessonReason = existing.note || order.reason;
-    if (lessonReason.includes("DEMO")) {
-      bumpAgent("archivist", "demo close — brain skipped", 0.6);
-    } else {
-      brain = learnFromClose(s.brain, { pair: order.pair, pnl, reason: lessonReason });
-      bumpAgent("archivist", brain.lastNote, 1);
-      pushEvent({
-        agent: "archivist",
-        stage: "signed",
-        pair: order.pair,
-        title: brain.enabled ? (pnl >= 0 ? "brain kept the setup" : "brain cut the setup") : "journal close",
-        detail: brain.lastNote,
-        tone: pnl >= 0 ? "good" : "bad",
-      });
-    }
-  } else if (existing) {
-    const totalQty = existing.qty + order.qty;
-    const entry = (existing.entry * existing.qty + fill * order.qty) / totalQty;
-    positions = positions.map((p) =>
-      p.pair === order.pair ? { ...p, qty: totalQty, entry, mark: fill } : p,
-    );
-    cash -= fill * order.qty + fee;
-  } else {
-    cash -= fill * order.qty + fee;
-    const stopPct =
-      PAIR_BY_ID[order.pair].sleeve === "heat"
-        ? Math.max(s.risk.stopPct, 0.032)
-        : PAIR_BY_ID[order.pair].sleeve === "stock"
-          ? Math.min(s.risk.stopPct, 0.014)
-          : s.risk.stopPct;
-    const takePct =
-      PAIR_BY_ID[order.pair].sleeve === "heat"
-        ? Math.max(s.risk.takePct, 0.055)
-        : s.risk.takePct;
-    const pos: Position = {
-      id: uid("pos"),
-      pair: order.pair,
-      side: "buy",
-      qty: order.qty,
-      entry: fill,
-      mark: fill,
-      stop: fill * (1 - stopPct),
-      take: fill * (1 + takePct),
-      openedAt: Date.now(),
-      mode: order.mode,
-      krakenTxid: order.krakenTxid,
-      note: order.reason,
-    };
-    positions = [...positions, pos];
+  if (!s.launched) return { ok: false, reason: "Start the desk first." };
+  const price = s.tickers[input.pair]?.last;
+  if (!price) return { ok: false, reason: "No mark on that pair yet." };
+  const dollars = Math.round(input.dollars * 100) / 100;
+  if (!Number.isFinite(dollars) || dollars < 10) {
+    return { ok: false, reason: "Ticket needs at least $10." };
   }
+  if (input.side === "sell") {
+    const pos = s.positions.find((p) => p.pair === input.pair);
+    if (!pos) return { ok: false, reason: "No inventory to sell." };
+    const order: Order = {
+      id: uid("ord"),
+      pair: input.pair,
+      side: "sell",
+      qty: pos.qty,
+      price,
+      status: "queued",
+      mode: s.mode,
+      reason: "manual ticket",
+      ts: Date.now(),
+    };
+    await executeOrder(order);
+    return { ok: true };
+  }
+  const def = PAIR_BY_ID[input.pair];
+  const qty = Number((dollars / price).toFixed(Math.min(Math.max(def.decimals, 0), 8)));
+  if (qty < def.ordermin) return { ok: false, reason: "Below min size." };
+  if (dollars > s.cash * 0.98) return { ok: false, reason: "Not enough free cash." };
+  const order: Order = {
+    id: uid("ord"),
+    pair: input.pair,
+    side: "buy",
+    qty,
+    price,
+    status: "queued",
+    mode: s.mode,
+    reason: "manual ticket",
+    ts: Date.now(),
+  };
+  await executeOrder(order);
+  return { ok: true };
+}
 
-  patch({
-    cash,
-    realized,
-    positions,
-    orders: [{ ...order, fee, reason }, ...s.orders].slice(0, 80),
-    pendingLive: null,
-    brain,
+export async function closeLot(
+  id: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const s = useFloor.getState();
+  const pos = s.positions.find((p) => p.id === id);
+  if (!pos) return { ok: false, reason: "That lot is already flat." };
+  if (flattening.has(pos.id)) return { ok: false, reason: "Already closing." };
+  flattening.add(pos.id);
+  const price = s.tickers[pos.pair]?.last ?? pos.mark;
+  const order: Order = {
+    id: uid("ord"),
+    pair: pos.pair,
+    side: pos.side === "buy" ? "sell" : "buy",
+    qty: pos.qty,
+    price,
+    status: "queued",
+    mode: pos.mode,
+    reason: "CLOSE",
+    ts: Date.now(),
+  };
+  try {
+    await executeOrder(order);
+    return { ok: true };
+  } finally {
+    flattening.delete(pos.id);
+  }
+}
+
+export function cancelPendingTicket() {
+  const s = useFloor.getState();
+  if (!s.pendingLive) return;
+  s.setPendingLive(null);
+}
+
+let studyLock = false;
+export async function studyBook(): Promise<{ ok: true; note: string }> {
+  if (studyLock) return { ok: true, note: "Already walking history." };
+  studyLock = true;
+  try {
+    const s = useFloor.getState();
+    if (!s.launched) return { ok: true, note: "Start the desk first." };
+    bumpAgent("hunter", "walking daily tape", 1);
+    bumpAgent("signal", "pattern scan", 1);
+    let n = 0;
+    for (const pair of s.pairs) {
+      try {
+        const weekly = await fetchOhlc({ data: { pair, interval: 10080 } });
+        const daily = await fetchOhlc({ data: { pair, interval: 1440 } });
+        const candles = daily.length >= 24 ? daily : weekly;
+        if (candles.length < 24) continue;
+        if (weekly.length >= 24) {
+          patch({ brain: mergeAssetMemory(useFloor.getState().brain, studyFromCandles(pair, weekly)) });
+        }
+        const mem = studyFromCandles(pair, candles);
+        patch({
+          candles: { ...useFloor.getState().candles, [pair]: daily.length >= 24 ? daily : candles },
+          brain: mergeAssetMemory(useFloor.getState().brain, mem),
+        });
+        n += 1;
+        bumpAgent("archivist", mem.lastNote.slice(0, 42), 0.9);
+        bumpAgent("hunter", `studied ${PAIR_BY_ID[pair].base}`, 0.85);
+        bumpAgent("signal", mem.bestSetup, 0.8);
+      } catch {
+        bumpAgent("sentinel", `study miss ${pair}`, 0.6);
+      }
+    }
+    pushEvent({
+      agent: "hunter",
+      next: "archivist",
+      stage: "brief",
+      title: "HISTORY WALK",
+      detail: `Stored patterns on ${n} names. Brain keeps learning on every fill.`,
+      tone: "info",
+    });
+    return { ok: true, note: n ? `Brain stored ${n} daily books.` : "No history yet — tape still printing." };
+  } finally {
+    studyLock = false;
+  }
+}
+
+function applyFill(order: Order) {
+  if (!running) return;
+  let closePnl: number | undefined;
+  let lessonReason: string | undefined;
+  useFloor.setState((s) => {
+    const fill = order.fillPrice ?? order.price;
+    if (!(fill > 0) || !(order.qty > 0)) {
+      return {
+        orders: [{ ...order, status: "rejected" as const, reason: "bad fill" }, ...s.orders].slice(0, 80),
+      };
+    }
+    const fee = order.fee ?? fill * order.qty * 0.0026;
+    const existing = s.positions.find((p) => p.pair === order.pair);
+    let positions = s.positions.slice();
+    let cash = s.cash;
+    let realized = s.realized;
+    let reason = order.reason;
+
+    if (order.side === "sell") {
+      if (!existing) {
+        return {
+          orders: [{ ...order, status: "rejected" as const, reason: "no inventory" }, ...s.orders].slice(
+            0,
+            80,
+          ),
+        };
+      }
+      const pnl = (fill - existing.entry) * existing.qty - fee;
+      closePnl = pnl;
+      realized += pnl;
+      cash += fill * existing.qty - fee;
+      positions = positions.filter((p) => p.pair !== order.pair);
+      if (!reason.includes("TP") && !reason.includes("SL")) {
+        reason = `${reason} · ${pnl >= 0 ? "TP" : "SL"}`;
+      }
+      lessonReason = existing.note || order.reason;
+    } else if (existing) {
+      const totalQty = existing.qty + order.qty;
+      const entry = (existing.entry * existing.qty + fill * order.qty) / totalQty;
+      positions = positions.map((p) =>
+        p.pair === order.pair ? { ...p, qty: totalQty, entry, mark: fill } : p,
+      );
+      cash -= fill * order.qty + fee;
+    } else {
+      cash -= fill * order.qty + fee;
+      const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
+      const band = scalpStops(fill, heat);
+      positions = [
+        ...positions,
+        {
+          id: uid("pos"),
+          pair: order.pair,
+          side: "buy",
+          qty: order.qty,
+          entry: fill,
+          mark: fill,
+          stop: band.stop,
+          take: band.take,
+          openedAt: Date.now(),
+          mode: order.mode,
+          krakenTxid: order.krakenTxid,
+          note: order.reason,
+        },
+      ];
+    }
+    return {
+      cash,
+      realized,
+      positions,
+      orders: [{ ...order, fee, reason, pnl: closePnl }, ...s.orders].slice(0, 80),
+      pendingLive: null,
+    };
   });
+
+  if (lessonReason && closePnl != null && !lessonReason.includes("DEMO")) {
+    const brain = learnFromClose(useFloor.getState().brain, {
+      pair: order.pair,
+      pnl: closePnl,
+      reason: lessonReason,
+    });
+    patch({ brain });
+    bumpAgent("archivist", brain.lastNote, 1);
+    pushEvent({
+      agent: "archivist",
+      stage: "signed",
+      pair: order.pair,
+      title: brain.enabled ? (closePnl >= 0 ? "brain kept the setup" : "brain cut the setup") : "journal close",
+      detail: brain.lastNote,
+      tone: closePnl >= 0 ? "good" : "bad",
+    });
+  } else if (lessonReason?.includes("DEMO")) {
+    bumpAgent("archivist", "demo close — brain skipped", 0.6);
+  }
   bumpAgent("archivist", "journal fill", 0.85);
   emitPulse({ from: "runner", to: "archivist" });
   sampleEquity(true);
   toastOrderFill(order, closePnl);
+  if (closePnl != null && closePnl >= 0.5 && useFloor.getState().autoSweep) {
+    const swept = useFloor.getState().sweepProfit();
+    if (swept.ok) {
+      toastSweep(swept.amount);
+      pushEvent({
+        agent: "treasury",
+        stage: "signed",
+        title: `SWEEP ${money(swept.amount)}`,
+        detail: "Profit moved to the bot wallet — off the desk, not at risk",
+        tone: "good",
+      });
+    }
+  }
+  flushFloorPersist();
+}
+
+function restoreOrphanLots() {
+  useFloor.setState((s) => {
+    const sold = new Set(
+      s.orders.filter((o) => o.status === "filled" && o.side === "sell").map((o) => o.pair),
+    );
+    const open = new Set(s.positions.map((p) => p.pair));
+    const extra: Position[] = [];
+    for (const o of s.orders) {
+      if (o.status !== "filled" || o.side !== "buy") continue;
+      if (sold.has(o.pair) || open.has(o.pair)) continue;
+      const fill = o.fillPrice ?? o.price;
+      if (!(fill > 0) || !(o.qty > 0)) continue;
+      const heat = PAIR_BY_ID[o.pair]?.sleeve === "heat";
+      const band = scalpStops(fill, heat);
+      extra.push({
+        id: uid("pos"),
+        pair: o.pair,
+        side: "buy",
+        qty: o.qty,
+        entry: fill,
+        mark: s.tickers[o.pair]?.last ?? fill,
+        stop: band.stop,
+        take: band.take,
+        openedAt: o.ts,
+        mode: o.mode,
+        note: o.reason,
+      });
+      open.add(o.pair);
+    }
+    if (extra.length === 0) {
+      return s;
+    }
+    return { positions: [...s.positions, ...extra] };
+  });
+}
+
+function maybeCheckStops() {
+  const now = Date.now();
+  if (now - lastStopCheck < 350) return;
+  lastStopCheck = now;
+  checkStops();
 }
 
 function checkStops() {
   const s = useFloor.getState();
   if (!s.launched || s.positions.length === 0) return;
-  // Session end / stop-desk still protect paper (and live if still armed).
-  // Kill switch disarms live — do not send more venue orders.
   if (s.mode === "live" && !s.liveArmed && !s.floorOpen) return;
-  for (const p of s.positions) {
+  let trailed = false;
+  const nextPos = s.positions.map((p) => {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
-    const hitStop = p.side === "buy" ? mark <= p.stop : mark >= p.stop;
-    const hitTake = p.side === "buy" ? mark >= p.take : mark <= p.take;
-    if (!hitStop && !hitTake) continue;
+    const managed = scalpManage({ ...p, mark });
+    if (managed.stop !== p.stop) trailed = true;
+    return { ...p, mark, stop: managed.stop };
+  });
+  if (trailed) patch({ positions: nextPos });
+
+  for (const p of nextPos) {
+    const managed = scalpManage(p);
+    if (managed.action === "hold") continue;
+    if (flattening.has(p.id)) continue;
+    flattening.add(p.id);
     const side = p.side === "buy" ? "sell" : "buy";
+    const reason =
+      managed.action === "stop"
+        ? "SL"
+        : managed.action === "take"
+          ? "TP"
+          : p.mark >= p.entry
+            ? "TIME TP"
+            : "TIME SL";
     const order: Order = {
       id: uid("ord"),
       pair: p.pair,
       side,
       qty: p.qty,
-      price: mark,
+      price: p.mark,
       status: "queued",
       mode: p.mode,
-      reason: hitStop ? "SL" : "TP",
+      reason,
       ts: Date.now(),
     };
-    bumpAgent("sentinel", hitStop ? "stop hit" : "take hit", 1);
-    bumpAgent("runner", `${order.reason} ${p.pair}`, 1);
-    void executeOrder(order);
+    bumpAgent("sentinel", `${reason} ${PAIR_BY_ID[p.pair].base}`, 1);
+    bumpAgent("runner", `flatten ${PAIR_BY_ID[p.pair].base}`, 1);
+    void executeOrder(order).finally(() => flattening.delete(p.id));
   }
 }
 
@@ -914,9 +1344,17 @@ function idleChatter() {
   const wr = s.brain.samples ? Math.round((s.brain.wins / s.brain.samples) * 100) : 0;
   const lines: Record<AgentId, string> = {
     scanner: `watching ${label}`,
-    hunter: "ranking the board",
-    dispatcher: "routing next brief",
-    signal: s.brain.enabled
+    runner:
+      s.opsMode === "paper"
+        ? "waiting on your ticket"
+        : s.opsMode === "learn"
+          ? "studying — no ticket"
+          : s.mode === "live"
+            ? "live desk hot"
+            : "auto blotter ready",
+    hunter: s.opsMode === "learn" ? "walking first print → now" : "ranking the board",
+    dispatcher: s.swarm?.grok ? s.swarm.grok.slice(0, 42) : "Grok coordinating the swarm",
+    signal: s.opsMode === "learn" ? "pattern memory" : s.brain.enabled
       ? `RSI ${s.brain.rsiBuy.toFixed(0)}/${s.brain.rsiSell.toFixed(0)}`
       : "waiting on a clean cross",
     regime: "reading the higher tape",
@@ -927,7 +1365,6 @@ function idleChatter() {
         ? `Kraken USD ${usdOnBook(s.liveBalance).toFixed(0)}`
         : "paper purse ready",
     sentinel: "drawdown green",
-    runner: s.mode === "live" ? "live desk hot" : "paper blotter ready",
     archivist: s.brain.samples
       ? `brain ${wr}% on ${s.brain.samples}`
       : "brain cold — waiting on fills",
@@ -1063,20 +1500,105 @@ export async function haltLive() {
   }
 }
 
+async function catchUpAway(now = Date.now()): Promise<AwayReport | null> {
+  const s = useFloor.getState();
+  if (!s.launched || s.mode !== "paper") {
+    useFloor.setState({ lastEngineAt: now });
+    return null;
+  }
+  const from = s.lastEngineAt > 0 ? s.lastEngineAt : s.shiftStartedAt;
+  const gap = now - from;
+  if (!(from > 0) || gap < AWAY_MIN_MS) {
+    useFloor.setState({ lastEngineAt: now });
+    return null;
+  }
+  const span = Math.min(gap, AWAY_MAX_MS);
+  const since = now - span;
+  const bars: AwayBar[] = [];
+  await Promise.all(
+    s.pairs.map(async (pair) => {
+      try {
+        const rows = await fetchOhlc({ data: { pair, interval: 1, since } });
+        for (const c of rows) {
+          if (c.time < since) continue;
+          bars.push({
+            time: c.time,
+            pair,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          });
+        }
+      } catch {
+        /* pair miss */
+      }
+    }),
+  );
+  const { book, report } = replayAway(
+    {
+      cash: s.cash,
+      realized: s.realized,
+      positions: s.positions,
+      orders: s.orders,
+      risk: { sizePct: s.risk.sizePct, maxPositions: s.risk.maxPositions },
+      pairs: s.pairs,
+    },
+    bars,
+  );
+  useFloor.setState({
+    cash: book.cash,
+    realized: book.realized,
+    positions: book.positions,
+    orders: book.orders,
+    lastEngineAt: now,
+  });
+  report.awayMs = gap;
+  if (report.fills > 0) {
+    const ev: TapeEvent = {
+      id: uid("ev"),
+      ts: now,
+      agent: "archivist",
+      stage: "signed",
+      title: `AWAY ${Math.max(1, Math.round(gap / 60_000))}m`,
+      detail: `${report.fills} fills · ${report.takes} takes · ${report.stops} stops · replayed tape`,
+      tone: report.pnl >= 0 ? "good" : "bad",
+    };
+    useFloor.setState((st) => ({
+      events: [ev, ...st.events].slice(0, 40),
+      grokNote: `Away replay · ${report.fills} fills · tape walked while the phone was closed`,
+    }));
+  }
+  return report;
+}
+
 export function startEngine(): () => void {
   if (running) return () => stopEngine();
   running = true;
+  restoreOrphanLots();
   if (!useFloor.getState().shiftStartedAt) {
     patch({ shiftStartedAt: Date.now() });
   }
   seedHistory();
   applySessionEnd();
+  void catchUpAway().then((rep) => {
+    flushFloorPersist();
+    if (rep && rep.awayMs >= 90_000) toastAwayReplay(rep.awayMs, rep.fills, rep.pnl);
+  });
+
+  const heartbeat = window.setInterval(() => {
+    patch({ lastEngineAt: Date.now() });
+  }, 15_000);
+  const persistPulse = window.setInterval(() => {
+    flushFloorPersist();
+  }, 8_000);
 
   const tick = window.setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     coolAgents(0.25);
     sampleEquity();
-  }, 250);
-  const chatter = window.setInterval(idleChatter, 1600);
+  }, 500);
+  const chatter = window.setInterval(idleChatter, 4000);
   const rest = window.setInterval(() => {
     applySessionEnd();
     const st = useFloor.getState();
@@ -1090,11 +1612,13 @@ export function startEngine(): () => void {
     void refreshTickersRest().then(() => checkStops());
   }, 5000);
   const ohlc = window.setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     const st = useFloor.getState();
     if (!st.launched || !st.floorOpen) return;
     void refreshOhlcAll();
-  }, useFloor.getState().mode === "paper" ? 7_000 : 15_000);
+  }, useFloor.getState().mode === "paper" ? 8_000 : 15_000);
   const stageSpin = window.setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     const s = useFloor.getState();
     if (!s.launched || !s.floorOpen) return;
     const i = STAGE_CYCLE.indexOf(s.stage);
@@ -1102,6 +1626,7 @@ export function startEngine(): () => void {
     if (!busy) patch({ stage: STAGE_CYCLE[(i + 1) % STAGE_CYCLE.length]! });
   }, 3800);
   const simPulse = window.setInterval(() => {
+    if (typeof document !== "undefined" && document.hidden) return;
     if (useFloor.getState().feedSource !== "sim") return;
     const st = useFloor.getState();
     if (!bookNeedsProtect(st)) return;
@@ -1116,7 +1641,7 @@ export function startEngine(): () => void {
     void refreshWire();
   }, 180_000);
 
-  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire];
+  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire, heartbeat, persistPulse];
 
   stopWs = connectTickerFeed(
     useFloor.getState().pairs,
@@ -1149,8 +1674,18 @@ export function startEngine(): () => void {
 
 export function stopEngine() {
   running = false;
+  patch({ lastEngineAt: Date.now() });
+  flushFloorPersist();
   for (const t of timers) window.clearInterval(t);
   timers = [];
+  if (tickerFlush != null) {
+    window.clearTimeout(tickerFlush);
+    tickerFlush = null;
+  }
+  pendingTickers.clear();
+  evaluating.clear();
+  evalBusy = 0;
+  lastEvalAt.clear();
   stopWs?.();
   stopWs = null;
 }

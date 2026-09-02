@@ -138,8 +138,9 @@ export function ChartsBubble() {
             <Button
               key={id}
               type="button"
-              size="micro"
+              size="sm"
               variant={id === pair ? "default" : "outline"}
+              aria-pressed={id === pair}
               onClick={() => setInspectPair(id)}
             >
               {PAIR_BY_ID[id].base}
@@ -152,8 +153,9 @@ export function ChartsBubble() {
             <Button
               key={n}
               type="button"
-              size="micro"
+              size="sm"
               variant={n === interval ? "default" : "outline"}
+              aria-pressed={n === interval}
               onClick={() => setChartInterval(asChartInterval(n))}
             >
               {chartIntervalLabel(n as ChartInterval)}
@@ -234,7 +236,6 @@ function ChartToolbox({ pair }: { pair: PairId }) {
   const setTool = useFloor((s) => s.setChartTool);
   const drawings = useFloor((s) => s.chartDrawings[pair]);
   const clear = useFloor((s) => s.clearChartDrawings);
-  const [fxOpen, setFxOpen] = useState(false);
   const count = drawings?.length ?? 0;
   const hint = CHART_TOOLS.find((t) => t.id === tool)?.hint;
 
@@ -245,29 +246,22 @@ function ChartToolbox({ pair }: { pair: PairId }) {
           <Button
             key={t.id}
             type="button"
-            size="micro"
+            size="sm"
             variant={t.id === chartType ? "default" : "outline"}
+            aria-pressed={t.id === chartType}
             onClick={() => setChartType(t.id)}
           >
             {t.label}
           </Button>
         ))}
         <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
-        <Button
-          type="button"
-          size="micro"
-          variant={fxOpen ? "default" : "outline"}
-          aria-expanded={fxOpen}
-          onClick={() => setFxOpen((v) => !v)}
-        >
-          fx
-        </Button>
         {CHART_TOOLS.map((t) => (
           <Button
             key={t.id}
             type="button"
-            size="micro"
+            size="sm"
             variant={t.id === tool ? "default" : "outline"}
+            aria-pressed={t.id === tool}
             onClick={() => setTool(t.id)}
           >
             {t.label}
@@ -275,7 +269,7 @@ function ChartToolbox({ pair }: { pair: PairId }) {
         ))}
         <Button
           type="button"
-          size="micro"
+          size="sm"
           variant="ghost"
           disabled={count === 0}
           onClick={() => clear(pair)}
@@ -286,18 +280,19 @@ function ChartToolbox({ pair }: { pair: PairId }) {
           <span className="w-full text-micro text-subtle sm:ml-auto sm:w-auto">{hint}</span>
         ) : null}
       </div>
-      {fxOpen ? (
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
-          {indicators.map((ind) => (
-            <IndicatorChip
-              key={ind.id}
-              ind={ind}
-              onToggle={() => toggle(ind.id)}
-              onCycle={() => setParams(ind.id, cycleIndicatorParams(ind))}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-2">
+        <span className="font-display w-full text-micro tracking-[0.14em] text-subtle uppercase sm:w-auto">
+          Indicators
+        </span>
+        {indicators.map((ind) => (
+          <IndicatorChip
+            key={ind.id}
+            ind={ind}
+            onToggle={() => toggle(ind.id)}
+            onCycle={() => setParams(ind.id, cycleIndicatorParams(ind))}
+          />
+        ))}
+      </div>
     </>
   );
 }
@@ -314,30 +309,28 @@ function IndicatorChip({
   const meta = INDICATOR_META[ind.id];
   const param = indicatorParamLabel(ind);
   return (
-    <div
-      className={cn(
-        "flex overflow-hidden rounded-xs",
-        ind.on
-          ? "bg-primary text-primary-foreground"
-          : "bg-transparent text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
-      )}
-    >
-      <button
+    <div className="flex overflow-hidden rounded-sm">
+      <Button
         type="button"
-        className="font-display h-7 px-2 text-micro font-semibold tracking-wide uppercase"
+        size="sm"
+        variant={ind.on ? "default" : "outline"}
+        aria-pressed={ind.on}
+        className="rounded-none"
         onClick={onToggle}
       >
         {meta.label}
-      </button>
+      </Button>
       {ind.on && meta.params !== "none" && param ? (
-        <button
+        <Button
           type="button"
-          className="stat-num h-7 border-l border-black/20 px-1.5 text-micro normal-case tracking-normal opacity-85"
+          size="sm"
+          variant={ind.on ? "default" : "outline"}
+          className="rounded-none border-l border-black/20 px-2"
           onClick={onCycle}
           aria-label={`Cycle ${meta.label} period`}
         >
-          {param}
-        </button>
+          <span className="stat-num normal-case tracking-normal">{param}</span>
+        </Button>
       ) : null}
     </div>
   );

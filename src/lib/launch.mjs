@@ -7,7 +7,7 @@
 
 export const LAUNCH_DEFAULTS = {
   startingCash: 10_000,
-  sizePct: 0.02,
+  sizePct: 0.05,
   stopPct: 0.015,
   takePct: 0.025,
   maxDailyLossPct: 0.04,

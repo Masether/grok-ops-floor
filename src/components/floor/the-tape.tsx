@@ -103,17 +103,38 @@ export function TheTape() {
             <span style={{ color: AGENT_BY_ID[e.agent]?.color ?? "#8b93a7" }}>
               {AGENT_BY_ID[e.agent]?.name ?? e.agent}
             </span>
-            <span
-              className={cn(
-                "truncate",
-                e.tone === "good" && "text-good",
-                e.tone === "warn" && "text-warn",
-                e.tone === "bad" && "text-danger",
-                e.tone === "info" && "text-muted",
-              )}
-            >
-              {e.title}
-            </span>
+            {e.pair ? (
+              <button
+                type="button"
+                className={cn(
+                  "min-h-11 truncate text-left",
+                  e.tone === "good" && "text-good",
+                  e.tone === "warn" && "text-warn",
+                  e.tone === "bad" && "text-danger",
+                  e.tone === "info" && "text-muted",
+                )}
+                onClick={() => {
+                  useFloor.getState().setInspectPair(e.pair!);
+                  if (useFloor.getState().opsMode === "paper") {
+                    useFloor.getState().setDeskOpen(true);
+                  }
+                }}
+              >
+                {e.title}
+              </button>
+            ) : (
+              <span
+                className={cn(
+                  "truncate",
+                  e.tone === "good" && "text-good",
+                  e.tone === "warn" && "text-warn",
+                  e.tone === "bad" && "text-danger",
+                  e.tone === "info" && "text-muted",
+                )}
+              >
+                {e.title}
+              </span>
+            )}
           </li>
         ))}
         {recent.length === 0 ? (

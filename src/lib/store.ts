@@ -1,18 +1,16 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { AGENTS } from "./agents.ts";
-import { DEFAULT_BRAIN, type Brain } from "./learn.ts";
-import { DEFAULT_PAIRS } from "./kraken.ts";
-import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
+import { AGENTS } from "./agents";
+import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn";
+import { DEFAULT_PAIRS } from "./kraken";
+import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import {
   GOAL_DEFAULTS,
   asGoalLevel,
-  normalizeGoalDays,
-  normalizeGoalProfit,
   type GoalLevelId,
-} from "./goal.ts";
+} from "./goal";
 import {
   DEFAULT_CHART_TYPE,
   DEFAULT_CHART_TOOL,
@@ -28,7 +26,7 @@ import {
   type ChartTool,
   type ChartType,
   type IndicatorId,
-} from "./charts.ts";
+} from "./charts";
 import {
   DEFAULT_CHART_INTERVAL,
   DEFAULT_SESSION_MINUTES,
@@ -36,8 +34,10 @@ import {
   normalizeSessionMinutes,
   sessionEndsAtFromMinutes,
   type ChartInterval,
-} from "./session.ts";
-import type { VenueId } from "./venues/types.ts";
+} from "./session";
+import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
+import { idleSwarm, type SwarmSnap } from "./swarm";
+import type { VenueId } from "./venues/types";
 import type {
   AgentId,
   AgentState,
@@ -47,6 +47,7 @@ import type {
   FeedSource,
   Order,
   PairId,
+  OpsMode,
   PipelineStage,
   Position,
   QueueItem,
@@ -56,7 +57,7 @@ import type {
   TradeMode,
   TradeSignal,
   WireItem,
-} from "./types.ts";
+} from "./types";
 
 function freshAgents(): Record<AgentId, AgentState> {
   const out = {} as Record<AgentId, AgentState>;
@@ -76,21 +77,40 @@ function freshAgents(): Record<AgentId, AgentState> {
 }
 
 export const DEFAULT_RISK: RiskConfig = {
-  sizePct: 0.02,
+  sizePct: 0.05,
   maxPosPct: 0.18,
   maxDailyLossPct: 0.04,
-  stopPct: 0.015,
-  takePct: 0.025,
-  maxPositions: 5,
-  cooldownMs: 12 * 60_000,
+  stopPct: 0.0035,
+  takePct: 0.0105,
+  maxPositions: 6,
+  cooldownMs: 12_000,
 };
 
 type Keys = { apiKey: string; apiSecret: string };
+
+export type WalletId = "funding" | "trading";
+
+export type DeskTab = "blotter" | "money" | "ticket";
+
+export type TransferKind = "sweep" | "deposit" | "transfer" | "convert" | "send";
+
+export type TransferRow = {
+  id: string;
+  ts: number;
+  from: WalletId;
+  to: WalletId;
+  amount: number;
+  kind?: TransferKind;
+  note?: string;
+  dest?: ExternalDest;
+};
+
 
 export type FloorState = {
   launched: boolean;
   floorOpen: boolean;
   mode: TradeMode;
+  opsMode: OpsMode;
   autoTrade: boolean;
   liveArmed: boolean;
   venueId: VenueId;
@@ -101,6 +121,11 @@ export type FloorState = {
   risk: RiskConfig;
   startingCash: number;
   cash: number;
+  fundingCash: number;
+  vault: VaultLot[];
+  autoSweep: boolean;
+  sweptTotal: number;
+  transfers: TransferRow[];
   realized: number;
   dayStartEquity: number;
   positions: Position[];
@@ -117,6 +142,7 @@ export type FloorState = {
   feedOk: boolean;
   feedError: string | null;
   feedSource: FeedSource;
+  lastEngineAt: number;
   lastFeedAt: number;
   shiftStartedAt: number;
   briefs: number;
@@ -126,10 +152,13 @@ export type FloorState = {
   inspectPair: PairId | null;
   grokNote: string | null;
   grokBusy: boolean;
+  swarm: SwarmSnap;
   settingsOpen: boolean;
   handoff: { from: AgentId; to: AgentId } | null;
   brain: Brain;
   selfLearn: boolean;
+  brainOpen: boolean;
+  brainChat: BrainMsg[];
   wire: WireItem[];
   fearGreed: { value: number; label: string } | null;
   wireAt: number;
@@ -138,6 +167,7 @@ export type FloorState = {
   chartInterval: ChartInterval;
   chartsOpen: boolean;
   deskOpen: boolean;
+  deskTab: DeskTab;
   chartType: ChartType;
   chartIndicators: ChartIndicatorState[];
   chartTool: ChartTool;
@@ -148,6 +178,7 @@ export type FloorState = {
 
   setFloorOpen: (open: boolean) => void;
   setMode: (mode: TradeMode) => void;
+  setOpsMode: (mode: OpsMode) => void;
   setAutoTrade: (v: boolean) => void;
   setLiveArmed: (v: boolean) => void;
   setVenueId: (id: VenueId) => void;
@@ -172,6 +203,25 @@ export type FloorState = {
   setPairs: (pairs: PairId[]) => void;
   setRisk: (risk: Partial<RiskConfig>) => void;
   setStartingCash: (n: number) => void;
+  depositFunding: (amount: number) => { ok: true } | { ok: false; reason: string };
+  setAutoSweep: (v: boolean) => void;
+  sweepProfit: () => { ok: true; amount: number } | { ok: false; reason: string };
+  convertWallet: (
+    side: "buy" | "sell",
+    pair: PairId,
+    amount: number,
+  ) => { ok: true } | { ok: false; reason: string };
+  sendOut: (
+    dest: ExternalDest,
+    asset: "usd" | PairId,
+    amount: number,
+    note?: string,
+  ) => { ok: true; amount: number } | { ok: false; reason: string };
+  transferFunds: (
+    from: WalletId,
+    to: WalletId,
+    amount: number,
+  ) => { ok: true } | { ok: false; reason: string };
   resetPaper: () => void;
   selectAgent: (id: AgentId | null) => void;
   setPendingLive: (order: Order | null) => void;
@@ -184,11 +234,14 @@ export type FloorState = {
   setBrain: (brain: Brain) => void;
   setSelfLearn: (v: boolean) => void;
   resetBrain: () => void;
+  setBrainOpen: (v: boolean) => void;
+  pushBrainChat: (msg: BrainMsg) => void;
   setWire: (items: WireItem[], fearGreed: { value: number; label: string } | null) => void;
   setSessionMinutes: (minutes: number) => void;
   setChartInterval: (n: ChartInterval) => void;
   setChartsOpen: (v: boolean) => void;
   setDeskOpen: (v: boolean) => void;
+  setDeskTab: (t: DeskTab) => void;
   setChartType: (t: ChartType) => void;
   toggleChartIndicator: (id: IndicatorId) => void;
   setChartIndicatorParams: (id: IndicatorId, params: Partial<ChartIndicatorState>) => void;
@@ -209,13 +262,15 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   const fills = s.orders.filter((o) => o.status === "filled");
   const wins = fills.filter((o) => o.reason.includes("TP")).length;
   const losses = fills.filter((o) => o.reason.includes("SL")).length;
+  const dayBase =
+    s.dayStartEquity > 0 ? s.dayStartEquity : s.startingCash > 0 ? s.startingCash : equity;
   return {
     equity,
     cash: s.cash,
     exposure: posValue,
     unrealized,
     realized: s.realized,
-    dayPnl: equity - s.dayStartEquity,
+    dayPnl: equity - dayBase,
     fills: fills.length,
     wins,
     losses,
@@ -237,12 +292,91 @@ export function useDesk(): DeskSnapshot {
   return useFloor(useShallow(computeDesk));
 }
 
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+let persistName = "";
+let persistValue = "";
+let persistBound = false;
+
+function writeFloorPersist() {
+  persistTimer = undefined;
+  if (!persistName) return;
+  try {
+    localStorage.setItem(persistName, persistValue);
+  } catch {
+    try {
+      localStorage.removeItem(persistName);
+      localStorage.setItem(persistName, persistValue);
+    } catch {
+      /* quota — keep the desk running */
+    }
+  }
+}
+
+export function flushFloorPersist() {
+  if (persistTimer != null) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
+  writeFloorPersist();
+}
+
+function bindPersistFlush() {
+  if (persistBound || typeof window === "undefined") return;
+  persistBound = true;
+  window.addEventListener("pagehide", flushFloorPersist);
+  window.addEventListener("beforeunload", flushFloorPersist);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) flushFloorPersist();
+  });
+}
+
+function debounceStorage(ms: number): StateStorage {
+  bindPersistFlush();
+  return {
+    getItem: (name) => {
+      try {
+        return localStorage.getItem(name);
+      } catch {
+        return null;
+      }
+    },
+    setItem: (name, value) => {
+      persistName = name;
+      persistValue = value;
+      if (persistTimer != null) clearTimeout(persistTimer);
+      persistTimer = setTimeout(writeFloorPersist, ms);
+    },
+    removeItem: (name) => {
+      try {
+        localStorage.removeItem(name);
+      } catch {
+        /* private mode */
+      }
+    },
+  };
+}
+
+/** Prevents a second persist.rehydrate() from wiping a desk that just launched. */
+let launchedThisSession = false;
+let floorHydrate: Promise<void> | null = null;
+
+export function hydrateFloor(): Promise<void> {
+  if (!floorHydrate) {
+    floorHydrate = Promise.resolve(useFloor.persist.rehydrate()).then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+  return floorHydrate;
+}
+
 export const useFloor = create<FloorState>()(
   persist(
     (set, get) => ({
       launched: false,
       floorOpen: false,
       mode: "paper",
+      opsMode: "paper",
       autoTrade: false,
       liveArmed: false,
       venueId: "kraken",
@@ -253,6 +387,11 @@ export const useFloor = create<FloorState>()(
       risk: DEFAULT_RISK,
       startingCash: 10_000,
       cash: 10_000,
+      fundingCash: 0,
+      vault: [],
+      autoSweep: true,
+      sweptTotal: 0,
+      transfers: [],
       realized: 0,
       dayStartEquity: 10_000,
       positions: [],
@@ -270,6 +409,7 @@ export const useFloor = create<FloorState>()(
       feedError: null,
       feedSource: "kraken",
       lastFeedAt: 0,
+      lastEngineAt: 0,
       shiftStartedAt: Date.now(),
       briefs: 0,
       ticks: 0,
@@ -278,10 +418,13 @@ export const useFloor = create<FloorState>()(
       inspectPair: null,
       grokNote: null,
       grokBusy: false,
+      swarm: idleSwarm(),
       settingsOpen: false,
       handoff: null,
       brain: DEFAULT_BRAIN,
       selfLearn: true,
+      brainOpen: false,
+      brainChat: [],
       wire: [],
       fearGreed: null,
       wireAt: 0,
@@ -290,12 +433,13 @@ export const useFloor = create<FloorState>()(
       chartInterval: DEFAULT_CHART_INTERVAL,
       chartsOpen: false,
       deskOpen: false,
+      deskTab: "blotter",
       chartType: DEFAULT_CHART_TYPE,
       chartIndicators: DEFAULT_CHART_INDICATORS.map((x) => ({ ...x })),
       chartTool: DEFAULT_CHART_TOOL,
       chartDrawings: {},
-      goalProfit: GOAL_DEFAULTS.goalProfit,
-      goalDays: GOAL_DEFAULTS.days,
+      goalProfit: 0,
+      goalDays: 0,
       goalLevel: GOAL_DEFAULTS.level,
 
       setFloorOpen: (open) => {
@@ -303,26 +447,42 @@ export const useFloor = create<FloorState>()(
         set({ floorOpen: open });
       },
       setMode: (mode) => set({ mode, liveArmed: mode === "live" ? get().liveArmed : false }),
+      setOpsMode: (opsMode) => {
+        if (!get().launched) return;
+        set({
+          opsMode,
+          autoTrade: opsMode === "auto",
+          floorOpen: true,
+          selfLearn: true,
+          brain: { ...get().brain, enabled: true },
+        });
+      },
       setAutoTrade: (v) => {
         if (v && !get().launched) return;
-        set({ autoTrade: v });
+        set({
+          autoTrade: v,
+          opsMode: v ? "auto" : get().opsMode === "learn" ? "learn" : "paper",
+          floorOpen: v ? true : get().floorOpen,
+        });
       },
-      setLiveArmed: (v) => set({ liveArmed: v }),
+      setLiveArmed: (v) => set({ liveArmed: v, autoSweep: v ? true : get().autoSweep }),
       setVenueId: (id) => set({ venueId: id === "paper" ? "paper" : "kraken" }),
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
+        launchedThisSession = true;
         const payload = clampLaunch(input);
-        const minutes = normalizeSessionMinutes(input.sessionMinutes ?? get().sessionMinutes);
-        const goalProfit = normalizeGoalProfit(input.goalProfit ?? get().goalProfit);
-        const goalDays = normalizeGoalDays(input.goalDays ?? get().goalDays);
-        const goalLevel = asGoalLevel(input.goalLevel ?? get().goalLevel);
+        const minutes = normalizeSessionMinutes(input.sessionMinutes ?? 0);
         set({
           launched: true,
           floorOpen: true,
           autoTrade: true,
+          opsMode: "auto",
+          selfLearn: true,
           mode: "paper",
           liveArmed: false,
           startingCash: payload.startingCash,
+          cash: payload.startingCash,
+          dayStartEquity: payload.startingCash,
           risk: {
             ...get().risk,
             sizePct: payload.sizePct,
@@ -333,11 +493,12 @@ export const useFloor = create<FloorState>()(
           },
           sessionMinutes: minutes,
           sessionEndsAt: sessionEndsAtFromMinutes(minutes),
-          goalProfit,
-          goalDays,
-          goalLevel,
+          goalProfit: 0,
+          goalDays: 0,
+          goalLevel: GOAL_DEFAULTS.level,
         });
         get().resetPaper();
+        queueMicrotask(flushFloorPersist);
       },
       stopDesk: () => set({ floorOpen: false, autoTrade: false, sessionEndsAt: null }),
       setKeys: (keys) => {
@@ -349,6 +510,157 @@ export const useFloor = create<FloorState>()(
       setPairs: (pairs) => set({ pairs: pairs.length ? pairs : DEFAULT_PAIRS }),
       setRisk: (risk) => set({ risk: { ...get().risk, ...risk } }),
       setStartingCash: (n) => set({ startingCash: n }),
+      depositFunding: (amount) => {
+        const n = Math.round(amount * 100) / 100;
+        if (!Number.isFinite(n) || n <= 0) return { ok: false as const, reason: "Enter an amount." };
+        if (n > 10_000_000) return { ok: false as const, reason: "Cap is $10M per deposit." };
+        const s = get();
+        const row: TransferRow = {
+          id: `${Date.now()}-dep`,
+          ts: Date.now(),
+          from: "funding",
+          to: "funding",
+          amount: n,
+          kind: "deposit",
+          note: "paper deposit",
+        };
+        set({
+          fundingCash: s.fundingCash + n,
+          transfers: [row, ...s.transfers].slice(0, 24),
+        });
+        return { ok: true as const };
+      },
+      setAutoSweep: (v) => set({ autoSweep: v }),
+      sweepProfit: () => {
+        const s = get();
+        const take = sweepableProfit(s.realized, s.sweptTotal, s.cash);
+        if (!(take >= 0.5)) return { ok: false as const, reason: "No free profit to sweep." };
+        const row: TransferRow = {
+          id: `${Date.now()}-sw`,
+          ts: Date.now(),
+          from: "trading",
+          to: "funding",
+          amount: take,
+          kind: "sweep",
+          note: "profit sweep",
+        };
+        set({
+          cash: s.cash - take,
+          fundingCash: s.fundingCash + take,
+          sweptTotal: s.sweptTotal + take,
+          transfers: [row, ...s.transfers].slice(0, 24),
+        });
+        return { ok: true as const, amount: take };
+      },
+      convertWallet: (side, pair, amount) => {
+        const s = get();
+        const price = s.tickers[pair]?.last ?? 0;
+        if (!(price > 0)) return { ok: false as const, reason: "No mark yet — wait for the tape." };
+        const res =
+          side === "buy"
+            ? applyConvertUsd(s.fundingCash, s.vault, pair, amount, price)
+            : applyConvertCoin(s.fundingCash, s.vault, pair, amount, price);
+        if (!res.ok) return res;
+        const usd = side === "buy" ? amount : amount * price;
+        const row: TransferRow = {
+          id: `${Date.now()}-cv`,
+          ts: Date.now(),
+          from: "funding",
+          to: "funding",
+          amount: Math.round(usd * 100) / 100,
+          kind: "convert",
+          note: `${side} ${pair}`,
+        };
+        set({
+          fundingCash: res.fundingCash,
+          vault: res.vault,
+          transfers: [row, ...s.transfers].slice(0, 24),
+        });
+        return { ok: true as const };
+      },
+      sendOut: (dest, asset, amount, note) => {
+        const s = get();
+        const destLabel = dest === "coinbase" ? "Coinbase" : "Kraken";
+        if (asset === "usd") {
+          const res = applySendUsd(s.fundingCash, amount);
+          if (!res.ok) return res;
+          const n = Math.round(amount * 100) / 100;
+          const row: TransferRow = {
+            id: `${Date.now()}-out`,
+            ts: Date.now(),
+            from: "funding",
+            to: "funding",
+            amount: n,
+            kind: "send",
+            dest,
+            note: note?.trim() || `USD → ${destLabel}`,
+          };
+          set({
+            fundingCash: res.fundingCash,
+            transfers: [row, ...s.transfers].slice(0, 24),
+          });
+          return { ok: true as const, amount: n };
+        }
+        const price = s.tickers[asset]?.last ?? 0;
+        const res = applySendCoin(s.vault, asset, amount, price);
+        if (!res.ok) return res;
+        const row: TransferRow = {
+          id: `${Date.now()}-out`,
+          ts: Date.now(),
+          from: "funding",
+          to: "funding",
+          amount: res.usd,
+          kind: "send",
+          dest,
+          note: note?.trim() || `${asset} → ${destLabel}`,
+        };
+        set({
+          vault: res.vault,
+          transfers: [row, ...s.transfers].slice(0, 24),
+        });
+        return { ok: true as const, amount: res.usd };
+      },
+      transferFunds: (from, to, amount) => {
+        const n = Math.round(amount * 100) / 100;
+        if (from === to) return { ok: false as const, reason: "Pick two different wallets." };
+        if (!Number.isFinite(n) || n <= 0) return { ok: false as const, reason: "Enter an amount." };
+        const s = get();
+        if (from === "funding") {
+          if (n > s.fundingCash + 1e-9) return { ok: false as const, reason: "Not enough in Funding." };
+          set({
+            fundingCash: s.fundingCash - n,
+            cash: s.cash + n,
+            startingCash: s.startingCash + n,
+            dayStartEquity: s.dayStartEquity + n,
+            transfers: [
+              {
+                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                ts: Date.now(),
+                from,
+                to,
+                amount: n,
+                kind: "transfer" as const,
+              },
+              ...s.transfers,
+            ].slice(0, 12),
+          });
+          return { ok: true as const };
+        }
+        if (n > s.cash + 1e-9) {
+          return { ok: false as const, reason: "Not enough free cash on the desk. Close lots first." };
+        }
+        set({
+          fundingCash: s.fundingCash + n,
+          cash: s.cash - n,
+          startingCash: Math.max(100, s.startingCash - n),
+          dayStartEquity: Math.max(0, s.dayStartEquity - n),
+          transfers: [
+            { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, ts: Date.now(), from, to, amount: n },
+            ...s.transfers,
+          ].slice(0, 12),
+        });
+        return { ok: true as const };
+      },
       resetPaper: () => {
         const cash = get().startingCash;
         set({
@@ -364,8 +676,11 @@ export const useFloor = create<FloorState>()(
           briefs: 0,
           ticks: 0,
           shiftStartedAt: Date.now(),
+          lastEngineAt: Date.now(),
           agents: freshAgents(),
           pendingLive: null,
+          swarm: idleSwarm(),
+          grokNote: "Grok core online — 300-bot swarm on the rails",
         });
       },
       selectAgent: (id) => set({ selectedAgent: id }),
@@ -377,8 +692,14 @@ export const useFloor = create<FloorState>()(
       setSettingsOpen: (v) => set({ settingsOpen: v }),
       bumpTicks: () => set({ ticks: get().ticks + 1 }),
       setBrain: (brain) => set({ brain }),
-      setSelfLearn: (v) => set({ selfLearn: v, brain: { ...get().brain, enabled: v } }),
-      resetBrain: () => set({ brain: { ...DEFAULT_BRAIN, enabled: get().selfLearn } }),
+      setSelfLearn: (_v) => set({ selfLearn: true, brain: { ...get().brain, enabled: true } }),
+      resetBrain: () =>
+        set({
+          brain: { ...DEFAULT_BRAIN, enabled: true, assetMemory: get().brain.assetMemory },
+        }),
+      setBrainOpen: (v) => set({ brainOpen: v }),
+      pushBrainChat: (msg) =>
+        set({ brainChat: [...get().brainChat, msg].slice(-24) }),
       setWire: (items, fearGreed) => set({ wire: items, fearGreed, wireAt: Date.now() }),
       setSessionMinutes: (minutes) => {
         const n = normalizeSessionMinutes(minutes);
@@ -391,6 +712,7 @@ export const useFloor = create<FloorState>()(
       setChartInterval: (n) => set({ chartInterval: asChartInterval(n) }),
       setChartsOpen: (v) => set({ chartsOpen: v }),
       setDeskOpen: (v) => set({ deskOpen: v }),
+      setDeskTab: (t) => set({ deskTab: t }),
       setChartType: (t) => set({ chartType: asChartType(t) }),
       toggleChartIndicator: (id) =>
         set((s) => ({
@@ -422,12 +744,14 @@ export const useFloor = create<FloorState>()(
     {
       name: "grok-ops-floor",
       skipHydration: true,
+      storage: createJSONStorage(() => debounceStorage(400)),
       partialize: (s) => {
         const shift = sliceShiftForPersist(s);
         return {
           launched: s.launched,
           venueId: s.venueId,
           mode: s.mode,
+          opsMode: s.opsMode,
           autoTrade: s.autoTrade,
           liveArmed: false,
           keys: s.keys,
@@ -435,16 +759,23 @@ export const useFloor = create<FloorState>()(
           risk: s.risk,
           startingCash: s.startingCash,
           cash: s.cash,
+          fundingCash: s.fundingCash,
+          vault: s.vault,
+          autoSweep: s.autoSweep,
+          sweptTotal: s.sweptTotal,
+          transfers: s.transfers.slice(0, 24),
           realized: s.realized,
           dayStartEquity: s.dayStartEquity,
           positions: s.positions,
           orders: s.orders.slice(-80),
           events: s.events.slice(-40),
+          lastEngineAt: s.lastEngineAt,
           shiftStartedAt: s.shiftStartedAt,
           briefs: s.briefs,
           floorOpen: s.floorOpen,
           brain: s.brain,
           selfLearn: s.selfLearn,
+          brainChat: s.brainChat.slice(-16),
           equityHistory: shift.equityHistory,
           signals: shift.signals,
           sessionMinutes: s.sessionMinutes,
@@ -461,8 +792,15 @@ export const useFloor = create<FloorState>()(
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<FloorState>;
         const oldFour = ["XBTUSD", "ETHUSD", "SOLUSD", "XRPUSD"];
+        const oldSix = ["XBTUSD", "ETHUSD", "SOLUSD", "PEPEUSD", "WIFUSD", "NVDAxUSD"];
+        const sameIds = (have: PairId[] | undefined, want: string[]) =>
+          Boolean(
+            have &&
+              have.length === want.length &&
+              [...have].sort().join(",") === [...want].sort().join(","),
+          );
         const pairs =
-          p.pairs && p.pairs.length === 4 && p.pairs.every((id) => oldFour.includes(id))
+          sameIds(p.pairs, oldFour) || sameIds(p.pairs, oldSix)
             ? DEFAULT_PAIRS
             : (p.pairs ?? current.pairs);
         const shift = hydratePersistedShift(
@@ -484,52 +822,70 @@ export const useFloor = create<FloorState>()(
             signals: current.signals,
           },
         );
-        const launched = inferLaunched(p);
+        const launched = launchedThisSession || inferLaunched(p);
         const venueId: VenueId = p.venueId === "paper" ? "paper" : "kraken";
+        const opsMode: OpsMode =
+          p.opsMode === "learn" ? "learn" : launched ? "auto" : "paper";
+        const autoTrade = launched && opsMode === "auto";
         return {
           ...current,
           ...p,
           pairs,
           launched,
           venueId,
-          floorOpen: launched ? Boolean(p.floorOpen ?? current.floorOpen) : false,
-          autoTrade: launched ? Boolean(p.autoTrade ?? current.autoTrade) : false,
+          opsMode: launched ? opsMode : "paper",
+          floorOpen: launched,
+          autoTrade,
           agents: freshAgents(),
           liveArmed: false,
           humanVerified: false,
           pendingLive: null,
           queue: [],
+          swarm: idleSwarm(),
           equityHistory: shift.equityHistory,
           signals: shift.signals,
           dayStartEquity: shift.dayStartEquity,
           shiftStartedAt: shift.shiftStartedAt,
+          lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : current.lastEngineAt,
           settingsOpen: false,
           chartsOpen: false,
           deskOpen: false,
-          goalProfit: normalizeGoalProfit(p.goalProfit ?? current.goalProfit),
-          goalDays: normalizeGoalDays(p.goalDays ?? current.goalDays),
+          deskTab: "blotter",
+          brainOpen: false,
+          goalProfit: 0,
+          goalDays: 0,
           goalLevel: asGoalLevel(p.goalLevel ?? current.goalLevel),
-          sessionMinutes: normalizeSessionMinutes(p.sessionMinutes ?? current.sessionMinutes),
-          sessionEndsAt:
-            typeof p.sessionEndsAt === "number"
-              ? p.sessionEndsAt
-              : p.sessionEndsAt === null
-                ? null
-                : current.sessionEndsAt,
+          sessionMinutes: 0,
+          sessionEndsAt: null,
           chartInterval: asChartInterval(p.chartInterval ?? current.chartInterval),
           chartType: asChartType(p.chartType ?? current.chartType),
           chartIndicators: normalizeChartIndicators(p.chartIndicators ?? current.chartIndicators),
           chartDrawings: normalizeChartDrawings(p.chartDrawings ?? current.chartDrawings),
           chartTool: DEFAULT_CHART_TOOL,
+          fundingCash: typeof p.fundingCash === "number" && p.fundingCash >= 0 ? p.fundingCash : 0,
+          vault: Array.isArray(p.vault) ? p.vault : [],
+          autoSweep: p.autoSweep !== false,
+          sweptTotal: typeof p.sweptTotal === "number" && p.sweptTotal >= 0 ? p.sweptTotal : 0,
+          transfers: Array.isArray(p.transfers) ? p.transfers.slice(0, 24) : [],
           brain: {
             ...DEFAULT_BRAIN,
             ...(p.brain ?? {}),
             pairBias: { ...DEFAULT_BRAIN.pairBias, ...(p.brain?.pairBias ?? {}) },
             setupScore: { ...DEFAULT_BRAIN.setupScore, ...(p.brain?.setupScore ?? {}) },
             lessons: p.brain?.lessons ?? [],
+            assetMemory: { ...DEFAULT_BRAIN.assetMemory, ...(p.brain?.assetMemory ?? {}) },
           },
+          brainChat: Array.isArray(p.brainChat) ? p.brainChat.slice(-16) : [],
         };
       },
     },
   ),
 );
+
+/** Start a paper book with play money. No-op if the desk is already launched. */
+export function ensurePaperDesk(): boolean {
+  const s = useFloor.getState();
+  if (s.launched) return false;
+  s.launchDesk({});
+  return true;
+}

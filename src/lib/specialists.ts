@@ -69,7 +69,7 @@ export function readFlow(ticker: Ticker | undefined, volumes: number[]): FlowRea
     };
   }
   if (avg > 0 && vol < avg * 0.35) {
-    return { ok: false, spreadPct, note: "volume dead — flow passes" };
+    return { ok: true, spreadPct, note: "thin volume — still printing" };
   }
   return {
     ok: true,
@@ -100,7 +100,8 @@ export function hunterScore(
   } else if (def.sleeve === "stock") {
     score += 0.35 + Math.max(ch, 0) * 0.18 + (ch < -2 ? -0.4 : 0);
   } else {
-    score += 0.55 + Math.min(Math.abs(ch), 6) * 0.12;
+    if (ch > 0) score += 0.7 + Math.min(ch, 6) * 0.22;
+    else score += 0.15 + ch * 0.35;
   }
   if (vol > 0) score += def.sleeve === "core" ? 0.35 : 0.12;
   const cats = wire.filter((w) => w.pairs.includes(pair) && Date.now() - w.ts < 6 * 3_600_000);

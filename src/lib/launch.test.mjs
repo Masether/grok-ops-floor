@@ -22,7 +22,7 @@ describe("clampLaunch", () => {
   it("defaults a blank payload", () => {
     const p = clampLaunch({});
     assert.equal(p.startingCash, 10_000);
-    assert.equal(p.sizePct, 0.02);
+    assert.equal(p.sizePct, 0.05);
     assert.equal(p.stopPct, 0.015);
     assert.equal(p.takePct, 0.025);
     assert.equal(p.maxDailyLossPct, 0.04);
@@ -66,7 +66,7 @@ describe("ticketNotional", () => {
   it("is capital times sizePct", () => {
     assert.equal(ticketNotional(10_000, 0.02), 200);
     assert.equal(ticketNotional(10_000, 2), 200);
-    assert.equal(ticketNotional(5000, LAUNCH_DEFAULTS.sizePct), 100);
+    assert.equal(ticketNotional(5000, LAUNCH_DEFAULTS.sizePct), 250);
   });
 });
 

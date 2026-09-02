@@ -249,11 +249,34 @@ export function pushTradeToast(input: TradeToastInput): void {
   queueMicrotask(flushTradeToasts);
 }
 
+export function toastAwayReplay(awayMs: number, fills: number, pnl: number): void {
+  const mins = Math.max(1, Math.round(awayMs / 60_000));
+  pushTradeToast({
+    priority: 2,
+    title: `AWAY ${mins}m`,
+    detail: fills
+      ? `${fills} paper fills · ${money(pnl)}. Replay of the tape — not a background run.`
+      : "Book kept. No paper fills in the gap.",
+    tone: fills === 0 ? "info" : pnl >= 0 ? "good" : "warn",
+    id: `away-${mins}`,
+  });
+}
+
 export function toastOrderFill(
   order: Pick<Order, "id" | "pair" | "side" | "qty" | "price" | "fillPrice" | "mode" | "reason">,
   pnl?: number,
 ): void {
   pushTradeToast(describeFillToast(order, pnl));
+}
+
+export function toastSweep(amount: number): void {
+  pushTradeToast({
+    priority: 3,
+    title: `SWEEP ${money(amount)}`,
+    detail: "Profit parked in the bot wallet — convert or send out from Move money",
+    tone: "good",
+    id: `sweep-${Math.round(amount * 100)}`,
+  });
 }
 
 export function toastLiveReject(order: Pick<Order, "pair" | "side">, detail: string): void {

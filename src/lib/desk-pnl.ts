@@ -92,3 +92,24 @@ export function lotMetrics(input: {
     underwater: pnl < 0,
   };
 }
+
+export type FillLeg = "in" | "out";
+
+export function fillLeg(order: { side: string; reason: string }): FillLeg {
+  const r = order.reason.toUpperCase();
+  if (order.side === "sell" || /\b(TP|SL|FLAT|CLOSE)\b/.test(r)) return "out";
+  return "in";
+}
+
+export function fillWhy(reason: string): string {
+  const u = reason.toUpperCase();
+  if (u.includes("TIME TP")) return "time take";
+  if (u.includes("TIME SL")) return "time stop";
+  if (u.includes("TP")) return "take profit";
+  if (u.includes("SL")) return "stop loss";
+  if (u.includes("CLOSE")) return "you closed";
+  if (u.includes("MANUAL")) return "you";
+  if (u.includes("DEMO")) return "demo";
+  const cut = reason.split("·")[0]?.trim() ?? reason;
+  return cut.slice(0, 28) || "fill";
+}

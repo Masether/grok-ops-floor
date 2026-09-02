@@ -2,21 +2,21 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { scanLiveTape } from "@/lib/engine";
 import { usdOnBook } from "@/lib/specialists";
-import { useFloor } from "@/lib/store";
+import { ensurePaperDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const LIVE_STEPS = [
   { id: "fund", n: "01", title: "Deposit", sub: "USD on the venue" },
   { id: "keys", n: "02", title: "API keys", sub: "Query + orders" },
-  { id: "arm", n: "03", title: "Arm live", sub: "spend the wallet" },
-  { id: "run", n: "04", title: "Auto desk", sub: "eleven agents work" },
+  { id: "arm", n: "03", title: "Arm live", sub: "USD from the wallet" },
+  { id: "run", n: "04", title: "Auto desk", sub: "300 agents · 24/7" },
 ] as const;
 
 const PAPER_STEPS = [
-  { id: "capital", n: "01", title: "Capital", sub: "paper deposit" },
+  { id: "capital", n: "01", title: "Paper cash", sub: "play money · no wallet" },
   { id: "risk", n: "02", title: "Risk %", sub: "ticket / stop / take" },
-  { id: "start", n: "03", title: "Start desk", sub: "then it runs" },
+  { id: "start", n: "03", title: "Desk running", sub: "24/7 paper until you stop" },
   { id: "venue", n: "04", title: "Attach venue", sub: "optional · live later" },
 ] as const;
 
@@ -58,33 +58,47 @@ export function FundingRail() {
           <p className="panel-sub">
             {mode === "paper"
               ? launched
-                ? "Paper desk is on. Capital → risk % → start. Attach a venue only when you go live."
-                : "Set capital and risk %, then start the paper desk. Attach a venue later for live."
+                ? "Paper is on, 24/7. Winning closes auto-sweep into the bot wallet (tap Wallet). Attach an exchange only when you go live."
+                : "Start paper with play money. Wallet and Kraken keys stay optional until you arm live."
               : armed
                 ? `Treasury reading the venue · ${usd >= 15 ? `$${usd.toFixed(0)} USD` : "wallet thin"}`
-                : "Live book selected. Verify you're human, attach keys, then arm."}
+                : "Live book selected. Verify you're human, attach keys, then arm. The desk runs 24/7."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="good"
-            disabled={demoBusy || !launched}
-            onClick={() => {
-              void (async () => {
-                setDemoBusy(true);
-                try {
-                  const res = await scanLiveTape();
-                  if (res.acted) toast.success(res.note);
-                  else toast.message(res.note);
-                } finally {
-                  setDemoBusy(false);
+          {!launched ? (
+            <Button
+              size="sm"
+              variant="good"
+              onClick={() => {
+                if (ensurePaperDesk()) {
+                  toast.success("Paper desk is on — $10k play money. 24/7.");
                 }
-              })();
-            }}
-          >
-            {demoBusy ? "Scanning tape…" : "Scan live tape"}
-          </Button>
+              }}
+            >
+              Start paper desk
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="good"
+              disabled={demoBusy}
+              onClick={() => {
+                void (async () => {
+                  setDemoBusy(true);
+                  try {
+                    const res = await scanLiveTape();
+                    if (res.acted) toast.success(res.note);
+                    else toast.message(res.note);
+                  } finally {
+                    setDemoBusy(false);
+                  }
+                })();
+              }}
+            >
+              {demoBusy ? "Scanning tape…" : "Scan live tape"}
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
             Desk settings
           </Button>

@@ -140,12 +140,12 @@ export const AGENT_BY_ID: Record<AgentId, AgentDef> = Object.fromEntries(
 ) as Record<AgentId, AgentDef>;
 
 export const PIPELINE: { id: PipelineStage; label: string }[] = [
-  { id: "brief", label: "BRIEF IN" },
-  { id: "split", label: "SPLIT" },
-  { id: "handout", label: "HAND OUT" },
-  { id: "tool", label: "TOOL RUN" },
-  { id: "second", label: "SECOND READ" },
-  { id: "signed", label: "SIGNED OFF" },
+  { id: "brief", label: "SETUP" },
+  { id: "split", label: "CHALLENGE" },
+  { id: "handout", label: "DATA" },
+  { id: "tool", label: "RISK" },
+  { id: "second", label: "MERGE" },
+  { id: "signed", label: "SIGNED" },
 ];
 
 export const STAGE_AGENT: Record<PipelineStage, AgentId> = {

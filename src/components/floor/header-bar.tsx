@@ -1,15 +1,27 @@
 import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
-import { haltLive } from "@/lib/engine";
-import { clock, money, pct } from "@/lib/format";
-import { goalChipLine } from "@/lib/goal";
+import { haltLive, studyBook } from "@/lib/engine";
+import { clock, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
-import { useDesk, useFloor } from "@/lib/store";
+import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
+import { vaultMark } from "@/lib/wallet";
+import type { OpsMode, PairId } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Link } from "@tanstack/react-router";
+import { UserButton } from "@/lib/auth/gates";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { InstallAppButton } from "./install-app";
+
+const OPS: { id: OpsMode; label: string; hint: string }[] = [
+  { id: "paper", label: "Paper", hint: "You size tickets" },
+  { id: "auto", label: "Auto", hint: "Scalp 2–5m lots" },
+  { id: "learn", label: "Learn", hint: "Brain walks history" },
+];
 
 export function HeaderBar() {
   const desk = useDesk();
@@ -17,8 +29,9 @@ export function HeaderBar() {
   const setFloorOpen = useFloor((s) => s.setFloorOpen);
   const launched = useFloor((s) => s.launched);
   const mode = useFloor((s) => s.mode);
+  const opsMode = useFloor((s) => s.opsMode);
+  const setOpsMode = useFloor((s) => s.setOpsMode);
   const liveArmed = useFloor((s) => s.liveArmed);
-  const autoTrade = useFloor((s) => s.autoTrade);
   const feedOk = useFloor((s) => s.feedOk);
   const feedSource = useFloor((s) => s.feedSource);
   const stage = useFloor((s) => s.stage);
@@ -31,7 +44,6 @@ export function HeaderBar() {
   const pairs = useFloor((s) => s.pairs);
   const handoff = useFloor((s) => s.handoff);
   const brain = useFloor((s) => s.brain);
-  const selfLearn = useFloor((s) => s.selfLearn);
   const liveBalance = useFloor((s) => s.liveBalance);
   const fearGreed = useFloor((s) => s.fearGreed);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
@@ -40,8 +52,12 @@ export function HeaderBar() {
   const setChartsOpen = useFloor((s) => s.setChartsOpen);
   const deskOpen = useFloor((s) => s.deskOpen);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
-  const goalProfit = useFloor((s) => s.goalProfit);
-  const goalDays = useFloor((s) => s.goalDays);
+  const setDeskTab = useFloor((s) => s.setDeskTab);
+  const fundingCash = useFloor((s) => s.fundingCash);
+  const vault = useFloor((s) => s.vault);
+  const setBrainOpen = useFloor((s) => s.setBrainOpen);
+  const brainOpen = useFloor((s) => s.brainOpen);
+  const swarm = useFloor((s) => s.swarm);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -51,15 +67,16 @@ export function HeaderBar() {
 
   const multiple = startingCash > 0 ? desk.equity / startingCash : 1;
   const latest = events[0];
+  const last: Partial<Record<PairId, number>> = {};
+  for (const p of pairs) last[p] = tickers[p]?.last;
+  const walletUsd = fundingCash + vaultMark(vault, last);
 
   return (
     <header className="shrink-0">
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2 lg:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="grid size-7 place-items-center rounded-sm bg-fg text-bg" aria-hidden>
-            <svg viewBox="0 0 16 16" className="size-3.5" fill="currentColor">
-              <path d="M1.2 1.2h3.2l4.4 6.1 4.4-6.1h3.2L9.6 8.4 16 16h-3.3L8.8 10.6 4.4 16H1.2l6.4-7.6z" />
-            </svg>
+          <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-sm" aria-hidden>
+            <img src="/favicon.svg" alt="" className="size-8" />
           </span>
           <div className="min-w-0">
             <div className="font-display flex items-baseline gap-1.5 text-lg leading-none font-semibold tracking-[0.08em] uppercase">
@@ -67,34 +84,55 @@ export function HeaderBar() {
               <span className="text-accent">Ops Floor</span>
             </div>
             <p className="truncate text-micro tracking-wide text-subtle">
-              twelve desks · news on the wire
+              300 agents · coordinate, don't trust the first hit
             </p>
           </div>
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-4">
-          <Stat label="Desk" value={money(desk.equity)} />
+          <Stat label="Desk" value={moneyFull(desk.equity)} always />
+          <button
+            type="button"
+            className="min-h-11 text-left"
+            onClick={() => {
+              setDeskTab("money");
+              setDeskOpen(true);
+            }}
+          >
+            <Stat label="Wallet" value={moneyFull(walletUsd)} tone={walletUsd > 0 ? "good" : undefined} always />
+          </button>
           {mode === "live" ? <Stat label="Kraken" value={money(usdOnBook(liveBalance))} /> : null}
-          <Stat label="Day" value={money(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} />
-          {launched && goalProfit > 0 ? (
+          <Stat label="Day" value={moneyFull(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} always />
+          <Stat label={mode === "live" ? "Live" : "Paper"} value={sessionEndsAt == null ? "24/7" : "sitting"} always />
+          <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />
+          <button
+            type="button"
+            className="min-h-11 text-left"
+            onClick={() => setBrainOpen(!brainOpen)}
+          >
             <Stat
-              label="Goal"
-              value={goalChipLine({ goalProfit, goalDays, dayPnl: desk.dayPnl })}
-              tone={desk.dayPnl >= 0 ? "good" : "bad"}
+              label="Brain"
+              value={
+                brain.samples
+                  ? `${Math.round((brain.wins / Math.max(brain.samples, 1)) * 100)}%`
+                  : "on"
+              }
+              tone="good"
               always
             />
-          ) : null}
-          <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />
+          </button>
           <Stat
-            label="Brain"
+            label="Swarm"
             value={
-              selfLearn
-                ? brain.samples
-                  ? `${Math.round((brain.wins / brain.samples) * 100)}%`
-                  : "learn"
-                : "off"
+              swarm.pending
+                ? `${swarm.reported}/${swarm.live}`
+                : swarm.debate?.dissent
+                  ? `${swarm.debate.dissent.bots} dissent`
+                  : swarm.rttMs
+                    ? `${swarm.long}/${swarm.live} ${swarm.rttMs}ms`
+                    : `${swarm.long}/${swarm.live}`
             }
-            tone={selfLearn ? "good" : undefined}
+            always
           />
           <Stat label="Briefs" value={String(briefs + ticks)} />
           {fearGreed ? (
@@ -104,7 +142,7 @@ export function HeaderBar() {
               tone={fearGreed.value >= 60 ? "good" : fearGreed.value <= 35 ? "bad" : undefined}
             />
           ) : null}
-          <Stat label="Shift" value={clock(now - shiftStartedAt)} />
+          <Stat label="Shift" value={sessionEndsAt == null ? "24/7" : clock(now - shiftStartedAt)} />
           {sessionEndsAt != null ? (
             <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
@@ -112,16 +150,27 @@ export function HeaderBar() {
             <Button
               size="sm"
               variant={floorOpen ? "good" : "outline"}
-              disabled={!launched}
-              onClick={() => setFloorOpen(!floorOpen)}
+              onClick={() => {
+                if (!launched) {
+                  if (ensurePaperDesk()) toast.success("Paper desk is on — $10k play money.");
+                  return;
+                }
+                setFloorOpen(!floorOpen);
+              }}
             >
-              {floorOpen ? "Floor open" : "Floor closed"}
+              {!launched ? "Start paper" : floorOpen ? "Floor open" : "Floor closed"}
             </Button>
             <Button
               size="sm"
               variant={deskOpen ? "default" : "outline"}
               aria-pressed={deskOpen}
-              onClick={() => setDeskOpen(!deskOpen)}
+              onClick={() => {
+                if (deskOpen) setDeskOpen(false);
+                else {
+                  setDeskTab("blotter");
+                  setDeskOpen(true);
+                }
+              }}
             >
               <Wallet className="size-3.5" />
               Desk
@@ -151,6 +200,8 @@ export function HeaderBar() {
             >
               <Power className="size-4" />
             </Button>
+            <InstallAppButton compact />
+            <AuthSlot />
           </div>
         </div>
       </div>
@@ -165,21 +216,40 @@ export function HeaderBar() {
           {feedSource === "sim" ? "Sim tape" : "Kraken"} {feedOk ? "live" : "down"}
         </span>
         <span className="text-subtle">·</span>
-        <span className="font-display shrink-0 tracking-[0.12em] text-warn uppercase">
-          {mode === "live" ? (liveArmed ? "Live armed" : "Live idle") : "Paper"}
-        </span>
-        {autoTrade ? (
-          <>
-            <span className="text-subtle">·</span>
-            <span className="text-good">auto</span>
-          </>
+        {mode === "live" ? (
+          <span className="font-display shrink-0 tracking-[0.12em] text-danger uppercase">
+            {liveArmed ? "Live armed" : "Live idle"}
+          </span>
         ) : null}
-        {selfLearn ? (
-          <>
-            <span className="text-subtle">·</span>
-            <span className="text-archivist">learn</span>
-          </>
-        ) : null}
+        <div className="flex shrink-0 flex-col gap-1 sm:flex-row sm:items-center">
+          <div className="flex gap-1">
+            {OPS.map((m) => (
+              <Button
+                key={m.id}
+                type="button"
+                size="sm"
+                className="min-h-11"
+                variant={opsMode === m.id ? "default" : "outline"}
+                aria-pressed={opsMode === m.id}
+                title={m.hint}
+                disabled={!launched}
+                onClick={() => {
+                  setOpsMode(m.id);
+                  if (m.id === "learn") {
+                    setBrainOpen(true);
+                    void studyBook().then((r) => toast.message(r.note));
+                  }
+                  if (m.id === "paper") setDeskOpen(true);
+                }}
+              >
+                {m.label}
+              </Button>
+            ))}
+          </div>
+          <span className="hidden text-micro text-subtle sm:inline">
+            {OPS.find((m) => m.id === opsMode)?.hint}
+          </span>
+        </div>
         <span className="text-subtle">·</span>
         <div className="flex min-w-0 flex-1 gap-4 overflow-hidden">
           {pairs.map((id) => {
@@ -258,3 +328,23 @@ function Stat({
     </div>
   );
 }
+
+function AuthSlot() {
+  const { user, isPending } = useCurrentUserState();
+  if (isPending) {
+    return <div className="size-8 animate-pulse rounded-sm bg-surface-3" aria-hidden />;
+  }
+  if (!user) {
+    return (
+      <Button size="sm" variant="outline" asChild>
+        <Link to="/login">Sign in</Link>
+      </Button>
+    );
+  }
+  return (
+    <div className="max-w-[10rem] truncate text-2xs">
+      <UserButton />
+    </div>
+  );
+}
+
