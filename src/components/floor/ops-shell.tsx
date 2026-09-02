@@ -7,7 +7,7 @@ import { ChartsBubble } from "./charts-bubble.tsx";
 import { DeskBubble } from "./desk-bubble.tsx";
 import { FundingRail } from "./funding-rail.tsx";
 import { HeaderBar } from "./header-bar.tsx";
-import { LaunchSetup } from "./launch-setup.tsx";
+import { LaunchBubble } from "./launch-bubble.tsx";
 import { OrbitStage } from "./orbit-stage.tsx";
 import { SettingsPanel } from "./settings-panel.tsx";
 import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels.tsx";
@@ -84,7 +84,7 @@ export function OpsShell() {
         <SettingsPanel />
         <ChartsBubble />
         <DeskBubble />
-        {boot && !launched ? <LaunchSetup /> : null}
+        <LaunchBubble />
         <Toaster
           theme="dark"
           position="bottom-right"

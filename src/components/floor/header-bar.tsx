@@ -1,4 +1,4 @@
-import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
+import { CandlestickChart, Power, Settings2, Wallet, Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive } from "@/lib/engine";
@@ -35,6 +35,7 @@ export function HeaderBar() {
   const liveBalance = useFloor((s) => s.liveBalance);
   const fearGreed = useFloor((s) => s.fearGreed);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
+  const setLaunchOpen = useFloor((s) => s.setLaunchOpen);
   const sessionEndsAt = useFloor((s) => s.sessionEndsAt);
   const chartsOpen = useFloor((s) => s.chartsOpen);
   const setChartsOpen = useFloor((s) => s.setChartsOpen);
@@ -109,6 +110,16 @@ export function HeaderBar() {
             <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
           <div className="flex items-center gap-1.5">
+            {!launched ? (
+              <Button
+                size="sm"
+                variant="good"
+                onClick={() => setLaunchOpen(true)}
+              >
+                <Rocket className="size-3.5" />
+                Launch
+              </Button>
+            ) : null}
             <Button
               size="sm"
               variant={floorOpen ? "good" : "outline"}
