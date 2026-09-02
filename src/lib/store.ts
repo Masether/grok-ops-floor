@@ -36,6 +36,7 @@ import {
   type ChartInterval,
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
+import { clampLiveBudget, DEFAULT_LIVE_BUDGET } from "./live-budget";
 import { idleSwarm, type SwarmSnap } from "./swarm";
 import type { VenueId } from "./venues/types";
 import type {
@@ -113,6 +114,7 @@ export type FloorState = {
   opsMode: OpsMode;
   autoTrade: boolean;
   liveArmed: boolean;
+  liveBudget: number;
   venueId: VenueId;
   humanVerified: boolean;
   keys: Keys;
@@ -181,6 +183,7 @@ export type FloorState = {
   setOpsMode: (mode: OpsMode) => void;
   setAutoTrade: (v: boolean) => void;
   setLiveArmed: (v: boolean) => void;
+  setLiveBudget: (n: number) => void;
   setVenueId: (id: VenueId) => void;
   setHumanVerified: (v: boolean) => void;
   launchDesk: (
@@ -379,6 +382,7 @@ export const useFloor = create<FloorState>()(
       opsMode: "paper",
       autoTrade: false,
       liveArmed: false,
+      liveBudget: DEFAULT_LIVE_BUDGET,
       venueId: "kraken",
       humanVerified: false,
       keys: { apiKey: "", apiSecret: "" },
@@ -466,6 +470,7 @@ export const useFloor = create<FloorState>()(
         });
       },
       setLiveArmed: (v) => set({ liveArmed: v, autoSweep: v ? true : get().autoSweep }),
+      setLiveBudget: (n) => set({ liveBudget: clampLiveBudget(n) }),
       setVenueId: (id) => set({ venueId: id === "paper" ? "paper" : "kraken" }),
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
@@ -754,6 +759,7 @@ export const useFloor = create<FloorState>()(
           opsMode: s.opsMode,
           autoTrade: s.autoTrade,
           liveArmed: false,
+          liveBudget: s.liveBudget,
           keys: s.keys,
           pairs: s.pairs,
           risk: s.risk,
@@ -838,6 +844,9 @@ export const useFloor = create<FloorState>()(
           autoTrade,
           agents: freshAgents(),
           liveArmed: false,
+          liveBudget: clampLiveBudget(
+            typeof p.liveBudget === "number" ? p.liveBudget : current.liveBudget,
+          ),
           humanVerified: false,
           pendingLive: null,
           queue: [],

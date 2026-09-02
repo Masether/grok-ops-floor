@@ -14,7 +14,7 @@ import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, scanLiveTape } from "@/lib/engine";
 import { secondRead } from "@/lib/grok-brief";
 import { testVenueKeys } from "@/lib/human-gate-api";
-import { PAIRS, PAIR_BY_ID, SLEEVE_META, USD_BALANCE_KEYS } from "@/lib/kraken";
+import { PAIRS, PAIR_BY_ID, SLEEVE_META } from "@/lib/kraken";
 import { readHumanToken } from "@/lib/human-gate.mjs";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor, ensurePaperDesk } from "@/lib/store";
@@ -24,6 +24,8 @@ import { ALL_LANE_IDS, pickHotBook } from "@/lib/universe";
 import { COMING_SOON_VENUES } from "@/lib/venues";
 import { DurationPills } from "./duration-pills";
 import { InstallAppButton } from "./install-app";
+import { LIVE_BUDGET_PRESETS, clampLiveBudget, liveSleeve } from "@/lib/live-budget";
+import { moneyFull } from "@/lib/format";
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);
@@ -34,6 +36,8 @@ export function SettingsPanel() {
   const setAutoTrade = useFloor((s) => s.setAutoTrade);
   const liveArmed = useFloor((s) => s.liveArmed);
   const setLiveArmed = useFloor((s) => s.setLiveArmed);
+  const liveBudget = useFloor((s) => s.liveBudget);
+  const setLiveBudget = useFloor((s) => s.setLiveBudget);
   const venueId = useFloor((s) => s.venueId);
   const setVenueId = useFloor((s) => s.setVenueId);
   const humanVerified = useFloor((s) => s.humanVerified);
@@ -91,8 +95,18 @@ export function SettingsPanel() {
       });
       setLiveBalance(res.balance);
       setKeysOk(true);
-      const usd = USD_BALANCE_KEYS.map((k) => Number(res.balance[k] ?? 0)).reduce((a, b) => a + b, 0);
-      toast.success(`${venueId === "kraken" ? "Kraken" : "Venue"} connected · USD ${usd.toFixed(2)}`);
+      const sleeve = liveSleeve({
+        liveBudget,
+        liveBalance: res.balance,
+        positions: useFloor.getState().positions,
+      });
+      toast.success(
+        sleeve.usd >= 15
+          ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
+          : sleeve.usdt >= 15
+            ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken before arming`
+            : `Kraken connected · stable ${sleeve.venue.toFixed(2)}. Deposit $200 USDT then convert to USD.`,
+      );
     } catch (err) {
       setKeysOk(false);
       toast.error(err instanceof Error ? err.message : "Venue auth failed");
@@ -299,7 +313,39 @@ export function SettingsPanel() {
                 >
                   Scan live tape
                 </Button>
-              ) : null}
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="live-budget">Live budget (USDT/USD)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LIVE_BUDGET_PRESETS.map((n) => (
+                      <Button
+                        key={n}
+                        type="button"
+                        size="sm"
+                        variant={liveBudget === n ? "live" : "outline"}
+                        onClick={() => setLiveBudget(n)}
+                      >
+                        ${n}
+                      </Button>
+                    ))}
+                  </div>
+                  <Input
+                    id="live-budget"
+                    type="number"
+                    min={20}
+                    max={50_000}
+                    step={10}
+                    inputMode="decimal"
+                    value={liveBudget}
+                    onChange={(e) => setLiveBudget(Number(e.target.value) || 0)}
+                    onBlur={() => setLiveBudget(clampLiveBudget(liveBudget))}
+                  />
+                  <p className="text-2xs text-subtle">
+                    The bot only spends this slice — even if Kraken holds more. Default $200. Deposit
+                    USDT, convert to USD on Kraken (this book trades USD pairs), then arm.
+                  </p>
+                </div>
+              )}
             </section>
 
             <section className="space-y-3">
@@ -561,10 +607,11 @@ export function SettingsPanel() {
         <DialogContent>
           <DialogTitle>Arm live runner</DialogTitle>
           <DialogDescription>
-            This lets the desk send real market orders to your Kraken account when auto-trade is
-            on. Size, stops, and the daily-loss halt still apply. Winning closes auto-sweep into
-            the in-app bot wallet so you can convert, then send to Kraken or Coinbase. The kill
-            switch cancels open orders. This app never holds a seed or a withdrawal key.
+            Real market orders on Kraken, capped at {moneyFull(liveBudget)}. Size, stops, and the
+            daily-loss halt stay on that budget — not your whole wallet. Deposit USDT, convert to
+            USD on Kraken, then arm. Winning closes auto-sweep into the in-app wallet. Kill switch
+            is the power button. No withdrawal key. Not financial advice — you can lose this $
+            {liveBudget.toFixed(0)}.
           </DialogDescription>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setArmAsk(false)}>
@@ -575,7 +622,7 @@ export function SettingsPanel() {
               onClick={() => {
                 setLiveArmed(true);
                 setArmAsk(false);
-                toast.message("Live armed — profits auto-sweep into the bot wallet");
+                toast.message(`Live armed — budget ${moneyFull(liveBudget)}. Profits auto-sweep.`);
               }}
             >
               Arm live

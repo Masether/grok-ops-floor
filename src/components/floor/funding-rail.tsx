@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { scanLiveTape } from "@/lib/engine";
-import { usdOnBook } from "@/lib/specialists";
+import { liveSleeve } from "@/lib/live-budget";
 import { ensurePaperDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const LIVE_STEPS = [
-  { id: "fund", n: "01", title: "Deposit", sub: "USD on the venue" },
+  { id: "fund", n: "01", title: "Deposit $200", sub: "USDT on Kraken → USD" },
   { id: "keys", n: "02", title: "API keys", sub: "Query + orders" },
-  { id: "arm", n: "03", title: "Arm live", sub: "USD from the wallet" },
-  { id: "run", n: "04", title: "Auto desk", sub: "300 agents · 24/7" },
+  { id: "arm", n: "03", title: "Arm live", sub: "budget cap on" },
+  { id: "run", n: "04", title: "Auto desk", sub: "only that budget" },
 ] as const;
 
 const PAPER_STEPS = [
@@ -30,11 +30,13 @@ export function FundingRail() {
   const launched = useFloor((s) => s.launched);
   const startingCash = useFloor((s) => s.startingCash);
   const liveBalance = useFloor((s) => s.liveBalance);
+  const liveBudget = useFloor((s) => s.liveBudget);
+  const positions = useFloor((s) => s.positions);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
-  const usd = usdOnBook(liveBalance);
+  const sleeve = liveSleeve({ liveBudget, liveBalance, positions });
   const [demoBusy, setDemoBusy] = useState(false);
 
-  const funded = Boolean(liveBalance) && usd >= 15;
+  const funded = sleeve.usd >= 15 || sleeve.usdt >= 15;
   const keyed = Boolean(keys.apiKey && keys.apiSecret) && keysOk !== false;
   const armed = mode === "live" && liveArmed;
   const running = launched && floorOpen && autoTrade;
@@ -61,8 +63,8 @@ export function FundingRail() {
                 ? "Paper is on, 24/7. Winning closes auto-sweep into the bot wallet (tap Wallet). Attach an exchange only when you go live."
                 : "Start paper with play money. Wallet and Kraken keys stay optional until you arm live."
               : armed
-                ? `Treasury reading the venue · ${usd >= 15 ? `$${usd.toFixed(0)} USD` : "wallet thin"}`
-                : "Live book selected. Verify you're human, attach keys, then arm. The desk runs 24/7."}
+                ? `Live · budget $${sleeve.budget.toFixed(0)} · ${sleeve.usd >= 15 ? `USD ${sleeve.usd.toFixed(0)}` : sleeve.usdt >= 15 ? "convert USDT → USD on Kraken" : "wallet thin"}`
+                : "Live selected. Deposit $200 USDT on Kraken, convert to USD, keys, then arm. The bot only spends your budget."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

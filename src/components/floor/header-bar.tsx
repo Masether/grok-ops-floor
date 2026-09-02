@@ -45,6 +45,7 @@ export function HeaderBar() {
   const handoff = useFloor((s) => s.handoff);
   const brain = useFloor((s) => s.brain);
   const liveBalance = useFloor((s) => s.liveBalance);
+  const liveBudget = useFloor((s) => s.liveBudget);
   const fearGreed = useFloor((s) => s.fearGreed);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
   const sessionEndsAt = useFloor((s) => s.sessionEndsAt);
@@ -102,6 +103,7 @@ export function HeaderBar() {
             <Stat label="Wallet" value={moneyFull(walletUsd)} tone={walletUsd > 0 ? "good" : undefined} always />
           </button>
           {mode === "live" ? <Stat label="Kraken" value={money(usdOnBook(liveBalance))} /> : null}
+          {mode === "live" ? <Stat label="Budget" value={moneyFull(liveBudget)} always /> : null}
           <Stat label="Day" value={moneyFull(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} always />
           <Stat label={mode === "live" ? "Live" : "Paper"} value={sessionEndsAt == null ? "24/7" : "sitting"} always />
           <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />

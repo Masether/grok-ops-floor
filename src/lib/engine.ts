@@ -11,6 +11,7 @@ import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from 
 import { SCALP, scalpManage, scalpStops } from "./scalp";
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
+import { livePositions, liveSleeve, MIN_LIVE_TICKET } from "./live-budget";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -565,10 +566,24 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const sleeve = PAIR_BY_ID[pair].sleeve;
     const stNow = useFloor.getState();
     const paper = stNow.mode === "paper";
-    const hasPos = stNow.positions.some((p) => p.pair === pair);
-    const haltBase = stNow.dayStartEquity || stNow.startingCash;
+    const liveNow = stNow.mode === "live";
+    const liveNowSleeve = liveNow
+      ? liveSleeve({
+          liveBudget: stNow.liveBudget,
+          liveBalance: stNow.liveBalance,
+          positions: stNow.positions,
+          tickers: stNow.tickers,
+        })
+      : null;
+    const bookNow = liveNow ? livePositions(stNow.positions) : stNow.positions;
+    const hasPos = bookNow.some((p) => p.pair === pair);
+    const haltBase = liveNow
+      ? (liveNowSleeve?.budget ?? stNow.liveBudget)
+      : stNow.dayStartEquity || stNow.startingCash;
     const haltCap = haltBase * stNow.risk.maxDailyLossPct;
-    const dayNow = markEquity(stNow) - haltBase;
+    const dayNow = liveNow
+      ? (liveNowSleeve?.equity ?? 0) - haltBase
+      : markEquity(stNow) - haltBase;
     const halted = haltCap > 0 && dayNow <= -haltCap;
 
     let ticketKind: "buy" | "sell" | "hold" =
@@ -855,10 +870,27 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
     return { ok: false, why: "no Kraken keys — paste them in settings" };
   }
   if (!s.liveArmed) return { ok: false, why: "live runner is not armed" };
-  const usd = usdOnBook(s.liveBalance);
   if (!s.liveBalance) return { ok: false, why: "treasury has not read the Kraken wallet yet" };
-  if (usd < 15) return { ok: false, why: "fund Kraken USD first — wallet under $15" };
-  return { ok: true, cash: usd };
+  const sleeve = liveSleeve({
+    liveBudget: s.liveBudget,
+    liveBalance: s.liveBalance,
+    positions: s.positions,
+    tickers: s.tickers,
+  });
+  if (sleeve.usd < 12 && sleeve.usdt >= 12) {
+    return {
+      ok: false,
+      why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD there. This book trades USD pairs.`,
+    };
+  }
+  if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USDT on Kraken, then convert to USD" };
+  if (sleeve.cash < MIN_LIVE_TICKET) {
+    return {
+      ok: false,
+      why: `budget $${sleeve.budget.toFixed(0)} is fully in lots — wait for a close`,
+    };
+  }
+  return { ok: true, cash: sleeve.cash };
 }
 
 function sizeTicket(
@@ -868,10 +900,19 @@ function sizeTicket(
   confidence: number,
 ): { ok: true; qty: number; side: "buy" | "sell" } | { ok: false; why: string } {
   const s = useFloor.getState();
-  const liveUsd = usdOnBook(s.liveBalance);
-  const cash = s.mode === "live" ? liveUsd : s.cash;
-  const equity = s.mode === "live" ? liveUsd + s.positions.reduce((a, p) => a + p.mark * p.qty, 0) : markEquity(s);
-  const existing = s.positions.find((p) => p.pair === pair);
+  const live = s.mode === "live";
+  const sleeve = live
+    ? liveSleeve({
+        liveBudget: s.liveBudget,
+        liveBalance: s.liveBalance,
+        positions: s.positions,
+        tickers: s.tickers,
+      })
+    : null;
+  const book = live ? livePositions(s.positions) : s.positions;
+  const cash = live ? (sleeve?.cash ?? 0) : s.cash;
+  const equity = live ? (sleeve?.equity ?? 0) : markEquity(s);
+  const existing = book.find((p) => p.pair === pair);
   const def = PAIR_BY_ID[pair];
   const bias = s.brain.pairBias[pair] ?? 0;
 
@@ -881,27 +922,27 @@ function sizeTicket(
   }
 
   if (existing) return { ok: false, why: "already long this pair" };
-  if (s.positions.length >= s.risk.maxPositions) {
+  if (book.length >= s.risk.maxPositions) {
     return { ok: false, why: "max positions open" };
   }
   if (s.brain.enabled && bias < -0.35) {
     return { ok: false, why: "brain retired this pair" };
   }
-  const sleeve = def.sleeve;
-  if (sleeve === "heat") {
-    const heatOpen = s.positions.filter((p) => PAIR_BY_ID[p.pair].sleeve === "heat").length;
+  const sleeveKind = def.sleeve;
+  if (sleeveKind === "heat") {
+    const heatOpen = book.filter((p) => PAIR_BY_ID[p.pair].sleeve === "heat").length;
     if (heatOpen >= 2) return { ok: false, why: "heat book full — max 2 meme lots" };
   }
-  if (sleeve === "core") {
-    const coreOpen = s.positions.filter((p) => PAIR_BY_ID[p.pair].sleeve === "core").length;
+  if (sleeveKind === "core") {
+    const coreOpen = book.filter((p) => PAIR_BY_ID[p.pair].sleeve === "core").length;
     if (coreOpen >= 2) return { ok: false, why: "core book full — max 2 majors" };
   }
   const tilt = s.brain.enabled ? s.brain.sizeTilt : 1;
   const streakBoost = s.brain.enabled && s.brain.streak >= 3 ? 1.12 : 1;
   const ch = s.tickers[pair]?.changePct ?? 0;
   const sleeveTilt =
-    sleeve === "heat" ? (ch > 2 ? 1.2 : 0.45) : sleeve === "stock" ? 0.8 : 1;
-  const sized =
+    sleeveKind === "heat" ? (ch > 2 ? 1.2 : 0.45) : sleeveKind === "stock" ? 0.8 : 1;
+  let sized =
     (equity *
       s.risk.sizePct *
       tilt *
@@ -910,11 +951,15 @@ function sizeTicket(
       (0.55 + confidence * 0.9) *
       (1 + bias)) /
     price;
-  const maxQty = (equity * s.risk.maxPosPct * (sleeve === "heat" ? 0.7 : 1)) / price;
-  const qty = Math.min(sized, maxQty);
-  const notional = qty * price;
+  const maxQty = (equity * s.risk.maxPosPct * (sleeveKind === "heat" ? 0.7 : 1)) / price;
+  let qty = Math.min(sized, maxQty);
+  let notional = qty * price;
+  if (live && notional < MIN_LIVE_TICKET && cash >= MIN_LIVE_TICKET) {
+    qty = MIN_LIVE_TICKET / price;
+    notional = MIN_LIVE_TICKET;
+  }
   if (notional < 10) return { ok: false, why: "size below min ticket" };
-  if (notional > cash * 0.98) return { ok: false, why: "not enough cash" };
+  if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
   const rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
   if (rounded < def.ordermin) return { ok: false, why: "below Kraken ordermin" };
   return { ok: true, qty: rounded, side: "buy" };
