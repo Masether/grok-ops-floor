@@ -104,8 +104,8 @@ export function SettingsPanel() {
         sleeve.usd >= 15
           ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
           : sleeve.usdt >= 15
-            ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken before arming`
-            : `Kraken connected · stable ${sleeve.venue.toFixed(2)}. Deposit $200 USDT then convert to USD.`,
+            ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken, then test again`
+            : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Deposit $200 USD on Kraken.`,
       );
     } catch (err) {
       setKeysOk(false);
@@ -315,7 +315,7 @@ export function SettingsPanel() {
                 </Button>
               ) : (
                 <div className="space-y-2">
-                  <Label htmlFor="live-budget">Live budget (USDT/USD)</Label>
+                  <Label htmlFor="live-budget">Live budget (USD)</Label>
                   <div className="flex flex-wrap gap-1.5">
                     {LIVE_BUDGET_PRESETS.map((n) => (
                       <Button
@@ -341,8 +341,8 @@ export function SettingsPanel() {
                     onBlur={() => setLiveBudget(clampLiveBudget(liveBudget))}
                   />
                   <p className="text-2xs text-subtle">
-                    The bot only spends this slice — even if Kraken holds more. Default $200. Deposit
-                    USDT, convert to USD on Kraken (this book trades USD pairs), then arm.
+                    The bot only spends this slice — even if Kraken holds more. Default $200 USD.
+                    Deposit USD on Kraken, then arm. Leave Withdraw off the API key.
                   </p>
                 </div>
               )}
@@ -607,11 +607,10 @@ export function SettingsPanel() {
         <DialogContent>
           <DialogTitle>Arm live runner</DialogTitle>
           <DialogDescription>
-            Real market orders on Kraken, capped at {moneyFull(liveBudget)}. Size, stops, and the
-            daily-loss halt stay on that budget — not your whole wallet. Deposit USDT, convert to
-            USD on Kraken, then arm. Winning closes auto-sweep into the in-app wallet. Kill switch
-            is the power button. No withdrawal key. Not financial advice — you can lose this $
-            {liveBudget.toFixed(0)}.
+            Real market orders on Kraken, capped at {moneyFull(liveBudget)} USD. Size, stops, and
+            the daily-loss halt stay on that budget — not your whole wallet. Deposit USD, then arm.
+            Winning closes auto-sweep into the in-app wallet. Kill switch is the power button. No
+            withdrawal key. Not financial advice — you can lose this ${liveBudget.toFixed(0)}.
           </DialogDescription>
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setArmAsk(false)}>

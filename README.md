@@ -19,17 +19,27 @@ Then open the URL Vite prints (same machine, in Chrome or Edge). Install from th
 
 Do **not** put a withdrawal key on the API. Keys stay in that browser.
 
-## $200 live budget
+## $200 live budget (USD)
 
-The bot will not size tickets off your whole Kraken wallet. It only uses the **Live budget** (default $200 USDT/USD). Extra funds on Kraken stay untouched.
+The bot will not size tickets off your whole Kraken wallet. It only uses the **Live budget** (default **$200 USD**). Extra funds on Kraken stay untouched.
 
-1. On Kraken: deposit **$200 USDT**.
-2. Convert USDT → **USD** in Kraken (Funding → Convert). This book trades USD pairs (`BTC/USD`, …). USDT sitting idle cannot fill those orders.
-3. API key: **Query + Create & Modify Orders**. Leave **Withdraw** off.
-4. In the desk: **Live** → set budget **$200** → I'm human → paste keys → **Test connection** → **Arm live**.
-5. Auto-trade on. Kill switch is the power button.
+1. On Kraken: deposit **$200 USD** (Funding → Deposit → USD).
+2. API key: **Query + Create & Modify Orders**. Leave **Withdraw** off.
+3. In the desk: **Live** → budget **$200** → I'm human → paste keys → **Test connection** → **Arm live**.
+4. Auto-trade on. Kill switch is the power button.
 
-If Kraken USD is under ~$15 after convert, the runner waits. Daily-loss halt, stops, and max lots all apply to that $200 sleeve — not the rest of the account.
+If Kraken USD is under ~$15, the runner waits. Daily-loss halt, stops, and max lots all apply to that $200 sleeve — not the rest of the account.
+
+### Kraken API key
+
+1. Kraken → profile menu → **Settings** → **API**.
+2. **Create API key**.
+3. Turn **on**: Query Funds, Query Open Orders & Trades, Query Closed Orders & Trades, Query Ledger, Create & Modify Orders.
+4. Leave **Withdraw Funds** **off**.
+5. Optional: restrict to your home IP.
+6. Create, copy **API Key** and **Private Key** once, paste them in desk Settings. Never send those here.
+
+The bot cannot deposit or withdraw. You move USD on Kraken yourself.
 
 ## What it does
 
@@ -49,7 +59,7 @@ This is not a promise to multiply capital. Memes can go to zero. Live can lose t
 
 ### Live (your account)
 
-1. Deposit USDT on Kraken, convert to USD. The bot cannot deposit or withdraw.
+1. Deposit **$200 USD** on Kraken. The bot cannot deposit or withdraw.
 2. API key: **Query + Create & Modify Orders**. Leave **Withdrawal** off.
 3. Settings → Live budget **$200** → paste key + private key → **Test connection**.
 4. **Arm live**. Kill switch is the power button.

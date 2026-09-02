@@ -880,10 +880,10 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
   if (sleeve.usd < 12 && sleeve.usdt >= 12) {
     return {
       ok: false,
-      why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD there. This book trades USD pairs.`,
+      why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD there. This book spends USD.`,
     };
   }
-  if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USDT on Kraken, then convert to USD" };
+  if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USD on Kraken" };
   if (sleeve.cash < MIN_LIVE_TICKET) {
     return {
       ok: false,
