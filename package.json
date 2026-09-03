@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
     "test:mjs": "node --test 'scripts/**/*.test.mjs' src/lib/launch.test.mjs src/lib/venues/catalog.test.mjs src/lib/human-gate.test.mjs",
-    "test:ts": "node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/learn.test.ts src/lib/persist-shift.test.ts src/lib/session.test.ts src/lib/charts.test.ts src/lib/indicators.test.ts src/lib/trade-toast.test.ts src/lib/desk-pnl.test.ts src/lib/goal.test.ts src/lib/utils.test.ts src/lib/scalp.test.ts src/lib/coordinate.test.ts src/lib/wallet.test.ts src/lib/catch-up.test.ts src/lib/live-budget.test.ts src/lib/playbook.test.ts src/lib/kelly.test.ts src/lib/pricer.test.ts src/lib/scout.test.ts",
+    "test:ts": "node --experimental-strip-types --test src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts src/lib/learn.test.ts src/lib/persist-shift.test.ts src/lib/session.test.ts src/lib/charts.test.ts src/lib/indicators.test.ts src/lib/trade-toast.test.ts src/lib/desk-pnl.test.ts src/lib/goal.test.ts src/lib/utils.test.ts src/lib/scalp.test.ts src/lib/coordinate.test.ts src/lib/wallet.test.ts src/lib/catch-up.test.ts src/lib/live-budget.test.ts src/lib/playbook.test.ts src/lib/kelly.test.ts src/lib/pricer.test.ts src/lib/scout.test.ts src/lib/budget-size.test.ts",
     "test": "r=0; npm run -s test:mjs || r=1; npm run -s test:ts || r=1; exit $r",
     "lint:imports": "node scripts/fix-import-extensions.mjs --check",
     "lint": "eslint .",

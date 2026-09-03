@@ -48,9 +48,10 @@ export function LiveStatusBar() {
               : "Play money only. Keys + Arm live to spend Kraken USD."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Overnight: leave this tab open and plugged in. Phone Home Screen is an icon — it does not
-          trade while locked. Scout {scoutScanned || "—"} books · dropped {scoutDropped} under $10k
-          liq · hot {scoutHot?.length ?? 0}. Kelly cap 6%. Pricer quiet under 8% on heat.
+          Overnight: leave this tab open and plugged in. Tickets from min (~$12) up to remaining
+          cash inside the $200 cap. Winners stay on the desk to compound — sweep is off. Scout{" "}
+          {scoutScanned || "—"} books · dropped {scoutDropped} under $10k liq · hot{" "}
+          {scoutHot?.length ?? 0}.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

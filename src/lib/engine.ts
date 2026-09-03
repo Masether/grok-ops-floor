@@ -4,7 +4,7 @@ import { uid, px, money } from "./format";
 import { macdHist, readScalp } from "./indicators";
 import { fetchOhlc, fetchTickers, fetchUsdUniverse } from "./kraken-api";
 import { PAIR_BY_ID, getPair, registerPair } from "./kraken";
-import { kellyStake } from "./kelly";
+import { budgetStake } from "./budget-size";
 import { fairValue, mispricing, pricerQuiet } from "./pricer";
 import { rankScout } from "./scout";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
@@ -15,7 +15,6 @@ import { SCALP, scalpManage } from "./scalp";
 import {
   asPlaybook,
   bookStops,
-  BOOK_SHARE,
   dcaManage,
   GRID,
   DCA,
@@ -23,7 +22,6 @@ import {
   macdLane,
   normalizePlaybooks,
   pickPlaybook,
-  playbookSlicePct,
   type BookAction,
   type PlaybookId,
 } from "./playbook";
@@ -1009,17 +1007,10 @@ function sizeTicket(
     : null;
   const book = live ? livePositions(s.positions) : s.positions;
   const cash = live ? (sleeve?.cash ?? 0) : s.cash;
-  const equity = live ? (sleeve?.equity ?? 0) : markEquity(s);
   const existing = book.find((p) => p.pair === pair);
   const def = getPair(pair) ?? PAIR_BY_ID[pair];
   if (!def) return { ok: false, why: "unknown pair" };
   const bias = s.brain.pairBias[pair] ?? 0;
-  const slicePct = playbookSlicePct(playbook);
-  const share = BOOK_SHARE[playbook];
-  const bookCap = equity * share;
-  const bookUsed = book
-    .filter((p) => (p.book ?? "scalp") === playbook)
-    .reduce((a, p) => a + p.mark * p.qty, 0);
 
   if (side === "sell") {
     if (!existing) return { ok: false, why: "no inventory to sell" };
@@ -1041,48 +1032,26 @@ function sizeTicket(
   if (playbook !== "scalp" && sleeveKind === "heat") {
     return { ok: false, why: `${playbook} book skips memes` };
   }
-  if (sleeveKind === "heat") {
-    const heatOpen = book.filter((p) => PAIR_BY_ID[p.pair].sleeve === "heat").length;
-    if (heatOpen >= 2) return { ok: false, why: "heat book full — max 2 meme lots" };
-  }
-  if (sleeveKind === "core") {
-    const coreOpen = book.filter((p) => PAIR_BY_ID[p.pair].sleeve === "core").length;
-    if (coreOpen >= 2) return { ok: false, why: "core book full — max 2 majors" };
-  }
-  const tilt = s.brain.enabled ? s.brain.sizeTilt : 1;
-  const streakBoost = s.brain.enabled && s.brain.streak >= 3 ? 1.12 : 1;
-  const ch = s.tickers[pair]?.changePct ?? 0;
-  const sleeveTilt =
-    sleeveKind === "heat" ? (ch > 2 ? 1.2 : 0.45) : sleeveKind === "stock" ? 0.8 : 1;
-  let sized =
-    (equity *
-      s.risk.sizePct *
-      tilt *
-      sleeveTilt *
-      streakBoost *
-      (0.55 + confidence * 0.9) *
-      (1 + bias)) /
-    price;
-  const maxQty = (equity * s.risk.maxPosPct * (sleeveKind === "heat" ? 0.7 : 1)) / price;
-  let qty = Math.min(sized, maxQty);
-  if (slicePct > 0) {
-    qty = Math.min(qty, (equity * slicePct) / price);
-  }
   const wr =
     s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
   const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
-  const stake = kellyStake({ pWin: wr, payoff, bankroll: equity, cap: 0.06 });
-  if (stake > 0) qty = Math.min(qty, stake / price);
+  const remaining = live ? cash : Math.min(cash, s.liveBudget || 200);
+  const usd = budgetStake({
+    remaining,
+    confidence,
+    pWin: wr,
+    payoff,
+    heat: sleeveKind === "heat",
+  });
+  if (!(usd > 0)) return { ok: false, why: "under min ticket — wait for cash in the $200 cap" };
+  let qty = usd / price;
   let notional = qty * price;
   if (live && notional < MIN_LIVE_TICKET && cash >= MIN_LIVE_TICKET) {
     qty = MIN_LIVE_TICKET / price;
     notional = MIN_LIVE_TICKET;
   }
-  if (notional < 10) return { ok: false, why: stake <= 0 ? "risk killed — no kelly edge" : "size below min ticket" };
+  if (notional < 10) return { ok: false, why: "size below min ticket" };
   if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
-  if (bookUsed + notional > bookCap + 1e-9) {
-    return { ok: false, why: `${playbook} sleeve full (${Math.round(share * 100)}% of book)` };
-  }
   const rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
   if (rounded < def.ordermin) return { ok: false, why: "below Kraken ordermin" };
   return { ok: true, qty: rounded, side: "buy" };
