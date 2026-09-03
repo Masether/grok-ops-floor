@@ -211,13 +211,15 @@ function bumpAgent(id: AgentId, action: string, heat = 1) {
 
 function coolAgents(dt: number) {
   const s = useFloor.getState();
+  const live = s.floorOpen || s.liveArmed;
   let changed = false;
   const next = { ...s.agents };
   for (const a of AGENTS) {
     const cur = next[a.id];
     if (!cur) continue;
-    const heat = Math.max(0.08, cur.heat - dt * 0.55);
-    const status = !s.floorOpen ? "halted" : heat > 0.45 ? cur.status : "idle";
+    const floor = live ? 0.48 : 0.08;
+    const heat = Math.max(floor, cur.heat - dt * (live ? 0.12 : 0.55));
+    const status = !live ? "halted" : heat >= 0.4 ? "working" : "idle";
     if (heat !== cur.heat || status !== cur.status) {
       next[a.id] = { ...cur, heat, status };
       changed = true;
@@ -1632,12 +1634,15 @@ function checkStops() {
 
 function idleChatter() {
   const s = useFloor.getState();
-  if (!s.floorOpen) return;
-  const a = AGENTS[Math.floor(Math.random() * AGENTS.length)]!;
+  if (!s.floorOpen && !s.liveArmed) return;
   const tickerPairs = s.pairs.filter((p) => s.tickers[p]);
   const pair = tickerPairs[Math.floor(Math.random() * Math.max(tickerPairs.length, 1))];
-  const label = pair ? PAIR_BY_ID[pair].label : "the tape";
+  const label = pair ? (getPair(pair) ?? PAIR_BY_ID[pair])?.label ?? pair : "the tape";
   const wr = s.brain.samples ? Math.round((s.brain.wins / s.brain.samples) * 100) : 0;
+  const live = s.liveArmed || s.mode === "live";
+  const n = live ? 4 : 1;
+  for (let i = 0; i < n; i++) {
+    const a = AGENTS[Math.floor(Math.random() * AGENTS.length)]!;
   const lines: Record<AgentId, string> = {
     scanner: `watching ${label}`,
     runner:
@@ -1668,7 +1673,8 @@ function idleChatter() {
       ? `F&G ${s.fearGreed.value} ${s.fearGreed.label}`
       : "reading the names",
   };
-  bumpAgent(a.id, lines[a.id], 0.35 + Math.random() * 0.25);
+    bumpAgent(a.id, lines[a.id], live ? 0.7 + Math.random() * 0.3 : 0.35 + Math.random() * 0.25);
+  }
 }
 
 async function refreshWire() {
@@ -1905,6 +1911,7 @@ export function startEngine(): () => void {
   }
   seedHistory();
   applySessionEnd();
+  for (const a of AGENTS) bumpAgent(a.id, "on the desk", 0.72);
   void catchUpAway().then((rep) => {
     flushFloorPersist();
     if (rep && rep.awayMs >= 90_000) toastAwayReplay(rep.awayMs, rep.fills, rep.pnl);

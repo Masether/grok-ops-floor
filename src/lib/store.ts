@@ -941,7 +941,7 @@ export const useFloor = create<FloorState>()(
           playbooks: normalizePlaybooks(p.playbooks ?? ALL_PLAYBOOKS),
           floorOpen: launched,
           autoTrade: launched ? true : autoTrade,
-          agents: freshAgents(),
+          agents: current.agents,
           mode: liveOn ? "live" : p.mode === "paper" ? "paper" : current.mode,
           liveArmed: liveOn,
           liveBudget: restoreLiveBudget(p.liveBudget ?? current.liveBudget),

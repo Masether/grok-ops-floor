@@ -96,6 +96,9 @@ export function RunnerDeck() {
                   />
                 ))}
               </div>
+              <span className="stat-num w-10 text-right text-micro text-subtle">
+                {st?.status === "working" ? "on" : st?.status === "halted" ? "off" : "idle"}
+              </span>
               <span className="stat-num w-8 text-right text-micro text-subtle">
                 {(st?.delayMs ?? 0) | 0}ms
               </span>
@@ -234,9 +237,7 @@ export function TheDesk() {
         >
           <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            {live
-              ? "Kraken book — IN buy, OUT sell. Tap for the full blotter."
-              : "Paper book — tap for in/out history."}
+            Brain is the journal. Cash in USD is not a missing lot.
           </p>
         </button>
         <span
