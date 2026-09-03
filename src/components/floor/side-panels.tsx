@@ -12,53 +12,94 @@ import { cn } from "@/lib/utils";
 
 export function ReworkQueue() {
   const queue = useFloor((s) => s.queue);
-  const count = queue.length;
+  const orders = useFloor((s) => s.orders);
+  const signals = useFloor((s) => s.signals);
+  const events = useFloor((s) => s.events);
+  const rows: { id: string; title: string; detail: string; tone: "stall" | "reject" | "playbook" | "empty" | "good"; pair?: string; ts: number }[] = [];
+  for (const q of queue) {
+    rows.push({
+      id: q.id,
+      title: q.title,
+      detail: q.detail,
+      tone: q.severity,
+      pair: q.pair,
+      ts: q.ts,
+    });
+  }
+  for (const o of orders) {
+    if (o.status === "queued") continue;
+    rows.push({
+      id: o.id,
+      title: `${o.status === "filled" ? (o.side === "buy" ? "IN" : "OUT") : o.status.toUpperCase()} ${getPair(o.pair)?.label ?? o.pair}`,
+      detail: `${fillWhy(o.reason)}${o.pnl != null ? ` · ${money(o.pnl)}` : ""}`,
+      tone: o.status === "filled" ? (o.side === "buy" ? "good" : "reject") : o.status === "rejected" ? "stall" : "playbook",
+      pair: o.pair,
+      ts: o.ts,
+    });
+  }
+  for (const sig of signals.slice(0, 12)) {
+    rows.push({
+      id: sig.id,
+      title: `${sig.kind.toUpperCase()} ${getPair(sig.pair)?.label ?? sig.pair}`,
+      detail: `${sig.reason} · ${(sig.confidence * 100).toFixed(0)}%`,
+      tone: sig.kind === "buy" ? "good" : sig.kind === "sell" ? "reject" : "playbook",
+      pair: sig.pair,
+      ts: sig.ts,
+    });
+  }
+  if (rows.length === 0) {
+    for (const e of events.slice(0, 8)) {
+      rows.push({
+        id: e.id,
+        title: e.title,
+        detail: e.detail,
+        tone: e.tone === "bad" ? "stall" : e.tone === "warn" ? "reject" : e.tone === "good" ? "good" : "playbook",
+        pair: e.pair,
+        ts: e.ts,
+      });
+    }
+  }
+  rows.sort((a, b) => b.ts - a.ts);
+  const seen = new Set<string>();
+  const uniq = rows.filter((r) => {
+    const k = `${r.title}|${r.pair ?? ""}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, 10);
   return (
     <section className="panel min-h-[180px]">
       <div className="panel-head">
         <div>
           <h2 className="panel-kicker">Rework queue</h2>
-          <p className="panel-sub">last tickets the floor passed back</p>
+          <p className="panel-sub">holds, rejects, and tickets the floor just worked</p>
         </div>
-        <span className="stat-num text-xl text-fg">{count}</span>
+        <span className="stat-num text-xl text-fg">{uniq.length}</span>
       </div>
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2">
-        {queue.length === 0 ? (
-          <li className="text-2xs text-subtle">Queue empty. Playbook is clean.</li>
+        {uniq.length === 0 ? (
+          <li className="text-2xs text-subtle">Waiting on the first scan. Tap Scan on the dock.</li>
         ) : (
-          queue.slice(0, 8).map((q) => (
+          uniq.map((q) => (
             <li key={q.id}>
               <div className="flex items-center justify-between gap-2">
                 <span
                   className={cn(
                     "font-display text-2xs tracking-[0.12em] uppercase",
-                    q.severity === "stall" && "text-danger",
-                    q.severity === "reject" && "text-warn",
-                    q.severity === "playbook" && "text-info",
-                    q.severity === "empty" && "text-muted",
+                    q.tone === "stall" && "text-danger",
+                    q.tone === "reject" && "text-warn",
+                    q.tone === "playbook" && "text-info",
+                    q.tone === "good" && "text-good",
+                    q.tone === "empty" && "text-muted",
                   )}
                 >
                   {q.title}
                 </span>
                 {q.pair ? (
-                  <span className="text-micro text-subtle">{PAIR_BY_ID[q.pair].label}</span>
+                  <span className="text-micro text-subtle">{getPair(q.pair)?.label ?? q.pair}</span>
                 ) : null}
               </div>
               <p className="truncate text-micro text-muted">{q.detail}</p>
-              <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-surface-3">
-                <div
-                  className="h-full"
-                  style={{
-                    width: `${40 + (q.id.length % 50)}%`,
-                    background:
-                      q.severity === "stall"
-                        ? "var(--color-danger)"
-                        : q.severity === "reject"
-                          ? "var(--color-warn)"
-                          : "var(--color-info)",
-                  }}
-                />
-              </div>
             </li>
           ))
         )}
@@ -221,24 +262,30 @@ export function TheDesk() {
   const liveBudget = useFloor((s) => s.liveBudget);
   const history = useFloor((s) => s.equityHistory);
   const orders = useFloor((s) => s.orders);
+  const signals = useFloor((s) => s.signals);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
   const live = deskIsLive({ mode, liveArmed, liveBalance });
   const krakenUsd = usdOnBook(liveBalance);
   const cap = live ? liveBudget : startingCash > 0 ? startingCash : desk.equity;
-  const liveFills = orders.filter(
-    (o) => o.status === "filled" && o.mode === "live" && o.side === "sell",
-  );
-  const liveLessons = live
-    ? brain.lessons.filter((l) => liveFills.some((o) => o.pair === l.pair) || positions.some((p) => p.pair === l.pair && p.mode === "live"))
-    : brain.lessons;
-  const liveWr =
+  const liveFills = orders.filter((o) => o.status === "filled");
+  const liveLessons =
     liveFills.length > 0
-      ? liveFills.filter((o) => (o.pnl ?? 0) > 0).length / liveFills.length
+      ? brain.lessons.filter((l) => liveFills.some((o) => o.pair === l.pair) || positions.some((p) => p.pair === l.pair))
+      : brain.lessons;
+  const liveWr =
+    liveFills.filter((o) => o.side === "sell").length > 0
+      ? liveFills.filter((o) => o.side === "sell" && (o.pnl ?? 0) > 0).length /
+        liveFills.filter((o) => o.side === "sell").length
       : wr;
-  const liveNote = liveFills[0]
-    ? `${liveFills[0].side === "sell" ? "out" : "in"} ${getPair(liveFills[0].pair)?.label ?? liveFills[0].pair} · ${fillWhy(liveFills[0].reason)} · ${money(liveFills[0].pnl ?? 0)}`
-    : "";
+  const lastFill = liveFills[0];
+  const lastSig = signals[0];
+  const liveNote = lastFill
+    ? `${lastFill.side === "sell" ? "OUT" : "IN"} ${getPair(lastFill.pair)?.label ?? lastFill.pair} · ${fillWhy(lastFill.reason)} · ${money(lastFill.pnl ?? (lastFill.fillPrice ?? lastFill.price) * lastFill.qty)}`
+    : lastSig
+      ? `${lastSig.kind.toUpperCase()} ${getPair(lastSig.pair)?.label ?? lastSig.pair} · ${lastSig.reason}`
+      : "";
+  const staleBrain = /no inventory|runner is flat/i.test(brain.lastNote);
   const eqPct = pctOfCapital(desk.equity - cap, cap);
   const unrlPct = pctOfCapital(desk.unrealized, cap);
   const realPct = pctOfCapital(desk.realized, cap);
@@ -324,14 +371,13 @@ export function TheDesk() {
           {(() => {
             const bookPos = live ? positions.filter((p) => p.mode === "live") : positions;
             const tape = orders
-              .filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"))
-              .slice(0, 10);
+              .filter((o) => o.status === "filled" || o.status === "rejected")
+              .slice(0, 12);
             const label = (id: string) => getPair(id)?.label ?? id;
             if (bookPos.length === 0 && tape.length === 0) {
               return (
                 <li className="text-micro text-subtle">
-                  Cash is USD — no coin is open. Brain below is the journal, not a position. IN
-                  appears on the next live buy.
+                  No open lot and no fill yet. Scan the tape — IN/OUT prints here on the next ticket.
                 </li>
               );
             }
@@ -397,7 +443,7 @@ export function TheDesk() {
           </span>
         </div>
         <p className="mt-1 truncate text-micro text-muted">
-          {liveNote || brain.lastNote || grokNote}
+          {liveNote || (!staleBrain && brain.lastNote) || grokNote || "Brain on — waiting on a fill"}
         </p>
         {liveLessons.length > 0 ? (
           <ul className="mt-1.5 space-y-0.5">

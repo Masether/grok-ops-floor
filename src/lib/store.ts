@@ -990,6 +990,11 @@ export const useFloor = create<FloorState>()(
             setupScore: { ...DEFAULT_BRAIN.setupScore, ...(p.brain?.setupScore ?? {}) },
             lessons: p.brain?.lessons ?? [],
             assetMemory: { ...DEFAULT_BRAIN.assetMemory, ...(p.brain?.assetMemory ?? {}) },
+            lastNote:
+              typeof p.brain?.lastNote === "string" &&
+              !/no inventory|runner is flat/i.test(p.brain.lastNote)
+                ? p.brain.lastNote
+                : DEFAULT_BRAIN.lastNote,
           },
           brainChat: Array.isArray(p.brainChat) ? p.brainChat.slice(-16) : [],
         };
