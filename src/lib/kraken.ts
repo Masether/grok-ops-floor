@@ -257,6 +257,18 @@ export const PAIR_BY_ID: Record<PairId, PairDef> = Object.fromEntries(
   PAIRS.map((a) => [a.id, a]),
 ) as Record<PairId, PairDef>;
 
+const extraPairs: Record<string, PairDef> = {};
+
+export function getPair(id: string): PairDef | undefined {
+  return PAIR_BY_ID[id as PairId] ?? extraPairs[id];
+}
+
+export function registerPair(def: PairDef): PairId {
+  extraPairs[def.id] = def;
+  (PAIR_BY_ID as Record<string, PairDef>)[def.id] = def;
+  return def.id as PairId;
+}
+
 export const PAIR_BY_WS: Record<string, PairDef> = Object.fromEntries(
   PAIRS.map((a) => [a.wsSymbol, a]),
 );

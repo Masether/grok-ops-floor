@@ -3,6 +3,7 @@ import { toast, Toaster } from "sonner";
 import { scanLiveTape, startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { ensurePaperDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
+import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
 import { ChartsBubble } from "./charts-bubble";
@@ -27,6 +28,8 @@ function openPaperNow() {
 
 export function OpsShell() {
   const launched = useFloor((s) => s.launched);
+  const floorOpen = useFloor((s) => s.floorOpen);
+  const liveArmed = useFloor((s) => s.liveArmed);
   const { user } = useCurrentUserState();
   const [showLaunch, setShowLaunch] = useState(false);
 
@@ -35,6 +38,22 @@ export function OpsShell() {
     startEngine();
     return () => stopEngine();
   }, []);
+
+  useEffect(() => {
+    if (!floorOpen && !liveArmed) {
+      void dropWakeLock();
+      return;
+    }
+    void holdWakeLock();
+    const onVis = () => {
+      if (document.visibilityState === "visible") void holdWakeLock();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      void dropWakeLock();
+    };
+  }, [floorOpen, liveArmed]);
 
   useEffect(() => {
     let alive = true;

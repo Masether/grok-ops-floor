@@ -1,5 +1,5 @@
 import { ema, sma } from "./indicators.ts";
-import { PAIR_BY_ID } from "./kraken.ts";
+import { getPair, PAIR_BY_ID } from "./kraken.ts";
 import type { PairId, Ticker, WireItem } from "./types.ts";
 import type { Brain } from "./learn.ts";
 
@@ -86,18 +86,19 @@ export function hunterScore(
   wire: WireItem[] = [],
 ): number {
   if (hasPos) return 100;
-  const def = PAIR_BY_ID[pair];
+  const def = getPair(pair) ?? PAIR_BY_ID[pair];
   const bias = brain.pairBias[pair] ?? 0;
   if (brain.enabled && bias < -0.35) return -10;
   const ch = ticker?.changePct ?? 0;
   const vol = ticker?.volume ?? 0;
   let score = bias * 3;
-  if (def.sleeve === "heat") {
+  const sleeve = def?.sleeve ?? "heat";
+  if (sleeve === "heat") {
     if (ch > 2) score += Math.min(ch, 28) * 0.55;
     else if (ch < -5) score -= 3;
     else score += ch * 0.08;
     score += 0.1;
-  } else if (def.sleeve === "stock") {
+  } else if (sleeve === "stock") {
     score += 0.35 + Math.max(ch, 0) * 0.18 + (ch < -2 ? -0.4 : 0);
   } else {
     if (ch > 0) score += 0.7 + Math.min(ch, 6) * 0.22;

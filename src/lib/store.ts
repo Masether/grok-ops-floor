@@ -124,6 +124,10 @@ export type FloorState = {
   keys: Keys;
   keysOk: boolean | null;
   pairs: PairId[];
+  scoutHot: PairId[];
+  scoutScanned: number;
+  scoutDropped: number;
+  lastScoutAt: number;
   risk: RiskConfig;
   startingCash: number;
   cash: number;
@@ -422,6 +426,10 @@ export const useFloor = create<FloorState>()(
       keys: { apiKey: "", apiSecret: "" },
       keysOk: null,
       pairs: DEFAULT_PAIRS,
+      scoutHot: [],
+      scoutScanned: 0,
+      scoutDropped: 0,
+      lastScoutAt: 0,
       risk: DEFAULT_RISK,
       startingCash: 10_000,
       cash: 10_000,
@@ -838,6 +846,8 @@ export const useFloor = create<FloorState>()(
           keysOk: s.keysOk,
           liveBalance: s.liveBalance,
           pairs: s.pairs,
+          scoutHot: s.scoutHot,
+          lastScoutAt: s.lastScoutAt,
           risk: s.risk,
           startingCash: s.startingCash,
           cash: s.cash,

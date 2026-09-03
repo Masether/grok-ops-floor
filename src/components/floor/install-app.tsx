@@ -69,7 +69,9 @@ export function InstallAppButton({ compact = false }: { compact?: boolean }) {
                 <p className="panel-kicker" id="install-title">
                   Install on phone
                 </p>
-                <p className="panel-sub">Home Screen icon. The book stays on this device.</p>
+                <p className="panel-sub">
+                  Home Screen icon. Trading only while this app is open — leave a laptop tab running overnight.
+                </p>
               </div>
               <Button type="button" size="icon" variant="ghost" aria-label="Close" onClick={() => setOpen(false)}>
                 <X className="size-4" />

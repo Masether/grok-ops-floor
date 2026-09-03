@@ -12,6 +12,9 @@ export function LiveStatusBar() {
   const keys = useFloor((s) => s.keys);
   const liveBalance = useFloor((s) => s.liveBalance);
   const liveBudget = useFloor((s) => s.liveBudget);
+  const scoutScanned = useFloor((s) => s.scoutScanned);
+  const scoutDropped = useFloor((s) => s.scoutDropped);
+  const scoutHot = useFloor((s) => s.scoutHot);
   const positions = useFloor((s) => s.positions);
   const tickers = useFloor((s) => s.tickers);
   const setMode = useFloor((s) => s.setMode);
@@ -43,6 +46,11 @@ export function LiveStatusBar() {
             : connected
               ? `Kraken sees USD ${moneyFull(sleeve.usd)} · USDT ${moneyFull(sleeve.usdt)} · tickets still use play money until you arm`
               : "Play money only. Keys + Arm live to spend Kraken USD."}
+        </p>
+        <p className="mt-1 text-micro text-subtle">
+          Overnight: leave this tab open and plugged in. Phone Home Screen is an icon — it does not
+          trade while locked. Scout {scoutScanned || "—"} books · dropped {scoutDropped} under $10k
+          liq · hot {scoutHot?.length ?? 0}. Kelly cap 6%. Pricer quiet under 8% on heat.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

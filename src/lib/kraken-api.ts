@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { findPairResult, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken.ts";
+import { findPairResult, getPair, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken.ts";
 import type { Candle, PairId, Ticker } from "./types.ts";
 
 const KRAKEN = "https://api.kraken.com";
@@ -130,7 +130,7 @@ export const fetchTickers = createServerFn({ method: "POST" })
 export const fetchOhlc = createServerFn({ method: "POST" })
   .validator((input: { pair: PairId; interval?: number; since?: number }) => input)
   .handler(async ({ data }) => {
-    const def = PAIR_BY_ID[data.pair];
+    const def = getPair(data.pair);
     if (!def) return [] as Candle[];
     const params: Record<string, string> = {
       pair: def.kraken,
@@ -178,7 +178,7 @@ export const placeMarketOrder = createServerFn({ method: "POST" })
     }) => input,
   )
   .handler(async ({ data }) => {
-    const def = PAIR_BY_ID[data.pair];
+    const def = getPair(data.pair);
     if (!def) throw new Error("Unknown pair");
     const result = await privatePost<{ txid?: string[]; descr?: { order?: string } }>(
       "/0/private/AddOrder",
@@ -221,5 +221,49 @@ export const fetchOpenOrders = createServerFn({ method: "POST" })
     const open = result.open ?? {};
     return { ids: Object.keys(open), count: Object.keys(open).length };
   });
+
+export const fetchUsdUniverse = createServerFn({ method: "POST" }).handler(async () => {
+  const tickers = await publicGet<Record<string, RawTicker>>("/0/public/Ticker", {});
+  const hits: {
+    pair: string;
+    kraken: string;
+    last: number;
+    liquidity: number;
+    changePct: number;
+  }[] = [];
+  const defs: PairDef[] = [];
+  const known = PAIRS;
+  for (const [key, raw] of Object.entries(tickers)) {
+    if (!/USD$|ZUSD$/.test(key)) continue;
+    const last = Number(raw.c?.[0]);
+    const open = Number(raw.o);
+    const vol = Number(raw.v?.[1] ?? raw.v?.[0]);
+    if (!(last > 0) || !(vol > 0)) continue;
+    const def = known.find((d) => d.resultKeys.includes(key) || d.kraken === key);
+    const pair = def?.id ?? key.replace(/^X/, "").replace("ZUSD", "USD");
+    hits.push({
+      pair,
+      kraken: def?.kraken ?? key,
+      last,
+      liquidity: last * vol,
+      changePct: open ? ((last - open) / open) * 100 : 0,
+    });
+    if (def) continue;
+    const base = String(pair).replace(/USD$/i, "") || pair;
+    defs.push({
+      id: pair as PairId,
+      kraken: key,
+      wsSymbol: `${base}/USD`,
+      resultKeys: [key, String(pair)],
+      base,
+      quote: "USD",
+      label: `${base}/USD`,
+      decimals: 8,
+      ordermin: 0.0001,
+      sleeve: "heat",
+    });
+  }
+  return { hits, defs };
+});
 
 export const pairUniverse = PAIRS.map((p) => p.id);

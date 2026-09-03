@@ -2,9 +2,12 @@ import { AGENT_BY_ID, AGENTS } from "./agents";
 import { emitPulse } from "./bus";
 import { uid, px, money } from "./format";
 import { macdHist, readScalp } from "./indicators";
-import { PAIR_BY_ID } from "./kraken";
+import { fetchOhlc, fetchTickers, fetchUsdUniverse } from "./kraken-api";
+import { PAIR_BY_ID, getPair, registerPair } from "./kraken";
+import { kellyStake } from "./kelly";
+import { fairValue, mispricing, pricerQuiet } from "./pricer";
+import { rankScout } from "./scout";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
-import { fetchOhlc, fetchTickers } from "./kraken-api";
 import { getLiveVenue } from "./venues";
 import { connectTickerFeed } from "./kraken-ws";
 import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn";
@@ -421,32 +424,66 @@ function runSimTick() {
   });
 }
 
+async function runScout() {
+  const s = useFloor.getState();
+  if (!s.launched || !s.floorOpen) return;
+  if (s.lastScoutAt && Date.now() - s.lastScoutAt < 10 * 60_000) return;
+  bumpAgent("hunter", "scout 800+ books", 1);
+  try {
+    const res = await fetchUsdUniverse();
+    for (const def of res.defs) registerPair(def);
+    const { kept, dropped, scanned } = rankScout(res.hits);
+    const hot = kept
+      .map((h) => (getPair(h.pair) ? (h.pair as PairId) : null))
+      .filter((id): id is PairId => Boolean(id));
+    patch({
+      scoutHot: hot,
+      scoutScanned: scanned,
+      scoutDropped: dropped,
+      lastScoutAt: Date.now(),
+    });
+    bumpAgent("hunter", `scout kept ${hot.length} / dropped ${dropped}`, 0.9);
+    pushEvent({
+      agent: "hunter",
+      stage: "brief",
+      title: `SCOUT ${scanned}`,
+      detail: `Kept ${hot.length} ≥$10k liq · dropped ${dropped}`,
+      tone: "info",
+    });
+  } catch (err) {
+    bumpAgent("hunter", "scout miss", 0.5);
+    patch({ lastScoutAt: Date.now() });
+    void err;
+  }
+}
+
 async function refreshOhlcAll() {
   const s = useFloor.getState();
   if (s.pairs.length === 0) return;
   const useSim = s.feedSource === "sim";
   const interval = 1;
   const open = new Set(s.positions.map((p) => p.pair));
-  const ranked = s.pairs
+  const universe = [...new Set([...s.pairs, ...(s.scoutHot ?? []), ...open])];
+  const ranked = universe
     .map((pair) => ({
       pair,
       score: hunterScore(pair, s.tickers[pair], s.brain, open.has(pair), s.wire),
     }))
     .sort((a, b) => b.score - a.score);
 
-  const take = s.mode === "paper" ? 6 : 4;
+  const take = s.mode === "paper" ? 8 : 6;
   const picked: typeof ranked = [];
   for (const row of ranked) {
     if (open.has(row.pair) || picked.length < take) picked.push(row);
   }
   const inspect = s.inspectPair;
-  if (inspect && s.pairs.includes(inspect) && !picked.some((row) => row.pair === inspect)) {
+  if (inspect && universe.includes(inspect) && !picked.some((row) => row.pair === inspect)) {
     picked.push({ pair: inspect, score: 0 });
   }
 
   const top = picked[0];
   if (top) {
-    const def = PAIR_BY_ID[top.pair];
+    const def = getPair(top.pair) ?? PAIR_BY_ID[top.pair];
     bumpAgent(
       "hunter",
       `hunt ${def.label} · ${def.sleeve} · ${top.score.toFixed(1)}`,
@@ -507,7 +544,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const read = readScalp(closes, volumes, brain);
     const ticker = s0.tickers[pair];
     const price = ticker?.last ?? closes[closes.length - 1]!;
-    const label = PAIR_BY_ID[pair].label;
+    const label = getPair(pair)?.label ?? PAIR_BY_ID[pair]?.label ?? pair;
+    const sleeve = (getPair(pair) ?? PAIR_BY_ID[pair])?.sleeve ?? "heat";
     const minConf =
       s0.mode === "paper"
         ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
@@ -578,7 +616,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    const sleeve = PAIR_BY_ID[pair].sleeve;
     const stNow = useFloor.getState();
     const paper = stNow.mode === "paper";
     const liveNow = stNow.mode === "live";
@@ -632,6 +669,15 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       ticketKind = "hold";
     } else if (playbook !== "scalp") {
       ticketKind = "buy";
+    }
+
+    if (playbook && playbook !== "scalp" && ticketKind === "buy") {
+      const fair = fairValue(closes);
+      const gap = mispricing(price, fair);
+      if (pricerQuiet(gap, sleeve)) {
+        bumpAgent("signal", `pricer quiet ${(gap * 100).toFixed(1)}%`, 0.4);
+        ticketKind = "hold";
+      }
     }
 
     patch({
@@ -965,7 +1011,8 @@ function sizeTicket(
   const cash = live ? (sleeve?.cash ?? 0) : s.cash;
   const equity = live ? (sleeve?.equity ?? 0) : markEquity(s);
   const existing = book.find((p) => p.pair === pair);
-  const def = PAIR_BY_ID[pair];
+  const def = getPair(pair) ?? PAIR_BY_ID[pair];
+  if (!def) return { ok: false, why: "unknown pair" };
   const bias = s.brain.pairBias[pair] ?? 0;
   const slicePct = playbookSlicePct(playbook);
   const share = BOOK_SHARE[playbook];
@@ -1021,12 +1068,17 @@ function sizeTicket(
   if (slicePct > 0) {
     qty = Math.min(qty, (equity * slicePct) / price);
   }
+  const wr =
+    s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
+  const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
+  const stake = kellyStake({ pWin: wr, payoff, bankroll: equity, cap: 0.06 });
+  if (stake > 0) qty = Math.min(qty, stake / price);
   let notional = qty * price;
   if (live && notional < MIN_LIVE_TICKET && cash >= MIN_LIVE_TICKET) {
     qty = MIN_LIVE_TICKET / price;
     notional = MIN_LIVE_TICKET;
   }
-  if (notional < 10) return { ok: false, why: "size below min ticket" };
+  if (notional < 10) return { ok: false, why: stake <= 0 ? "risk killed — no kelly edge" : "size below min ticket" };
   if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
   if (bookUsed + notional > bookCap + 1e-9) {
     return { ok: false, why: `${playbook} sleeve full (${Math.round(share * 100)}% of book)` };
@@ -1683,6 +1735,11 @@ export async function haltLive() {
 
 async function catchUpAway(now = Date.now()): Promise<AwayReport | null> {
   const s = useFloor.getState();
+  if (s.mode === "live") {
+    useFloor.setState({ lastEngineAt: now });
+    if (s.keys.apiKey && s.keys.apiSecret) void refreshTreasury();
+    return null;
+  }
   if (!s.launched || s.mode !== "paper") {
     useFloor.setState({ lastEngineAt: now });
     return null;
@@ -1766,6 +1823,7 @@ export function startEngine(): () => void {
     flushFloorPersist();
     if (rep && rep.awayMs >= 90_000) toastAwayReplay(rep.awayMs, rep.fills, rep.pnl);
   });
+  void runScout();
 
   const heartbeat = window.setInterval(() => {
     patch({ lastEngineAt: Date.now() });
@@ -1775,7 +1833,7 @@ export function startEngine(): () => void {
   }, 8_000);
 
   const tick = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
     coolAgents(0.25);
     sampleEquity();
   }, 500);
@@ -1793,13 +1851,13 @@ export function startEngine(): () => void {
     void refreshTickersRest().then(() => checkStops());
   }, 5000);
   const ohlc = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
     const st = useFloor.getState();
     if (!st.launched || !st.floorOpen) return;
     void refreshOhlcAll();
   }, useFloor.getState().mode === "paper" ? 8_000 : 15_000);
   const stageSpin = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
     const s = useFloor.getState();
     if (!s.launched || !s.floorOpen) return;
     const i = STAGE_CYCLE.indexOf(s.stage);
@@ -1807,7 +1865,7 @@ export function startEngine(): () => void {
     if (!busy) patch({ stage: STAGE_CYCLE[(i + 1) % STAGE_CYCLE.length]! });
   }, 3800);
   const simPulse = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
+    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
     if (useFloor.getState().feedSource !== "sim") return;
     const st = useFloor.getState();
     if (!bookNeedsProtect(st)) return;
@@ -1821,8 +1879,11 @@ export function startEngine(): () => void {
   const wire = window.setInterval(() => {
     void refreshWire();
   }, 180_000);
+  const scout = window.setInterval(() => {
+    void runScout();
+  }, 60_000);
 
-  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire, heartbeat, persistPulse];
+  timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire, heartbeat, persistPulse, scout];
 
   stopWs = connectTickerFeed(
     useFloor.getState().pairs,
