@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { GUILD_BY_ID, GUILDS, seedSwarm, type GuildId, type SwarmSnap } from "@/lib/swarm";
 
-const BOTS = seedSwarm();
+const BOTS = seedSwarm().filter((_, i) => i % 3 === 0);
 
 export function SwarmCanvas({
   swarm,
@@ -20,9 +20,15 @@ export function SwarmCanvas({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     let raf = 0;
+    let frame = 0;
     const loop = (t: number) => {
       if (typeof document !== "undefined" && document.hidden) {
         raf = 0;
+        return;
+      }
+      frame += 1;
+      if (frame % 2 === 1) {
+        raf = requestAnimationFrame(loop);
         return;
       }
       const parent = canvas.parentElement;

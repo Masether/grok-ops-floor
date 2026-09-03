@@ -32,7 +32,7 @@ import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
 import { lotsMark } from "./live-pnl";
-import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
+import { finishRoll, pingSwarm, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
 import { markEquity, useFloor, flushFloorPersist, ensurePaperDesk, type FloorState } from "./store";
@@ -87,101 +87,23 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
-function prefersReduced() {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
   const pings = pingSwarm();
-  const rtt = Math.max(...GUILDS.map((g) => pings[g.id]!));
-  if (prefersReduced()) {
-    const done = finishRoll(vote, pings);
-    patch({ swarm: done, grokNote: done.grok });
-    return done;
-  }
-  let rolling = startRoll(vote);
-  patch({ swarm: rolling, grokNote: rolling.grok });
-  bumpAgent("dispatcher", `ping ${label}`, 0.7);
-  pushEvent({
-    agent: "dispatcher",
-    stage: "brief",
-    pair,
-    title: `SWARM PING ${label}`,
-    detail: `Grok waiting on ${SWARM_SIZE} bots`,
-    tone: "info",
-  });
-  const order = GUILDS.slice().sort((a, b) => pings[a.id]! - pings[b.id]!);
-  let elapsed = 0;
-  for (const g of order) {
-    const wait = Math.max(0, pings[g.id]! - elapsed);
-    await sleep(wait);
-    elapsed = pings[g.id]!;
-    rolling = landGuild(rolling, vote, g.id, pings[g.id]!);
-    patch({ swarm: rolling, grokNote: rolling.grok });
-    bumpAgent(g.lead, `${g.name} ${pings[g.id]}ms`, rolling.guilds[g.id]!.heat);
-    emitPulse({ from: g.lead, to: "dispatcher" });
-    pushEvent({
-      agent: g.lead,
-      next: "dispatcher",
-      stage: "brief",
-      pair,
-      title: `${g.name} IN · ${g.count} bots · ${pings[g.id]}ms`,
-      detail: rolling.guilds[g.id]!.note,
-      tone: "info",
-    });
-  }
-  await sleep(48);
   const done = finishRoll(vote, pings);
   patch({ swarm: done, grokNote: done.grok });
-  bumpAgent("dispatcher", `grok ${done.kind} ${rtt}ms`, 1);
+  bumpAgent("dispatcher", `grok ${done.kind} ${done.rttMs}ms`, 1);
+  void pair;
+  void label;
   return done;
 }
 
 async function walkDebate(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
-  const steps: { role: (typeof vote.debate.rounds)[number]["role"]; stage: PipelineStage; agent: AgentId }[] = [
-    { role: "setup", stage: "brief", agent: "scanner" },
-    { role: "challenge", stage: "split", agent: "hunter" },
-    { role: "data", stage: "handout", agent: "flow" },
-    { role: "risk", stage: "tool", agent: "sentinel" },
-    { role: "merge", stage: "second", agent: "dispatcher" },
-  ];
-  const pause = prefersReduced() ? 0 : 90;
-  for (const step of steps) {
-    const round = vote.debate.rounds.find((r) => r.role === step.role);
-    if (!round) continue;
-    setStage(step.stage);
-    bumpAgent(step.agent, `${step.role} ${round.kind}`, 0.95);
-    patch({ grokNote: round.note });
-    pushEvent({
-      agent: step.agent,
-      next: "dispatcher",
-      stage: step.stage,
-      pair,
-      title: `${step.role.toUpperCase()} ${round.kind.toUpperCase()} ${label}`,
-      detail: round.note,
-      tone:
-        step.role === "challenge"
-          ? "warn"
-          : round.kind === "buy"
-            ? "good"
-            : round.kind === "sell"
-              ? "warn"
-              : "info",
-    });
-    emitPulse({ from: step.agent, to: "dispatcher" });
-    await sleep(pause);
+  const merge = vote.debate.rounds.find((r) => r.role === "merge") ?? vote.debate.rounds.at(-1);
+  if (merge) {
+    bumpAgent("dispatcher", `${merge.kind} ${label}`, 0.9);
+    patch({ grokNote: merge.note, stage: "second" });
   }
-  patch({ swarm: vote, grokNote: vote.grok });
-  if (vote.debate.dissent) {
-    pushEvent({
-      agent: "dispatcher",
-      stage: "second",
-      pair,
-      title: `DISSENT KEPT · ${vote.debate.dissent.kind.toUpperCase()} · ${vote.debate.dissent.bots} bots`,
-      detail: vote.debate.dissent.note,
-      tone: "warn",
-    });
-  }
+  void pair;
 }
 
 function patch(partial: Partial<FloorState>) {
@@ -223,10 +145,9 @@ function coolAgents(dt: number) {
     const floor = live ? 0.48 : 0.08;
     const heat = Math.max(floor, cur.heat - dt * (live ? 0.12 : 0.55));
     const status = !live ? "halted" : heat >= 0.4 ? "working" : "idle";
-    if (heat !== cur.heat || status !== cur.status) {
-      next[a.id] = { ...cur, heat, status };
-      changed = true;
-    }
+    if (Math.abs(heat - cur.heat) < 0.04 && status === cur.status) continue;
+    next[a.id] = { ...cur, heat, status };
+    changed = true;
   }
   if (changed) patch({ agents: next });
 }
@@ -1805,7 +1726,7 @@ function idleChatter() {
   const label = pair ? (getPair(pair) ?? PAIR_BY_ID[pair])?.label ?? pair : "the tape";
   const wr = s.brain.samples ? Math.round((s.brain.wins / s.brain.samples) * 100) : 0;
   const live = s.liveArmed || s.mode === "live";
-  const n = live ? 4 : 1;
+  const n = 1;
   for (let i = 0; i < n; i++) {
     const a = AGENTS[Math.floor(Math.random() * AGENTS.length)]!;
   const lines: Record<AgentId, string> = {
