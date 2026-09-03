@@ -119,7 +119,7 @@ function WalletPane({ onSend, onConvert }: { onSend: () => void; onConvert: () =
         />
         <WalletCard
           label="Trading desk"
-          sub={liveArmed ? "live book" : "paper book"}
+          sub="live book"
           value={moneyFull(desk.equity)}
           extra={`${money(cash)} free`}
         />
@@ -134,7 +134,7 @@ function WalletPane({ onSend, onConvert }: { onSend: () => void; onConvert: () =
             {autoSweep
               ? liveArmed
                 ? `On · winning closes settle to USD on Kraken · logged ${moneyFull(sweptTotal)}`
-                : `On · winning paper closes sweep off the desk · swept ${moneyFull(sweptTotal)} · ${moneyFull(due)} ready`
+                : `On · winning closes sweep to the bot wallet · swept ${moneyFull(sweptTotal)} · ${moneyFull(due)} ready`
               : "Off — profit stays on the desk"}
           </p>
         </div>
@@ -163,36 +163,10 @@ function WalletPane({ onSend, onConvert }: { onSend: () => void; onConvert: () =
         Sweep {moneyFull(due)} now
       </Button>
 
-      {mode === "paper" ? (
-        <form
-          className="space-y-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onDeposit();
-          }}
-        >
-          <Label htmlFor="desk-deposit">Add paper USD to bot wallet</Label>
-          <div className="flex gap-2">
-            <Input
-              id="desk-deposit"
-              type="number"
-              min={1}
-              step={100}
-              inputMode="decimal"
-              value={deposit}
-              onChange={(e) => setDeposit(e.target.value)}
-            />
-            <Button type="button" variant="good" onClick={onDeposit}>
-              Deposit
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <p className="text-2xs text-muted">
-          Live USD sits on Kraken. Arming does not create a chain wallet. Auto-sweep parks the
-          profit bucket here so you can convert, then send out.
-        </p>
-      )}
+      <p className="text-2xs text-muted">
+        Live USD sits on Kraken. Auto-sweep parks the profit bucket here so you can convert, then
+        send out.
+      </p>
 
       {vault.length > 0 ? (
         <ul className="space-y-1 text-2xs text-muted">

@@ -448,7 +448,6 @@ function TicketTab() {
           <p className="mt-1 text-2xs text-subtle">
             Free {moneyFull(cash)}
             {mark != null ? ` · mark ${px(mark)}` : ""}
-            {opsMode === "paper" ? " · paper" : ""}
           </p>
         </div>
         <Button type="submit" className="w-full" variant="good" disabled={busy}>

@@ -1,11 +1,13 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
+import { AppErrorComponent } from "@/lib/error-component";
 import appCss from "../styles.css?url";
 
 const APP_NAME = "GROK OPS FLOOR";
 
 export const Route = createRootRoute({
+  errorComponent: AppErrorComponent,
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -14,7 +16,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Multi-agent Kraken ops floor — eleven desks read the tape, size the ticket, and run paper or live.",
+          "Multi-agent Kraken ops floor — live desk, $200 budget.",
       },
       { name: "theme-color", content: "#05060a" },
     ],

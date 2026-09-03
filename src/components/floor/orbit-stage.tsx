@@ -243,7 +243,7 @@ export function OrbitStage() {
             onClick={() => useFloor.getState().setDeskOpen(true)}
           >
             <div className="font-display text-2xs tracking-[0.14em] text-muted uppercase">
-              {mode === "live" && liveArmed ? "Kraken USD" : "Paper book"}
+              Kraken USD
             </div>
             <div
               className={cn(

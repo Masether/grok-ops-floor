@@ -115,9 +115,6 @@ export function TheTape() {
                 )}
                 onClick={() => {
                   useFloor.getState().setInspectPair(e.pair!);
-                  if (useFloor.getState().opsMode === "paper") {
-                    useFloor.getState().setDeskOpen(true);
-                  }
                 }}
               >
                 {e.title}

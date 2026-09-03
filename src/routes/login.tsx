@@ -148,12 +148,12 @@ function Login() {
 
   const sub =
     mode === "signup"
-      ? "Create a desk profile. Paper starts with play money — no wallet."
+      ? "Create a desk profile. Connect Kraken Query + Orders keys to trade live."
       : mode === "forgot"
         ? "Reset uses the email on the account."
         : mode === "reset"
           ? "Choose a new password for this desk."
-          : "Sign in, then the paper desk opens with play money. Wallet and live keys come later.";
+          : "Sign in, then attach Kraken keys. Live budget $200.";
 
   return (
     <main className="grid min-h-dvh place-items-center bg-bg p-3 text-fg sm:p-6">

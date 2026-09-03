@@ -1019,3 +1019,38 @@ export function ensureLiveDesk(): boolean {
 export function ensurePaperDesk(): boolean {
   return ensureLiveDesk();
 }
+
+/** First paint is live — don't wait 20s for async persist. */
+export function bootFloorFromDisk() {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = window.localStorage.getItem("grok-ops-floor");
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as { state?: Partial<FloorState> };
+    const p = (parsed.state ?? parsed) as Partial<FloorState>;
+    const keyed = Boolean(krakenKeysOn(p.keys));
+    useFloor.setState({
+      launched: true,
+      floorOpen: true,
+      autoTrade: true,
+      opsMode: "auto",
+      mode: "live",
+      venueId: "kraken",
+      liveArmed: keyed,
+      keys: p.keys ?? useFloor.getState().keys,
+      keysOk: keyed ? true : useFloor.getState().keysOk,
+      liveBudget: restoreLiveBudget(p.liveBudget),
+      liveBalance: p.liveBalance ?? null,
+      liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : 0,
+      pairs: liveWatchPairs(Array.isArray(p.pairs) ? p.pairs : []),
+      lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : 0,
+      shiftStartedAt:
+        typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : useFloor.getState().shiftStartedAt,
+    });
+  } catch {
+    /* corrupt disk — keep defaults */
+  }
+}
+
+if (typeof window !== "undefined") bootFloorFromDisk();
+

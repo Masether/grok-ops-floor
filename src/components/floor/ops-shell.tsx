@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect } from "react";
 import { Toaster } from "sonner";
 import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
-import { ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
+import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
@@ -32,6 +32,9 @@ export function OpsShell() {
   const { user } = useCurrentUserState();
 
   useLayoutEffect(() => {
+    bootFloorFromDisk();
+    openLiveNow();
+    startEngine();
     return () => stopEngine();
   }, []);
 
@@ -62,10 +65,7 @@ export function OpsShell() {
       if (!alive) return;
       openLiveNow();
       const keyed = Boolean(useFloor.getState().keys.apiKey && useFloor.getState().keys.apiSecret);
-      if (!keyed) {
-        useFloor.getState().setSettingsOpen(true);
-      }
-      startEngine();
+      if (!keyed) useFloor.getState().setSettingsOpen(true);
       try {
         if (keyed) await refreshTreasury();
       } catch {
@@ -86,6 +86,7 @@ export function OpsShell() {
         if (p.fundingCash >= 0) {
           useFloor.setState({ fundingCash: p.fundingCash });
         }
+        if (s.liveArmed || (s.keys.apiKey && s.keys.apiSecret)) return;
         if (p.pairs.length) s.setPairs(p.pairs as typeof s.pairs);
         if (p.risk) s.setRisk(p.risk);
         if (p.bookJson) {

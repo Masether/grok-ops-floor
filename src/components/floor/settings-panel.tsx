@@ -56,9 +56,6 @@ export function SettingsPanel() {
   const tickers = useFloor((s) => s.tickers);
   const risk = useFloor((s) => s.risk);
   const setRisk = useFloor((s) => s.setRisk);
-  const startingCash = useFloor((s) => s.startingCash);
-  const setStartingCash = useFloor((s) => s.setStartingCash);
-  const resetPaper = useFloor((s) => s.resetPaper);
   const liveBalance = useFloor((s) => s.liveBalance);
   const setLiveBalance = useFloor((s) => s.setLiveBalance);
   const pending = useFloor((s) => s.pendingLive);
@@ -248,7 +245,7 @@ export function SettingsPanel() {
                   variant="good"
                   onClick={() => {
                     if (ensureLiveDesk()) {
-                      toast.success("Paper desk is on — $10k play money. No wallet needed.");
+                      toast.success("Live desk on — Kraken book.");
                       setOpen(false);
                     }
                   }}
@@ -524,25 +521,10 @@ export function SettingsPanel() {
             </section>
 
             <section className="space-y-3">
-              <Label>Paper cash</Label>
-              <Input
-                type="number"
-                min={100}
-                step={100}
-                value={startingCash}
-                onChange={(e) => setStartingCash(Math.max(100, Number(e.target.value) || 10_000))}
-              />
-              <Button size="sm" variant="outline" onClick={resetPaper}>
-                Reset live book
-              </Button>
-            </section>
-
-            <section className="space-y-3">
               <Label>Self-learning brain</Label>
               <p className="text-2xs text-subtle">
-                Always on. Archivist scores every close in Paper, Auto, and Learn. RSI bands,
-                confidence, size tilt, and pair bias move after wins and losses. Learn walks daily
-                and weekly candles from the first print we can get.
+                Always on. Archivist scores every live close. RSI bands, confidence, size tilt,
+                and pair bias move after wins and losses.
               </p>
               <div className="grid grid-cols-2 gap-1 text-2xs text-muted">
                 <div className="flex justify-between">

@@ -7,9 +7,22 @@ function Home() {
   const [Shell, setShell] = useState<ComponentType | null>(null);
   useEffect(() => {
     let alive = true;
-    void import("@/components/floor/ops-shell").then((m) => {
-      if (alive) setShell(() => m.OpsShell);
-    });
+    void import("@/components/floor/ops-shell")
+      .then((m) => {
+        if (alive) setShell(() => m.OpsShell);
+      })
+      .catch(() => {
+        try {
+          const k = "ops-floor-mod-fail";
+          const last = Number(sessionStorage.getItem(k) || 0);
+          if (Date.now() - last > 15_000) {
+            sessionStorage.setItem(k, String(Date.now()));
+            window.location.reload();
+          }
+        } catch {
+          window.location.reload();
+        }
+      });
     return () => {
       alive = false;
     };
