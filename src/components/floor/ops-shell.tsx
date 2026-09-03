@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect } from "react";
-import { Toaster } from "sonner";
-import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
+import { Toaster, toast } from "sonner";
+import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
+import { haltLive, startEngine, stopEngine, refreshTreasury, scanLiveTape } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
+import { Button } from "@/components/ui/button";
 import { ChartsBubble } from "./charts-bubble.tsx";
 import { BrainBubble } from "./brain-bubble.tsx";
 import { DeskBubble } from "./desk-bubble.tsx";
@@ -121,7 +123,7 @@ export function OpsShell() {
     <TooltipProvider>
       <div className="flex min-h-dvh flex-col overflow-x-hidden bg-bg text-fg">
         <HeaderBar />
-        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3">
+        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 pb-16 lg:p-3">
           <LiveStatusBar />
           <SessionBoard />
           <FundingRail />
@@ -140,6 +142,7 @@ export function OpsShell() {
             <TheDesk />
           </div>
         </main>
+        <FloorDock />
         <SettingsPanel />
         <ChartsBubble />
         <DeskBubble />
@@ -149,7 +152,7 @@ export function OpsShell() {
           position="bottom-right"
           visibleToasts={3}
           gap={8}
-          offset={16}
+          offset={72}
           mobileOffset={{ bottom: 16, right: 12, left: 12 }}
           style={{ zIndex: 90 }}
           toastOptions={{
@@ -170,3 +173,56 @@ export function OpsShell() {
     </TooltipProvider>
   );
 }
+
+function FloorDock() {
+  const deskOpen = useFloor((s) => s.deskOpen);
+  const chartsOpen = useFloor((s) => s.chartsOpen);
+  const setDeskOpen = useFloor((s) => s.setDeskOpen);
+  const setDeskTab = useFloor((s) => s.setDeskTab);
+  const setChartsOpen = useFloor((s) => s.setChartsOpen);
+  const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
+  return (
+    <nav
+      className="relative z-[300] flex shrink-0 gap-1.5 border-t border-border bg-bg p-2 pointer-events-auto"
+      aria-label="ShellOut Bot controls"
+    >
+      <Button
+        type="button"
+        className="min-h-11 flex-1"
+        onClick={() => {
+          void scanLiveTape().then((r) => toast.message(r.note));
+        }}
+      >
+        Scan
+      </Button>
+      <Button
+        type="button"
+        variant={deskOpen ? "default" : "outline"}
+        className="min-h-11 flex-1"
+        onClick={() => {
+          setDeskTab("blotter");
+          setDeskOpen(true);
+        }}
+      >
+        <Wallet className="size-3.5" />
+        Desk
+      </Button>
+      <Button
+        type="button"
+        variant={chartsOpen ? "default" : "outline"}
+        className="min-h-11 flex-1"
+        onClick={() => setChartsOpen(true)}
+      >
+        <CandlestickChart className="size-3.5" />
+        Charts
+      </Button>
+      <Button type="button" variant="outline" className="min-h-11" onClick={() => setSettingsOpen(true)}>
+        <Settings2 className="size-3.5" />
+      </Button>
+      <Button type="button" variant="live" className="min-h-11" aria-label="Kill switch" onClick={() => void haltLive()}>
+        <Power className="size-3.5" />
+      </Button>
+    </nav>
+  );
+}
+
