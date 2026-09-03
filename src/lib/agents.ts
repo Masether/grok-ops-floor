@@ -133,6 +133,15 @@ export const AGENTS: AgentDef[] = [
     shape: "feed",
     orbit: 11,
   },
+  {
+    id: "lilyrose",
+    name: "LILYROSE",
+    role: "Assign → execute → verify. AI-product brief, bait killed",
+    color: "#ff8ad4",
+    colorDim: "rgba(255,138,212,0.18)",
+    shape: "star",
+    orbit: 12,
+  },
 ];
 
 export const AGENT_BY_ID: Record<AgentId, AgentDef> = Object.fromEntries(
