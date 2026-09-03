@@ -4,6 +4,7 @@ import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
 import { px, money, moneyFull, pct, qty, ago } from "@/lib/format";
 import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
+import { deskIsLive } from "@/lib/live-budget";
 import { usdOnBook } from "@/lib/specialists";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -214,9 +215,22 @@ export function TheDesk() {
   const orders = useFloor((s) => s.orders);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
-  const live = mode === "live" || liveArmed;
+  const live = deskIsLive({ mode, liveArmed, liveBalance });
   const krakenUsd = usdOnBook(liveBalance);
   const cap = live ? liveBudget : startingCash > 0 ? startingCash : desk.equity;
+  const liveFills = orders.filter(
+    (o) => o.status === "filled" && o.mode === "live" && o.side === "sell",
+  );
+  const liveLessons = live
+    ? brain.lessons.filter((l) => liveFills.some((o) => o.pair === l.pair) || positions.some((p) => p.pair === l.pair && p.mode === "live"))
+    : brain.lessons;
+  const liveWr =
+    liveFills.length > 0
+      ? liveFills.filter((o) => (o.pnl ?? 0) > 0).length / liveFills.length
+      : wr;
+  const liveNote = liveFills[0]
+    ? `${liveFills[0].side === "sell" ? "out" : "in"} ${getPair(liveFills[0].pair)?.label ?? liveFills[0].pair} · ${fillWhy(liveFills[0].reason)} · ${money(liveFills[0].pnl ?? 0)}`
+    : "";
   const eqPct = pctOfCapital(desk.equity - cap, cap);
   const unrlPct = pctOfCapital(desk.unrealized, cap);
   const realPct = pctOfCapital(desk.realized, cap);
@@ -237,7 +251,7 @@ export function TheDesk() {
         >
           <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            Brain is the journal. Cash in USD is not a missing lot.
+            Same dollars as Kraken. Brain journal is this book, not paper stocks.
           </p>
         </button>
         <span
@@ -369,10 +383,29 @@ export function TheDesk() {
             Brain {selfLearn ? "on" : "off"}
           </span>
           <span className="stat-num text-2xs text-fg">
-            {brain.samples === 0 ? "cold" : `${(wr * 100).toFixed(0)}% · ${brain.samples}`}
+            {liveFills.length === 0 && brain.samples === 0
+              ? "cold"
+              : `${(liveWr * 100).toFixed(0)}% · ${liveLessons.length || brain.samples}`}
           </span>
         </div>
-        <p className="mt-1 truncate text-micro text-muted">{brain.lastNote || grokNote}</p>
+        <p className="mt-1 truncate text-micro text-muted">
+          {liveNote || brain.lastNote || grokNote}
+        </p>
+        {liveLessons.length > 0 ? (
+          <ul className="mt-1.5 space-y-0.5">
+            {liveLessons.slice(0, 6).map((l) => (
+              <li key={`${l.pair}-${l.ts}`} className="flex items-baseline justify-between gap-2 text-2xs">
+                <span className="font-display tracking-[0.08em] uppercase">
+                  {getPair(l.pair)?.label ?? l.pair}
+                </span>
+                <span className={cn("stat-num", l.pnl >= 0 ? "text-good" : "text-danger")}>
+                  {money(l.pnl)}
+                </span>
+                <span className="truncate text-subtle">{l.note}</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </section>
   );

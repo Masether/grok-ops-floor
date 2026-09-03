@@ -18,6 +18,8 @@ export function BrainBubble() {
   const chat = useFloor((s) => s.brainChat);
   const push = useFloor((s) => s.pushBrainChat);
   const pairs = useFloor((s) => s.pairs);
+  const mode = useFloor((s) => s.mode);
+  const liveArmed = useFloor((s) => s.liveArmed);
   const signals = useFloor((s) => s.signals);
   const desk = useDesk();
   const [q, setQ] = useState("");
@@ -34,7 +36,11 @@ export function BrainBubble() {
 
   if (!open) return null;
 
-  const memories = Object.values(brain.assetMemory).filter(Boolean);
+  const memories = Object.values(brain.assetMemory).filter((m) => {
+    if (!m) return false;
+    if (mode === "live" || liveArmed) return pairs.includes(m.pair);
+    return true;
+  });
   const last = signals[0];
 
   const ask = async (prompt: string) => {

@@ -24,8 +24,9 @@ describe("clampLiveBudget", () => {
     assert.equal(clampLiveBudget(99_999), 50_000);
     assert.equal(restoreLiveBudget(100), 200);
     assert.equal(restoreLiveBudget(200), 200);
-    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 100, openLots: 0 }), 100);
+    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 26.7, openLots: 0 }), 200);
     assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 180, openLots: 1 }), 200);
+    assert.equal(liveDayBase({ dayStart: 10_000, budget: 200, equity: 26.7, openLots: 0 }), 26.7);
   });
 });
 

@@ -39,7 +39,7 @@ import {
   type ChartInterval,
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
-import { clampLiveBudget, DEFAULT_LIVE_BUDGET, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget";
+import { clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget";
 import { lotsMark } from "./live-pnl";
 import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook";
 import { idleSwarm, type SwarmSnap } from "./swarm";
@@ -268,7 +268,7 @@ export type FloorState = {
 };
 
 export function computeDesk(s: FloorState): DeskSnapshot {
-  const live = s.mode === "live" || s.liveArmed;
+  const live = deskIsLive(s);
   const book = live ? livePositions(s.positions) : s.positions;
   const marked = lotsMark(book, s.tickers);
   const posValue = marked.lots;
@@ -286,8 +286,11 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   const fills = s.orders.filter(
     (o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"),
   );
-  const wins = fills.filter((o) => o.reason.includes("TP")).length;
-  const losses = fills.filter((o) => o.reason.includes("SL")).length;
+  const wins = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) > 0).length;
+  const losses = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) < 0).length;
+  const realized = live
+    ? fills.filter((o) => o.side === "sell").reduce((a, o) => a + (o.pnl ?? 0), 0)
+    : s.realized;
   const dayBase = live
     ? liveDayBase({
         dayStart: s.dayStartEquity,
@@ -305,7 +308,7 @@ export function computeDesk(s: FloorState): DeskSnapshot {
     cash,
     exposure: posValue,
     unrealized,
-    realized: s.realized,
+    realized,
     dayPnl: bookDayPnl(equity, dayBase),
     fills: fills.length,
     wins,
@@ -316,7 +319,7 @@ export function computeDesk(s: FloorState): DeskSnapshot {
 }
 
 export function markEquity(s: FloorState): number {
-  if (s.mode === "live" || s.liveArmed) {
+  if (deskIsLive(s)) {
     return liveSleeve({
       liveBudget: s.liveBudget,
       liveBalance: s.liveBalance,

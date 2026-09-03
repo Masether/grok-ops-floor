@@ -8,7 +8,7 @@ import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
 import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
-import { btcOnBook } from "@/lib/live-budget";
+import { btcOnBook, deskIsLive } from "@/lib/live-budget";
 import { pnlRange } from "@/lib/live-pnl";
 import { useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
@@ -77,7 +77,7 @@ export function HeaderBar() {
   const last: Partial<Record<PairId, number>> = {};
   for (const p of pairs) last[p] = tickers[p]?.last;
   const walletUsd = fundingCash + vaultMark(vault, last);
-  const live = mode === "live" || liveArmed;
+  const live = deskIsLive({ mode, liveArmed, liveBalance });
   const profit = sessionProfit(desk.realized, desk.unrealized);
   const krakenUsd = usdOnBook(liveBalance);
   const barBase = live ? liveBudget : startingCash;

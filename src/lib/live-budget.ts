@@ -27,10 +27,18 @@ export function liveDayBase(input: {
   equity: number;
   openLots: number;
 }): number {
-  if (!(input.openLots > 0)) return input.equity;
   const start = input.dayStart;
   if (start > 0 && start <= input.budget * 1.25 && start >= input.budget * 0.4) return start;
+  if (!(input.openLots > 0)) return input.equity;
   return input.equity;
+}
+
+export function deskIsLive(s: {
+  mode?: string;
+  liveArmed?: boolean;
+  liveBalance?: Record<string, string> | null;
+}): boolean {
+  return s.mode === "live" || Boolean(s.liveArmed) || hasKrakenBook(s.liveBalance);
 }
 
 export function usdStable(bal: Record<string, string> | null | undefined): number {
