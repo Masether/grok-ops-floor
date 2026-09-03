@@ -585,7 +585,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const minConf =
       s0.mode === "paper"
         ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
-        : Math.max(0.5, Math.min(pairMinConf(brain, pair), 0.58));
+        : Math.max(0.38, Math.min(pairMinConf(brain, pair), 0.5));
     const equity = markEquity(s0);
     const vote = await rollInSwarm(
       tallySwarm({
@@ -630,6 +630,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     await sleep(160);
 
     const ops = s0.opsMode ?? (s0.autoTrade ? "auto" : "paper");
+    const autoDesk = ops === "auto" || s0.autoTrade || s0.liveArmed || s0.mode === "live";
     if (ops === "learn") {
       bumpAgent("hunter", `study ${label}`, 0.95);
       bumpAgent("signal", grokKind.toUpperCase(), 0.9);
@@ -678,13 +679,14 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       ? bookDayPnl(liveNowSleeve?.equity ?? 0, haltBase)
       : bookDayPnl(markEquity(stNow), haltBase);
     const halted = haltCap > 0 && dayNow <= -haltCap;
+    const histPrev = closes.length > 28 ? macdHist(closes.slice(0, -1)) : read.macdHist;
+    const lane = macdLane(read.macdHist, histPrev);
 
     let ticketKind: "buy" | "sell" | "hold" =
       grokKind !== "hold" ? grokKind : read.kind !== "hold" ? read.kind : "hold";
     if (ticketKind === "sell" && !hasPos) ticketKind = "hold";
-    const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0);
-    const histPrev = closes.length > 28 ? macdHist(closes.slice(0, -1)) : read.macdHist;
-    const lane = macdLane(read.macdHist, histPrev);
+    if (ticketKind === "hold" && autoDesk && lane === "up") ticketKind = "buy";
+    const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0.42);
     const existingLot = bookNow.find((p) => p.pair === pair);
     const lastBuy = stNow.orders.find(
       (o) => o.pair === pair && o.status === "filled" && o.side === "buy",
@@ -764,7 +766,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (sleeve === "heat" && ticketKind === "buy" && (ticker?.changePct ?? 0) < 0.4) {
+    if (sleeve === "heat" && ticketKind === "buy" && (ticker?.changePct ?? 0) < 0) {
       bumpAgent("hunter", "heat flat", 0.55);
       pushEvent({
         agent: "hunter",
@@ -1021,7 +1023,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (!st.autoTrade && st.mode === "paper") {
+    if (!st.autoTrade && st.mode === "paper" && !st.liveArmed) {
       patch({ pendingLive: order });
       pushEvent({
         agent: "runner",

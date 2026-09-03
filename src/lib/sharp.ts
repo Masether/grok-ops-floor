@@ -13,15 +13,17 @@ export function liveEntry(input: {
   budget: number;
 }): { ok: true } | { ok: false; why: string } {
   if (!input.playbook) return { ok: false, why: "no book" };
-  if (input.conf < (input.grokKind === "buy" ? 0.45 : 0.55)) {
-    return { ok: false, why: "weak tape" };
-  }
   if (input.grokKind === "sell") return { ok: false, why: "Grok veto" };
-  if (input.readKind !== "buy") return { ok: false, why: "tape is not a buy" };
-  if (input.playbook === "scalp" && input.lane !== "up") {
-    return { ok: false, why: "MACD not up — no scalp" };
+  if (input.conf < 0.36) return { ok: false, why: "weak tape" };
+  const wants =
+    input.readKind === "buy" ||
+    input.grokKind === "buy" ||
+    (input.playbook === "scalp" && input.lane === "up");
+  if (!wants) return { ok: false, why: "no buy from tape or Grok" };
+  if (input.playbook === "scalp" && input.lane === "down") {
+    return { ok: false, why: "MACD down — no scalp" };
   }
-  if (input.heat && !(input.changePct >= 1.2)) {
+  if (input.heat && input.changePct < 0.3) {
     return { ok: false, why: "heat not moving" };
   }
   const lastTwo = input.recentPnl.slice(0, 2);

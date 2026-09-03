@@ -16,12 +16,11 @@ const base = {
 };
 
 describe("liveEntry", () => {
-  it("passes a clean scalp and blocks a fee-burn streak", () => {
+  it("lets a tape buy through and still blocks dumps and a loss streak", () => {
     assert.equal(liveEntry(base).ok, true);
-    assert.equal(liveEntry({ ...base, grokKind: "hold", conf: 0.62 }).ok, true);
+    assert.equal(liveEntry({ ...base, grokKind: "hold", readKind: "buy" }).ok, true);
     assert.equal(liveEntry({ ...base, grokKind: "sell" }).ok, false);
-    assert.equal(liveEntry({ ...base, grokKind: "hold", conf: 0.4 }).ok, false);
-    assert.equal(liveEntry({ ...base, lane: "chop" }).ok, false);
+    assert.equal(liveEntry({ ...base, lane: "down" }).ok, false);
     assert.equal(liveEntry({ ...base, recentPnl: [-1.1, -0.8] }).ok, false);
     assert.equal(liveEntry({ ...base, sessionPnl: -14 }).ok, false);
   });
