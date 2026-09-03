@@ -28,7 +28,7 @@ import {
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
-import { hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
+import { hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -1100,7 +1100,26 @@ async function executeOrderNow(order: Order) {
     try {
       const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
       if (!def) throw new Error("Unknown pair");
-      const volume = order.qty.toFixed(Math.min(def.decimals, 8));
+      let qty = order.qty;
+      if (order.side === "sell") {
+        const held = spotQty(useFloor.getState().liveBalance, def.base);
+        qty = Math.min(qty, held * 0.999);
+        qty = Number(qty.toFixed(Math.min(def.decimals, 8)));
+        if (!(qty >= def.ordermin) || !(held > 0)) {
+          dropPhantomLot(order.pair);
+          bumpAgent("runner", `no ${def.base} on Kraken — lot cleared`, 0.8);
+          pushEvent({
+            agent: "runner",
+            stage: "signed",
+            pair: order.pair,
+            title: `SKIP SELL ${def.label}`,
+            detail: "Nothing to sell on Kraken — local lot dropped",
+            tone: "warn",
+          });
+          return;
+        }
+      }
+      const volume = qty.toFixed(Math.min(def.decimals, 8));
       const venue = getLiveVenue("kraken");
       const res = await venue.placeMarketOrder({
         apiKey: keys.apiKey,
@@ -1129,21 +1148,35 @@ async function executeOrderNow(order: Order) {
         tone: "good",
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "Kraken reject";
+      if (order.side === "sell" && /insufficient funds/i.test(msg)) {
+        dropPhantomLot(order.pair);
+        bumpAgent("runner", "Kraken had no inventory — lot cleared", 0.8);
+        pushEvent({
+          agent: "runner",
+          stage: "signed",
+          pair: order.pair,
+          title: `SKIP SELL ${getPair(order.pair)?.label ?? order.pair}`,
+          detail: "Insufficient funds on sell — nothing on Kraken to flatten",
+          tone: "warn",
+        });
+        return;
+      }
       const rejected: Order = {
         ...order,
         mode: "live",
         status: "rejected",
-        reason: err instanceof Error ? err.message : "Kraken reject",
+        reason: msg,
       };
       patch({ orders: [rejected, ...useFloor.getState().orders].slice(0, 80) });
       bumpAgent("runner", "Kraken reject", 1);
       pushQueue({
         title: "KRAKEN REJECT",
-        detail: rejected.reason,
+        detail: msg,
         severity: "stall",
         pair: order.pair,
       });
-      toastLiveReject(order, rejected.reason);
+      toastLiveReject(order, msg);
     }
     return;
   }
@@ -1457,6 +1490,12 @@ function applyFill(order: Order) {
   flushFloorPersist();
 }
 
+function dropPhantomLot(pair: PairId) {
+  useFloor.setState((s) => ({
+    positions: s.positions.filter((p) => p.pair !== pair),
+  }));
+}
+
 function restoreOrphanLots() {
   useFloor.setState((s) => {
     const sold = new Set(
@@ -1466,6 +1505,8 @@ function restoreOrphanLots() {
     const extra: Position[] = [];
     for (const o of s.orders) {
       if (o.status !== "filled" || o.side !== "buy") continue;
+      if (o.mode === "live" && !o.krakenTxid) continue;
+      if (s.mode === "live" && o.mode !== "live") continue;
       if (sold.has(o.pair) || open.has(o.pair)) continue;
       const fill = o.fillPrice ?? o.price;
       if (!(fill > 0) || !(o.qty > 0)) continue;
@@ -1512,10 +1553,12 @@ function manageOpenLot(
 
 function checkStops() {
   const s = useFloor.getState();
-  if (!s.launched || s.positions.length === 0) return;
+  const book = s.mode === "live" || s.liveArmed ? livePositions(s.positions) : s.positions;
+  if (!s.launched || book.length === 0) return;
   if (s.mode === "live" && !s.liveArmed && !s.floorOpen) return;
   let trailed = false;
   const nextPos = s.positions.map((p) => {
+    if (book.every((b) => b.id !== p.id)) return p;
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     const pb = asPlaybook(p.book);
     const managed = manageOpenLot(pb, { ...p, mark });
@@ -1525,12 +1568,21 @@ function checkStops() {
   if (trailed) patch({ positions: nextPos });
 
   for (const p of nextPos) {
+    if ((s.mode === "live" || s.liveArmed) && p.mode !== "live") continue;
+    if ((s.mode === "live" || s.liveArmed) && !p.krakenTxid) {
+      dropPhantomLot(p.pair);
+      continue;
+    }
     const pb = asPlaybook(p.book);
     const managed = manageOpenLot(pb, p);
     if (managed.action === "hold") continue;
     if (flattening.has(p.id)) continue;
     flattening.add(p.id);
-    const def = PAIR_BY_ID[p.pair];
+    const def = getPair(p.pair) ?? PAIR_BY_ID[p.pair];
+    if (!def) {
+      flattening.delete(p.id);
+      continue;
+    }
     const frac = managed.sellFrac <= 0 ? 1 : managed.sellFrac;
     let qty = frac >= 0.999 ? p.qty : p.qty * frac;
     qty = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
@@ -1558,8 +1610,8 @@ function checkStops() {
       reason,
       ts: Date.now(),
     };
-    bumpAgent("sentinel", `${reason} ${PAIR_BY_ID[p.pair].base}`, 1);
-    bumpAgent("runner", `flatten ${PAIR_BY_ID[p.pair].base}`, 1);
+    bumpAgent("sentinel", `${reason} ${def.base}`, 1);
+    bumpAgent("runner", `flatten ${def.base}`, 1);
     void executeOrder(order).finally(() => flattening.delete(p.id));
   }
 }

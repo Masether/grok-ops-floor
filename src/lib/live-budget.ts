@@ -38,6 +38,20 @@ export function krakenKeysOn(keys: { apiKey?: string; apiSecret?: string } | nul
   return { apiKey, apiSecret };
 }
 
+export function krakenBaseKeys(base: string): string[] {
+  const b = base.replace(/x$/i, "").toUpperCase();
+  const keys = [b, `X${b}`, `XX${b}`, `${b}.F`, `X${b}.F`, `XX${b}.F`];
+  if (b === "BTC" || b === "XBT") keys.push("XXBT", "XBT", "XXBT.F", "XBT.F");
+  if (b === "ETH") keys.push("XETH", "ETH", "XETH.F");
+  if (b === "DOGE") keys.push("XXDG", "XDG", "XXDG.F");
+  return [...new Set(keys)];
+}
+
+export function spotQty(bal: Record<string, string> | null | undefined, base: string): number {
+  if (!bal) return 0;
+  return krakenBaseKeys(base).reduce((a, k) => a + Number(bal[k] ?? 0), 0);
+}
+
 export function hasKrakenBook(bal: Record<string, string> | null | undefined): boolean {
   return Boolean(bal && Object.keys(bal).length > 0);
 }

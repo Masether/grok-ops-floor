@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, usdStable } from "./live-budget.ts";
+import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, spotQty, usdStable } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
@@ -33,6 +33,8 @@ describe("usdStable", () => {
     assert.equal(hasKrakenBook({ ZUSD: "1" }), true);
     assert.equal(krakenKeysOn({ apiKey: "short", apiSecret: "x".repeat(20) }), null);
     assert.ok(krakenKeysOn({ apiKey: "k".repeat(10), apiSecret: "s".repeat(10) }));
+    assert.equal(spotQty({ XETH: "0.0049" }, "ETH"), 0.0049);
+    assert.equal(spotQty({ ZUSD: "200" }, "WIF"), 0);
   });
 });
 
