@@ -1,4 +1,5 @@
 import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
+import { memo } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive, scanLiveTape, studyBook } from "@/lib/engine";
@@ -24,7 +25,6 @@ import { InstallAppButton } from "./install-app.tsx";
 export function HeaderBar() {
   const desk = useDesk();
   const floorOpen = useFloor((s) => s.floorOpen);
-  const setFloorOpen = useFloor((s) => s.setFloorOpen);
   const launched = useFloor((s) => s.launched);
   const mode = useFloor((s) => s.mode);
   const playbooks = useFloor((s) => s.playbooks);
@@ -33,7 +33,6 @@ export function HeaderBar() {
   const feedOk = useFloor((s) => s.feedOk);
   const feedSource = useFloor((s) => s.feedSource);
   const stage = useFloor((s) => s.stage);
-  const ticks = useFloor((s) => s.ticks);
   const briefs = useFloor((s) => s.briefs);
   const startingCash = useFloor((s) => s.startingCash);
   const shiftStartedAt = useFloor((s) => s.shiftStartedAt);
@@ -45,13 +44,7 @@ export function HeaderBar() {
   const liveBalance = useFloor((s) => s.liveBalance);
   const liveBudget = useFloor((s) => s.liveBudget);
   const fearGreed = useFloor((s) => s.fearGreed);
-  const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
   const sessionEndsAt = useFloor((s) => s.sessionEndsAt);
-  const chartsOpen = useFloor((s) => s.chartsOpen);
-  const setChartsOpen = useFloor((s) => s.setChartsOpen);
-  const deskOpen = useFloor((s) => s.deskOpen);
-  const setDeskOpen = useFloor((s) => s.setDeskOpen);
-  const setDeskTab = useFloor((s) => s.setDeskTab);
   const fundingCash = useFloor((s) => s.fundingCash);
   const vault = useFloor((s) => s.vault);
   const setBrainOpen = useFloor((s) => s.setBrainOpen);
@@ -146,8 +139,9 @@ export function HeaderBar() {
             type="button"
             className="min-h-11 text-left"
             onClick={() => {
-              setDeskTab("money");
-              setDeskOpen(true);
+              const s = useFloor.getState();
+              s.setDeskTab("money");
+              s.setDeskOpen(true);
             }}
           >
             <Stat label="Wallet" value={moneyFull(walletUsd)} tone={walletUsd > 0 ? "good" : undefined} always />
@@ -203,7 +197,7 @@ export function HeaderBar() {
             }
             always
           />
-          <Stat label="Briefs" value={String(briefs + ticks)} />
+          <Stat label="Briefs" value={String(briefs)} />
           {fearGreed ? (
             <Stat
               label="F&G"
@@ -215,74 +209,7 @@ export function HeaderBar() {
           {sessionEndsAt != null ? (
             <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
-          <div className="relative z-20 flex items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                void scanLiveTape().then((r) => {
-                  toast.message(r.note);
-                });
-              }}
-            >
-              Scan tape
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
-              onClick={() => setFloorOpen(!floorOpen)}
-            >
-              {liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={deskOpen ? "default" : "outline"}
-              aria-pressed={deskOpen}
-              onClick={() => {
-                if (deskOpen) setDeskOpen(false);
-                else {
-                  setDeskTab("blotter");
-                  setDeskOpen(true);
-                }
-              }}
-            >
-              <Wallet className="size-3.5" />
-              Desk
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={chartsOpen ? "default" : "outline"}
-              aria-pressed={chartsOpen}
-              onClick={() => setChartsOpen(!chartsOpen)}
-            >
-              <CandlestickChart className="size-3.5" />
-              Charts
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Settings"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings2 className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="live"
-              aria-label="Kill switch"
-              onClick={() => void haltLive()}
-            >
-              <Power className="size-4" />
-            </Button>
-            <InstallAppButton compact />
-            <AuthSlot />
-          </div>
+          <HeaderActions />
         </div>
       </div>
 
@@ -405,6 +332,88 @@ function Stat({
     </div>
   );
 }
+
+const HeaderActions = memo(function HeaderActions() {
+  const liveArmed = useFloor((s) => s.liveArmed);
+  const floorOpen = useFloor((s) => s.floorOpen);
+  const setFloorOpen = useFloor((s) => s.setFloorOpen);
+  const deskOpen = useFloor((s) => s.deskOpen);
+  const setDeskOpen = useFloor((s) => s.setDeskOpen);
+  const setDeskTab = useFloor((s) => s.setDeskTab);
+  const chartsOpen = useFloor((s) => s.chartsOpen);
+  const setChartsOpen = useFloor((s) => s.setChartsOpen);
+  const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
+  return (
+    <div className="relative z-20 flex items-center gap-1.5">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => {
+          void scanLiveTape().then((r) => {
+            toast.message(r.note);
+          });
+        }}
+      >
+        Scan tape
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
+        onClick={() => setFloorOpen(!floorOpen)}
+      >
+        {liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={deskOpen ? "default" : "outline"}
+        aria-pressed={deskOpen}
+        onClick={() => {
+          if (deskOpen) setDeskOpen(false);
+          else {
+            setDeskTab("blotter");
+            setDeskOpen(true);
+          }
+        }}
+      >
+        <Wallet className="size-3.5" />
+        Desk
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant={chartsOpen ? "default" : "outline"}
+        aria-pressed={chartsOpen}
+        onClick={() => setChartsOpen(!chartsOpen)}
+      >
+        <CandlestickChart className="size-3.5" />
+        Charts
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        aria-label="Settings"
+        onClick={() => setSettingsOpen(true)}
+      >
+        <Settings2 className="size-4" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="live"
+        aria-label="Kill switch"
+        onClick={() => void haltLive()}
+      >
+        <Power className="size-4" />
+      </Button>
+      <InstallAppButton compact />
+      <AuthSlot />
+    </div>
+  );
+});
 
 function AuthSlot() {
   const { user, isPending } = useCurrentUserState();

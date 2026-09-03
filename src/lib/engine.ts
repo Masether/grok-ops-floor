@@ -32,7 +32,7 @@ import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
-import { GUILDS, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm.ts";
+import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
 import { fetchWire } from "./wire-api.ts";
 import { sessionEnded } from "./session.ts";
 import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store.ts";
@@ -83,10 +83,6 @@ const pendingTickers = new Map<PairId, Ticker>();
 let tickerFlush: number | null = null;
 let visHandler: (() => void) | null = null;
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-}
-
 let patchQ: Partial<FloorState> = {};
 let patchRaf = 0;
 
@@ -107,29 +103,10 @@ function patch(partial: Partial<FloorState>) {
 
 const lastBumpAt = new Map<AgentId, number>();
 
-async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
+async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, _label: string) {
   const pings = pingSwarm();
-  const skipRoll = document.hidden || evalBusy >= 2;
-  if (skipRoll) {
-    const done = finishRoll(vote, pings);
-    patch({ swarm: done, grokNote: done.grok });
-    return done;
-  }
-  let rolling = startRoll(vote);
-  patch({ swarm: rolling, grokNote: rolling.grok });
-  bumpAgent("dispatcher", `ping ${label}`, 0.7);
-  const order = GUILDS.slice().sort((a, b) => pings[a.id]! - pings[b.id]!);
-  let elapsed = 0;
-  for (const g of order) {
-    const wait = Math.min(12, Math.max(0, pings[g.id]! - elapsed));
-    if (wait) await sleep(wait);
-    elapsed = pings[g.id]!;
-    rolling = landGuild(rolling, vote, g.id, pings[g.id]!);
-    patch({ swarm: rolling, grokNote: rolling.grok });
-  }
   const done = finishRoll(vote, pings);
   patch({ swarm: done, grokNote: done.grok });
-  bumpAgent("dispatcher", `grok ${done.kind} ${done.rttMs}ms`, 1);
   void pair;
   return done;
 }
@@ -189,12 +166,16 @@ function coolAgents(dt: number) {
 }
 
 function pushEvent(e: Omit<TapeEvent, "id" | "ts">) {
+  const s = useFloor.getState();
+  if (e.tone === "info") {
+    const last = s.events.find((x) => x.pair === e.pair && x.title === e.title);
+    if (last && Date.now() - last.ts < 12_000) return;
+  }
   const event: TapeEvent = { ...e, id: uid("tape"), ts: Date.now() };
-  const events = [event, ...useFloor.getState().events].slice(0, 80);
   patch({
-    events,
-    briefs: useFloor.getState().briefs + (e.stage === "brief" ? 1 : 0),
-    handoff: e.next ? { from: e.agent, to: e.next } : useFloor.getState().handoff,
+    events: [event, ...s.events].slice(0, 80),
+    briefs: s.briefs + (e.stage === "brief" ? 1 : 0),
+    handoff: e.next ? { from: e.agent, to: e.next } : s.handoff,
   });
   if (e.next) emitPulse({ from: e.agent, to: e.next, color: AGENT_BY_ID[e.agent].color });
 }
@@ -271,7 +252,6 @@ function flushTickers() {
     tickers,
     positions,
     lastFeedAt: Date.now(),
-    ticks: s.ticks + 1,
   });
   maybeCheckStops();
   sampleEquity(positions.length > 0);
@@ -761,17 +741,17 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (halted || (vote.veto && !paper) || ticketKind === "hold" || ticketConf < minConf) {
+    if (halted || ticketKind === "hold" || ticketConf < minConf) {
       setStage("tool");
-      bumpAgent("risk", vote.veto ? "swarm veto" : "no ticket", 0.35);
+      bumpAgent("risk", halted ? "daily halt" : "no ticket", 0.35);
       pushEvent({
         agent: "dispatcher",
         next: "archivist",
         stage: "handout",
         pair,
-        title: vote.veto || halted ? `GROK VETO ${label}` : `HOLD ${label}`,
+        title: halted ? `HALT ${label}` : `HOLD ${label}`,
         detail: halted ? "daily halt — no new tickets" : grokReason,
-        tone: vote.veto || halted ? "warn" : "info",
+        tone: halted ? "warn" : "info",
       });
       bumpAgent("archivist", "journal hold", 0.4);
       emitPulse({ from: "signal", to: "archivist" });
@@ -2024,7 +2004,7 @@ export function startEngine(): () => void {
     coolAgents(0.25);
     sampleEquity();
   }, 500);
-  const chatter = window.setInterval(idleChatter, 4000);
+  const chatter = window.setInterval(idleChatter, 8000);
   const rest = window.setInterval(() => {
     applySessionEnd();
     const st = useFloor.getState();
