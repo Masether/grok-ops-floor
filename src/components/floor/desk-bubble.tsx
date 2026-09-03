@@ -11,6 +11,7 @@ import {
   lotMetrics,
 } from "@/lib/desk-pnl";
 import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
+import { useNow } from "@/lib/use-now";
 import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
@@ -117,6 +118,9 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
   const grokNote = useFloor((s) => s.grokNote);
   const pending = useFloor((s) => s.pendingLive);
   const opsMode = useFloor((s) => s.opsMode);
+  const lastEngineAt = useFloor((s) => s.lastEngineAt);
+  const agents = useFloor((s) => s.agents);
+  const now = useNow();
   const startingCash = useFloor((s) => s.startingCash);
   const dayStartEquity = useFloor((s) => s.dayStartEquity);
   const risk = useFloor((s) => s.risk);
@@ -140,12 +144,29 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
     maxDailyLossPct: risk.maxDailyLossPct,
     minHaltUsd: live ? MIN_LIVE_HALT_USD : 0,
   });
-  const fills = orders.filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"));
+  const fills = orders.filter((o) => o.status === "filled").slice(0, 24);
   const wr = fillWinRatePct(desk.wins, desk.losses);
   const lots = live ? positions.filter((p) => p.mode === "live") : positions;
+  const staleGrok = /no inventory|runner is flat/i.test(grokNote ?? "");
+  const lagMs = lastEngineAt && now ? now - lastEngineAt : 0;
+  const lastFill = fills[0];
+  const note =
+    !staleGrok && grokNote
+      ? grokNote
+      : lastFill
+        ? `${fillLeg(lastFill) === "out" ? "OUT" : "IN"} ${PAIR_BY_ID[lastFill.pair]?.label ?? lastFill.pair} · ${fillWhy(lastFill.reason)} · ${ago(lastFill.ts)}`
+        : lots.length
+          ? `${lots.length} open lot${lots.length === 1 ? "" : "s"} — runner is in`
+          : "Flat book. Scout / Listener / Pricer / Risk / Hands / Treasurer still on the tape.";
 
   return (
     <>
+      {lagMs > 90_000 ? (
+        <p className="border-b border-border bg-surface-2 px-3 py-2 text-2xs text-warn">
+          Last tick {ago(lastEngineAt)}. This tab was asleep — no tickets while the lid is closed.
+          Leave the laptop open and this page in front.
+        </p>
+      ) : null}
       <DayBanner
         level={alert.level}
         dayPnlPct={alert.dayPnlPct}
@@ -159,9 +180,10 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
         <Stat label="In lots" value={moneyFull(desk.exposure)} extra={`${desk.openPositions} open`} />
       </div>
 
-      {grokNote ? (
-        <p className="border-b border-border px-3 py-2 text-2xs text-muted">{grokNote}</p>
+      {note ? (
+        <p className="border-b border-border px-3 py-2 text-2xs text-muted">{note}</p>
       ) : null}
+      <SixDesks agents={agents} />
 
       {pending ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-2 px-3 py-2">
@@ -529,4 +551,33 @@ function signedClass(n: number): string {
   if (n > 0) return "text-good";
   if (n < 0) return "text-danger";
   return "text-muted";
+}
+
+const SIX_DESKS = [
+  { id: "hunter", name: "Scout" },
+  { id: "wire", name: "Listener" },
+  { id: "signal", name: "Pricer" },
+  { id: "sentinel", name: "Risk" },
+  { id: "runner", name: "Hands" },
+  { id: "treasury", name: "Treasurer" },
+] as const;
+
+function SixDesks({
+  agents,
+}: {
+  agents: Record<string, { lastAction?: string; status?: string } | undefined>;
+}) {
+  return (
+    <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-b border-border px-3 py-2 sm:grid-cols-3">
+      {SIX_DESKS.map((d) => {
+        const st = agents[d.id];
+        return (
+          <li key={d.id} className="min-w-0">
+            <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">{d.name}</p>
+            <p className="truncate text-2xs text-fg">{st?.lastAction || (st?.status === "working" ? "on tape" : "idle")}</p>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
