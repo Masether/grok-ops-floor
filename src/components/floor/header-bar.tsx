@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive, scanLiveTape, studyBook } from "@/lib/engine";
 import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
-import { PAIR_BY_ID } from "@/lib/kraken";
+import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
 import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
@@ -70,7 +70,7 @@ export function HeaderBar() {
   const sparkSpan = Math.max(sparkMax - sparkMin, 0.01);
 
   return (
-    <header className="shrink-0">
+    <header className="relative z-[200] shrink-0 pointer-events-auto">
       <div className="border-b border-border px-3 py-1.5 lg:px-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
@@ -266,7 +266,7 @@ export function HeaderBar() {
                 className="flex shrink-0 items-center gap-1.5"
                 onClick={() => useFloor.getState().setInspectPair(id)}
               >
-                <span className="text-subtle">{PAIR_BY_ID[id].base}</span>
+                <span className="text-subtle">{getPair(id)?.base ?? PAIR_BY_ID[id]?.base ?? id}</span>
                 <span className="stat-num text-fg">
                   {t.last > 100 ? t.last.toFixed(1) : t.last.toFixed(4)}
                 </span>
