@@ -7,8 +7,8 @@ import { GUILDS, SWARM_SIZE } from "@/lib/swarm";
 import { IDLE_DEBATE } from "@/lib/coordinate";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { AgentGlyph, GrokCore } from "./glyphs";
-import { SwarmCanvas } from "./swarm-canvas";
+import { AgentGlyph, GrokCore } from "./glyphs.tsx";
+import { SwarmCanvas } from "./swarm-canvas.tsx";
 
 type PulseDraw = FloorPulse & { id: number; born: number };
 

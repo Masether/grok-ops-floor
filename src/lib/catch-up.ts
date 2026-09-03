@@ -3,7 +3,7 @@
 import { readScalp } from "./indicators.ts";
 import { PAIR_BY_ID } from "./kraken.ts";
 import { SCALP, scalpManage, scalpStops } from "./scalp.ts";
-import type { Order, PairId, Position } from "./types";
+import type { Order, PairId, Position } from "./types.ts";
 
 export const AWAY_MIN_MS = 90_000;
 export const AWAY_MAX_MS = 12 * 3_600_000;

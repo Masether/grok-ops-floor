@@ -1,7 +1,7 @@
-import { hunterScore, readFlow } from "./specialists";
-import { IDLE_DEBATE, runDebate, type Debate } from "./coordinate";
-import type { AgentId, PairId, Position, Ticker, TradeSignal, WireItem } from "./types";
-import type { Brain } from "./learn";
+import { hunterScore, readFlow } from "./specialists.ts";
+import { IDLE_DEBATE, runDebate, type Debate } from "./coordinate.ts";
+import type { AgentId, PairId, Position, Ticker, TradeSignal, WireItem } from "./types.ts";
+import type { Brain } from "./learn.ts";
 
 export const SWARM_SIZE = 300;
 

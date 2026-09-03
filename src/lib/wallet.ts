@@ -1,6 +1,6 @@
 /** In-app bot wallet: sweep profits off the desk, convert, never send to a seed. */
 
-import type { PairId } from "./types";
+import type { PairId } from "./types.ts";
 
 export const SWEEP_MIN = 0.5;
 export const SEND_MIN_USD = 1;

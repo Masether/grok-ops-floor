@@ -6,18 +6,18 @@ import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, use
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
-import { ChartsBubble } from "./charts-bubble";
-import { BrainBubble } from "./brain-bubble";
-import { DeskBubble } from "./desk-bubble";
-import { FundingRail } from "./funding-rail";
-import { LiveStatusBar } from "./live-status";
-import { SessionBoard } from "./session-board";
-import { HeaderBar } from "./header-bar";
-import { OrbitStage } from "./orbit-stage";
-import { SettingsPanel } from "./settings-panel";
-import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels";
-import { TheTape } from "./the-tape";
-import { TheWire } from "./the-wire";
+import { ChartsBubble } from "./charts-bubble.tsx";
+import { BrainBubble } from "./brain-bubble.tsx";
+import { DeskBubble } from "./desk-bubble.tsx";
+import { FundingRail } from "./funding-rail.tsx";
+import { LiveStatusBar } from "./live-status.tsx";
+import { SessionBoard } from "./session-board.tsx";
+import { HeaderBar } from "./header-bar.tsx";
+import { OrbitStage } from "./orbit-stage.tsx";
+import { SettingsPanel } from "./settings-panel.tsx";
+import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels.tsx";
+import { TheTape } from "./the-tape.tsx";
+import { TheWire } from "./the-wire.tsx";
 
 function openLiveNow() {
   ensureLiveDesk();

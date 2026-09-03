@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
-import { InstallAppButton } from "./install-app";
+import { InstallAppButton } from "./install-app.tsx";
 
 export function HeaderBar() {
   const desk = useDesk();

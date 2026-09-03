@@ -17,8 +17,8 @@ import { liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
 import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { WalletTab } from "./wallet-tab";
-import { GoalDeskRow, GoalDialog } from "./goal-chip";
+import { WalletTab } from "./wallet-tab.tsx";
+import { GoalDeskRow, GoalDialog } from "./goal-chip.tsx";
 
 type Tab = DeskTab;
 

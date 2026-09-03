@@ -19,7 +19,7 @@ import {
   type LaneId,
 } from "@/lib/universe";
 import { cn } from "@/lib/utils";
-import { DurationPills } from "./duration-pills";
+import { DurationPills } from "./duration-pills.tsx";
 
 const FUND_PRESETS = [1_000, 5_000, 10_000, 25_000, 50_000];
 

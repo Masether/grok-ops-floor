@@ -1,4 +1,4 @@
-import type { Candle, PairId } from "./types";
+import type { Candle, PairId } from "./types.ts";
 
 export type SetupId = "cross" | "rsi" | "momentum";
 
@@ -86,6 +86,7 @@ export function learnFromClose(
   brain: Brain,
   args: { pair: PairId; pnl: number; reason: string },
 ): Brain {
+  if (!brain.enabled) return brain;
   const win = args.pnl > 0;
   const setup = setupFromReason(args.reason);
   const next: Brain = {

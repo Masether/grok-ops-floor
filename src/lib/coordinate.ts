@@ -1,5 +1,5 @@
 import { hitSources, SOURCE_TOTAL } from "./sources.ts";
-import type { PairId, SignalKind, WireItem } from "./types";
+import type { PairId, SignalKind, WireItem } from "./types.ts";
 
 export type DebateRole = "setup" | "challenge" | "data" | "risk" | "merge";
 

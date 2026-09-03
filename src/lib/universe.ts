@@ -1,5 +1,5 @@
-import { DEFAULT_PAIRS, PAIR_BY_ID } from "./kraken";
-import type { PairId, Ticker } from "./types";
+import { DEFAULT_PAIRS, PAIR_BY_ID } from "./kraken.ts";
+import type { PairId, Ticker } from "./types.ts";
 
 export type UniverseId = "all" | "balanced" | "core" | "heat" | "rising";
 export type LaneId = "hot" | "rising" | "meme";

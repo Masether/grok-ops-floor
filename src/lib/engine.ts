@@ -1,19 +1,19 @@
-import { AGENT_BY_ID, AGENTS } from "./agents";
-import { emitPulse } from "./bus";
-import { uid, px, money } from "./format";
-import { macdHist, readScalp } from "./indicators";
-import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api";
-import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken";
-import { budgetStake } from "./budget-size";
-import { liveEntry } from "./sharp";
-import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct } from "./fees";
-import { fairValue, mispricing, pricerQuiet } from "./pricer";
-import { rankScout } from "./scout";
-import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
-import { getLiveVenue } from "./venues";
-import { connectTickerFeed } from "./kraken-ws";
-import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn";
-import { SCALP, scalpManage } from "./scalp";
+import { AGENT_BY_ID, AGENTS } from "./agents.ts";
+import { emitPulse } from "./bus.ts";
+import { uid, px, money } from "./format.ts";
+import { macdHist, readScalp } from "./indicators.ts";
+import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api.ts";
+import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken.ts";
+import { budgetStake } from "./budget-size.ts";
+import { liveEntry } from "./sharp.ts";
+import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct } from "./fees.ts";
+import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
+import { rankScout } from "./scout.ts";
+import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up.ts";
+import { getLiveVenue } from "./venues/index.ts";
+import { connectTickerFeed } from "./kraken-ws.ts";
+import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn.ts";
+import { SCALP, scalpManage } from "./scalp.ts";
 import {
   asPlaybook,
   bookStops,
@@ -26,16 +26,16 @@ import {
   pickPlaybook,
   type BookAction,
   type PlaybookId,
-} from "./playbook";
-import { makeSimCandles, stepSim } from "./sim-feed";
-import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
-import { bookDayPnl, haltCapUsd } from "./desk-pnl";
-import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
-import { lotsMark } from "./live-pnl";
-import { GUILDS, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
-import { fetchWire } from "./wire-api";
-import { sessionEnded } from "./session";
-import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store";
+} from "./playbook.ts";
+import { makeSimCandles, stepSim } from "./sim-feed.ts";
+import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
+import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
+import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
+import { lotsMark } from "./live-pnl.ts";
+import { GUILDS, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm.ts";
+import { fetchWire } from "./wire-api.ts";
+import { sessionEnded } from "./session.ts";
+import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store.ts";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -45,7 +45,7 @@ import {
   toastVenueBlock,
   toastAwayReplay,
   toastSweep,
-} from "./trade-toast";
+} from "./trade-toast.ts";
 import type {
   AgentId,
   Order,
@@ -55,7 +55,7 @@ import type {
   QueueItem,
   TapeEvent,
   Ticker,
-} from "./types";
+} from "./types.ts";
 
 const STAGE_CYCLE: PipelineStage[] = [
   "brief",

@@ -2,8 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
-import type { PairId, Order, Position, TapeEvent, EquityPoint } from "./types";
-import { useFloor, type FloorState, type TransferRow } from "./store";
+import type { PairId, Order, Position, TapeEvent, EquityPoint } from "./types.ts";
+import { useFloor, type FloorState, type TransferRow } from "./store.ts";
 
 const riskSchema = z
   .object({

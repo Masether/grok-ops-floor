@@ -1,19 +1,19 @@
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
-import { AGENTS } from "./agents";
-import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn";
-import { BTC_BOOK, DEFAULT_PAIRS, liveWatchPairs } from "./kraken";
-import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
+import { AGENTS } from "./agents.ts";
+import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn.ts";
+import { BTC_BOOK, DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
+import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
-import { bookDayPnl } from "./desk-pnl";
+import { bookDayPnl } from "./desk-pnl.ts";
 import {
   GOAL_DEFAULTS,
   asGoalLevel,
   normalizeGoalDays,
   normalizeGoalProfit,
   type GoalLevelId,
-} from "./goal";
+} from "./goal.ts";
 import {
   DEFAULT_CHART_TYPE,
   DEFAULT_CHART_TOOL,
@@ -29,7 +29,7 @@ import {
   type ChartTool,
   type ChartType,
   type IndicatorId,
-} from "./charts";
+} from "./charts.ts";
 import {
   DEFAULT_CHART_INTERVAL,
   DEFAULT_SESSION_MINUTES,
@@ -37,13 +37,13 @@ import {
   normalizeSessionMinutes,
   sessionEndsAtFromMinutes,
   type ChartInterval,
-} from "./session";
-import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
-import { clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget";
-import { lotsMark } from "./live-pnl";
-import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook";
-import { idleSwarm, type SwarmSnap } from "./swarm";
-import type { VenueId } from "./venues/types";
+} from "./session.ts";
+import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet.ts";
+import { clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget.ts";
+import { lotsMark } from "./live-pnl.ts";
+import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook.ts";
+import { idleSwarm, type SwarmSnap } from "./swarm.ts";
+import type { VenueId } from "./venues/types.ts";
 import type {
   AgentId,
   AgentState,
@@ -63,7 +63,7 @@ import type {
   TradeMode,
   TradeSignal,
   WireItem,
-} from "./types";
+} from "./types.ts";
 
 function freshAgents(): Record<AgentId, AgentState> {
   const out = {} as Record<AgentId, AgentState>;

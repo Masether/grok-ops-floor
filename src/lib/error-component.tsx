@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
-import { reloadOnce } from "./crash-reload";
+import { reloadOnce } from "./crash-reload.ts";
 
 export function AppErrorComponent({ error }: Partial<ErrorComponentProps> & { error?: Error }) {
   useEffect(() => {
