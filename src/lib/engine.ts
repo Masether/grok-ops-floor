@@ -35,7 +35,7 @@ import { lotsMark } from "./live-pnl";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
-import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store";
+import { markEquity, useFloor, flushFloorPersist, ensurePaperDesk, type FloorState } from "./store";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -81,6 +81,7 @@ let demoLock = false;
 let lastStopCheck = 0;
 const pendingTickers = new Map<PairId, Ticker>();
 let tickerFlush: number | null = null;
+let visHandler: (() => void) | null = null;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -264,7 +265,7 @@ function applySessionEnd() {
 }
 
 function bookNeedsProtect(s: FloorState): boolean {
-  return s.launched && (s.floorOpen || s.positions.length > 0);
+  return s.launched && (s.floorOpen || s.liveArmed || s.positions.length > 0);
 }
 
 function setStage(stage: PipelineStage) {
@@ -1949,9 +1950,10 @@ export async function haltLive() {
 
 async function catchUpAway(now = Date.now()): Promise<AwayReport | null> {
   const s = useFloor.getState();
-  if (s.mode === "live") {
-    useFloor.setState({ lastEngineAt: now });
+  if (s.mode === "live" || s.liveArmed) {
+    useFloor.setState({ lastEngineAt: now, launched: true, floorOpen: true, autoTrade: true });
     if (s.keys.apiKey && s.keys.apiSecret) void refreshTreasury();
+    void refreshTickersRest().then(() => refreshOhlcAll());
     return null;
   }
   if (!s.launched || s.mode !== "paper") {
@@ -2024,6 +2026,28 @@ async function catchUpAway(now = Date.now()): Promise<AwayReport | null> {
   return report;
 }
 
+function tabShouldRun(): boolean {
+  const s = useFloor.getState();
+  if (s.liveArmed || s.mode === "live" || s.floorOpen) return true;
+  if (typeof document === "undefined") return true;
+  return !document.hidden;
+}
+
+export function launchNow(): { live: boolean } {
+  ensurePaperDesk();
+  const s = useFloor.getState();
+  const keyed = Boolean(krakenKeysOn(s.keys));
+  useFloor.setState({
+    launched: true,
+    floorOpen: true,
+    autoTrade: true,
+    opsMode: "auto",
+  });
+  if (keyed) s.setLiveArmed(true);
+  void scanLiveTape();
+  return { live: keyed };
+}
+
 export function startEngine(): () => void {
   if (running) return () => stopEngine();
   running = true;
@@ -2066,7 +2090,7 @@ export function startEngine(): () => void {
   }, 8_000);
 
   const tick = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
+    if (!tabShouldRun()) return;
     coolAgents(0.25);
     sampleEquity();
   }, 500);
@@ -2084,13 +2108,13 @@ export function startEngine(): () => void {
     void refreshTickersRest().then(() => checkStops());
   }, 5000);
   const ohlc = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
+    if (!tabShouldRun()) return;
     const st = useFloor.getState();
     if (!st.launched || !st.floorOpen) return;
     void refreshOhlcAll();
   }, useFloor.getState().mode === "paper" ? 8_000 : 15_000);
   const stageSpin = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
+    if (!tabShouldRun()) return;
     const s = useFloor.getState();
     if (!s.launched || !s.floorOpen) return;
     const i = STAGE_CYCLE.indexOf(s.stage);
@@ -2098,7 +2122,7 @@ export function startEngine(): () => void {
     if (!busy) patch({ stage: STAGE_CYCLE[(i + 1) % STAGE_CYCLE.length]! });
   }, 3800);
   const simPulse = window.setInterval(() => {
-    if (typeof document !== "undefined" && document.hidden && !useFloor.getState().liveArmed) return;
+    if (!tabShouldRun()) return;
     if (useFloor.getState().feedSource !== "sim") return;
     const st = useFloor.getState();
     if (!bookNeedsProtect(st)) return;
@@ -2144,6 +2168,16 @@ export function startEngine(): () => void {
     sampleEquity(true);
   })();
 
+  const onVis = () => {
+    if (document.visibilityState !== "visible") return;
+    patch({ lastEngineAt: Date.now() });
+    void catchUpAway();
+    void scanLiveTape();
+    void refreshTickersRest();
+  };
+  document.addEventListener("visibilitychange", onVis);
+  visHandler = onVis;
+
   return () => stopEngine();
 }
 
@@ -2151,6 +2185,10 @@ export function stopEngine() {
   running = false;
   patch({ lastEngineAt: Date.now() });
   flushFloorPersist();
+  if (visHandler) {
+    document.removeEventListener("visibilitychange", visHandler);
+    visHandler = null;
+  }
   for (const t of timers) window.clearInterval(t);
   timers = [];
   if (tickerFlush != null) {

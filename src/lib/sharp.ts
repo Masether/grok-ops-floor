@@ -13,10 +13,11 @@ export function liveEntry(input: {
   budget: number;
 }): { ok: true } | { ok: false; why: string } {
   if (!input.playbook) return { ok: false, why: "no book" };
-  if (input.conf < 0.5) return { ok: false, why: "weak tape — need 50%+" };
-  if (input.grokKind !== "buy" || input.readKind !== "buy") {
-    return { ok: false, why: "Grok and tape disagree" };
+  if (input.conf < (input.grokKind === "buy" ? 0.45 : 0.55)) {
+    return { ok: false, why: "weak tape" };
   }
+  if (input.grokKind === "sell") return { ok: false, why: "Grok veto" };
+  if (input.readKind !== "buy") return { ok: false, why: "tape is not a buy" };
   if (input.playbook === "scalp" && input.lane !== "up") {
     return { ok: false, why: "MACD not up — no scalp" };
   }

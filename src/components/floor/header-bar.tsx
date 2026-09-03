@@ -2,7 +2,7 @@ import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
-import { haltLive, studyBook } from "@/lib/engine";
+import { haltLive, launchNow, studyBook } from "@/lib/engine";
 import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
@@ -10,7 +10,7 @@ import { usdOnBook } from "@/lib/specialists";
 import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
 import { btcOnBook } from "@/lib/live-budget";
 import { pnlRange } from "@/lib/live-pnl";
-import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
+import { useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
 import type { OpsMode, PairId } from "@/lib/types";
 import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
@@ -231,16 +231,13 @@ export function HeaderBar() {
           <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
+              variant={liveArmed || floorOpen ? "live" : "good"}
               onClick={() => {
-                if (!launched) {
-                  if (ensurePaperDesk()) toast.success("Paper desk is on — $10k play money.");
-                  return;
-                }
-                setFloorOpen(!floorOpen);
+                const r = launchNow();
+                toast.success(r.live ? "Launched live on Kraken." : "Launched paper desk.");
               }}
             >
-              {!launched ? "Start paper" : liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
+              Launch
             </Button>
             <Button
               size="sm"

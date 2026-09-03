@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { clockHms, money, moneyFull } from "@/lib/format";
 import { sessionProfit } from "@/lib/desk-pnl";
+import { launchNow } from "@/lib/engine";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -9,8 +12,10 @@ export function SessionBoard() {
   const desk = useDesk();
   const history = useFloor((s) => s.equityHistory);
   const shiftStartedAt = useFloor((s) => s.shiftStartedAt);
+  const lastEngineAt = useFloor((s) => s.lastEngineAt);
   const orders = useFloor((s) => s.orders);
   const liveArmed = useFloor((s) => s.liveArmed);
+  const floorOpen = useFloor((s) => s.floorOpen);
   const mode = useFloor((s) => s.mode);
   const [now, setNow] = useState(Date.now());
 
@@ -23,6 +28,7 @@ export function SessionBoard() {
   const profit = sessionProfit(desk.realized, desk.unrealized);
   const startEq = history[0]?.equity ?? desk.equity - profit;
   const running = clockHms(now - (shiftStartedAt || now));
+  const stale = lastEngineAt > 0 && now - lastEngineAt > 120_000;
   const fills = orders.filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"));
   const takes = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) > 0).length;
   const stops = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) < 0).length;
@@ -35,11 +41,19 @@ export function SessionBoard() {
 
   return (
     <section className="panel overflow-hidden">
+      {stale ? (
+        <p className="bg-danger/15 px-3 py-2 text-2xs text-danger">
+          Desk was asleep — last heartbeat {clockHms(now - lastEngineAt)} ago. The bot only
+          trades while this tab is awake. Lid closed = no tickets.
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-3 py-2.5">
         <div>
           <p className="font-display text-micro tracking-[0.16em] text-subtle uppercase">Running</p>
           <p className="stat-num text-2xl tabular-nums">{running}</p>
-          <p className="text-micro text-muted">since this shift started · leave the tab open overnight</p>
+          <p className="text-micro text-muted">
+            last tick {lastEngineAt ? clockHms(Math.max(0, now - lastEngineAt)) : "—"} ago
+          </p>
         </div>
         <div className="text-right">
           <p className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
@@ -59,6 +73,18 @@ export function SessionBoard() {
             stop
           </p>
         </div>
+        <Button
+          type="button"
+          size="sm"
+          className="min-h-11 min-w-[7.5rem]"
+          variant={liveArmed ? "live" : "good"}
+          onClick={() => {
+            const r = launchNow();
+            toast.success(r.live ? "Launched live on Kraken." : "Launched paper.");
+          }}
+        >
+          Launch
+        </Button>
       </div>
       <div className="h-[160px] px-1 pb-1">
         {data.length < 2 ? (
