@@ -70,7 +70,7 @@ export function InstallAppButton({ compact = false }: { compact?: boolean }) {
                   Install on phone
                 </p>
                 <p className="panel-sub">
-                  Home Screen icon. Trading only while this app is open — leave a laptop tab running overnight.
+                  Home Screen icon. Keep this app open and the screen on — lock or swipe away = no tickets.
                 </p>
               </div>
               <Button type="button" size="icon" variant="ghost" aria-label="Close" onClick={() => setOpen(false)}>
@@ -87,8 +87,10 @@ export function InstallAppButton({ compact = false }: { compact?: boolean }) {
                 <p className="mt-1">Chrome menu → Install app / Add to Home screen.</p>
               </li>
               <li>
-                <span className="font-display text-2xs tracking-[0.14em] text-subtle uppercase">Desktop</span>
-                <p className="mt-1">Chrome or Edge: install icon in the address bar, or the button below when it lights up.</p>
+                <span className="font-display text-2xs tracking-[0.14em] text-subtle uppercase">Stay awake</span>
+                <p className="mt-1">
+                  Phone: Display → Auto-Lock → Never while it trades. Keys go in Settings on this phone. Forget the laptop.
+                </p>
               </li>
             </ol>
             <div className="mt-4 flex flex-wrap gap-2">

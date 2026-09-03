@@ -20,6 +20,7 @@ import { SettingsPanel } from "./settings-panel.tsx";
 import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels.tsx";
 import { TheTape } from "./the-tape.tsx";
 import { TheWire } from "./the-wire.tsx";
+import { InstallAppButton } from "./install-app.tsx";
 
 function openLiveNow() {
   ensureLiveDesk();
@@ -221,6 +222,7 @@ function FloorDock() {
       <Button type="button" variant="outline" className="min-h-11" onClick={() => setSettingsOpen(true)}>
         <Settings2 className="size-3.5" />
       </Button>
+      <InstallAppButton compact />
       <Button type="button" variant="live" className="min-h-11" aria-label="Kill switch" onClick={() => void haltLive()}>
         <Power className="size-3.5" />
       </Button>
