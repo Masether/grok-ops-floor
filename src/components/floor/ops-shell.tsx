@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { toast, Toaster } from "sonner";
-import { scanLiveTape, startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
+import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { ensurePaperDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
@@ -70,32 +70,17 @@ export function OpsShell() {
       if (started && st.mode !== "live") {
         toast.success("Paper desk is on — $10k play money. 24/7.");
       }
-      const s = useFloor.getState();
-      const keyed = Boolean(s.keys.apiKey && s.keys.apiSecret);
-      if (!s.launched && !keyed) {
-        ensurePaperDesk();
+      if (!useFloor.getState().launched) {
+        setShowLaunch(true);
+        return;
       }
-      useFloor.setState({
-        launched: true,
-        floorOpen: true,
-        autoTrade: true,
-      });
       setShowLaunch(false);
+      if (st.launched && !st.floorOpen) st.setFloorOpen(true);
       try {
         const now = useFloor.getState();
-        if (now.keys.apiKey && now.keys.apiSecret) {
-          useFloor.setState({
-            venueId: "kraken",
-            mode: "live",
-            liveArmed: true,
-            autoTrade: true,
-            floorOpen: true,
-            launched: true,
-          });
+        if (now.keys.apiKey && now.keys.apiSecret && (now.liveArmed || now.mode === "live")) {
           await refreshTreasury();
         }
-        const res = await scanLiveTape();
-        if (res.acted) toast.message(res.note);
       } catch {
         /* tape warms on its own */
       }

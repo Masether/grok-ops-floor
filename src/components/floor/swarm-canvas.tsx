@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { GUILD_BY_ID, GUILDS, seedSwarm, type GuildId, type SwarmSnap } from "@/lib/swarm";
 
-const BOTS = seedSwarm().filter((_, i) => i % 3 === 0);
+const BOTS = seedSwarm();
 
 export function SwarmCanvas({
   swarm,

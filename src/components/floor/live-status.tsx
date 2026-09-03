@@ -48,9 +48,9 @@ export function LiveStatusBar() {
               : "Play money only. Keys + Arm live to spend Kraken USD."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Overnight: this tab must stay awake. Lid closed or laptop sleep = no trades. Click
-          Launch. Budget $200. Scout {scoutScanned || "—"} books · dropped {scoutDropped} under
-          $10k liq · hot {scoutHot?.length ?? 0}.
+          Overnight: this tab must stay awake. Lid closed or laptop sleep = no trades. Arm live
+          below if the bar says paper. Budget $200. Scout {scoutScanned || "—"} books · dropped{" "}
+          {scoutDropped} under $10k liq · hot {scoutHot?.length ?? 0}.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

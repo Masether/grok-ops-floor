@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import { clockHms, money, moneyFull } from "@/lib/format";
 import { sessionProfit } from "@/lib/desk-pnl";
-import { launchNow } from "@/lib/engine";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -15,7 +12,6 @@ export function SessionBoard() {
   const lastEngineAt = useFloor((s) => s.lastEngineAt);
   const orders = useFloor((s) => s.orders);
   const liveArmed = useFloor((s) => s.liveArmed);
-  const floorOpen = useFloor((s) => s.floorOpen);
   const mode = useFloor((s) => s.mode);
   const [now, setNow] = useState(Date.now());
 
@@ -73,18 +69,6 @@ export function SessionBoard() {
             stop
           </p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          className="min-h-11 min-w-[7.5rem]"
-          variant={liveArmed ? "live" : "good"}
-          onClick={() => {
-            const r = launchNow();
-            toast.success(r.live ? "Launched live on Kraken." : "Launched paper.");
-          }}
-        >
-          Launch
-        </Button>
       </div>
       <div className="h-[160px] px-1 pb-1">
         {data.length < 2 ? (

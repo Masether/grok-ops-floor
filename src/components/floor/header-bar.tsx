@@ -2,7 +2,7 @@ import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
-import { haltLive, launchNow, studyBook } from "@/lib/engine";
+import { haltLive, studyBook } from "@/lib/engine";
 import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
@@ -231,13 +231,10 @@ export function HeaderBar() {
           <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              variant={liveArmed || floorOpen ? "live" : "good"}
-              onClick={() => {
-                const r = launchNow();
-                toast.success(r.live ? "Launched live on Kraken." : "Launched paper desk.");
-              }}
+              variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
+              onClick={() => setFloorOpen(!floorOpen)}
             >
-              Launch
+              {liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
             </Button>
             <Button
               size="sm"

@@ -32,10 +32,10 @@ import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
 import { lotsMark } from "./live-pnl";
-import { finishRoll, pingSwarm, tallySwarm } from "./swarm";
+import { GUILDS, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
-import { markEquity, useFloor, flushFloorPersist, ensurePaperDesk, type FloorState } from "./store";
+import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -89,11 +89,28 @@ function sleep(ms: number) {
 
 async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
   const pings = pingSwarm();
+  if (typeof document !== "undefined" && document.hidden) {
+    const done = finishRoll(vote, pings);
+    patch({ swarm: done, grokNote: done.grok });
+    return done;
+  }
+  let rolling = startRoll(vote);
+  patch({ swarm: rolling, grokNote: rolling.grok });
+  bumpAgent("dispatcher", `ping ${label}`, 0.7);
+  const order = GUILDS.slice().sort((a, b) => pings[a.id]! - pings[b.id]!);
+  let elapsed = 0;
+  for (const g of order) {
+    const wait = Math.min(36, Math.max(0, pings[g.id]! - elapsed));
+    if (wait) await sleep(wait);
+    elapsed = pings[g.id]!;
+    rolling = landGuild(rolling, vote, g.id, pings[g.id]!);
+    patch({ swarm: rolling, grokNote: rolling.grok });
+    bumpAgent(g.lead, `${g.name} ${pings[g.id]}ms`, rolling.guilds[g.id]!.heat);
+  }
   const done = finishRoll(vote, pings);
   patch({ swarm: done, grokNote: done.grok });
   bumpAgent("dispatcher", `grok ${done.kind} ${done.rttMs}ms`, 1);
   void pair;
-  void label;
   return done;
 }
 
@@ -1976,21 +1993,6 @@ function tabShouldRun(): boolean {
   if (s.liveArmed || s.mode === "live" || s.floorOpen) return true;
   if (typeof document === "undefined") return true;
   return !document.hidden;
-}
-
-export function launchNow(): { live: boolean } {
-  ensurePaperDesk();
-  const s = useFloor.getState();
-  const keyed = Boolean(krakenKeysOn(s.keys));
-  useFloor.setState({
-    launched: true,
-    floorOpen: true,
-    autoTrade: true,
-    opsMode: "auto",
-  });
-  if (keyed) s.setLiveArmed(true);
-  void scanLiveTape();
-  return { live: keyed };
 }
 
 export function startEngine(): () => void {
