@@ -182,7 +182,7 @@ export function SettingsPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `grok-ops-journal-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `shellout-bot-journal-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -217,7 +217,7 @@ export function SettingsPanel() {
                 </li>
                 <li>
                   <span className="text-treasury">2.</span> Live budget is $200. Auto-trade runs
-                  every 8s on the tape — no paper book.
+                  every 5s on the tape.
                 </li>
                 <li>
                   <span className="text-treasury">3.</span> Halt stops new tickets. Open lots still

@@ -122,8 +122,8 @@ export function HeaderBar() {
           </span>
           <div className="min-w-0">
             <div className="font-display flex items-baseline gap-1.5 text-lg leading-none font-semibold tracking-[0.08em] uppercase">
-              <span>Grok</span>
-              <span className="text-accent">Ops Floor</span>
+              <span>ShellOut</span>
+              <span className="text-accent">Bot</span>
             </div>
             <p className="truncate text-micro tracking-wide text-subtle">
               {liveArmed

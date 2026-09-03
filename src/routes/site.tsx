@@ -9,11 +9,11 @@ const PROFILE = "https://github.com/Masether";
 export const Route = createFileRoute("/site")({
   head: () => ({
     meta: [
-      { title: "Ops Floor — multi-agent paper/live trading desk" },
+      { title: "ShellOut Bot — live Kraken desk" },
       {
         name: "description",
         content:
-          "Ops Floor is a multi-agent paper/live trading desk. Paper first. Live only after a human check, venue keys, and arm. Not financial advice.",
+          "ShellOut Bot is a live Kraken trading desk. $200 budget. Not financial advice.",
       },
     ],
   }),
@@ -44,7 +44,7 @@ function SiteNav() {
         <a href="#top" className="flex min-w-0 items-center gap-2.5">
           <Mark />
           <span className="font-display text-base font-semibold tracking-[0.1em] uppercase">
-            Ops Floor
+            ShellOut Bot
           </span>
         </a>
         <nav className="ml-auto flex items-center gap-2">
@@ -70,13 +70,13 @@ function Hero() {
     <section id="top" className="border-b border-border">
       <div className="mx-auto max-w-3xl px-4 py-14 sm:py-20">
         <p className="font-display text-2xs tracking-[0.22em] text-accent uppercase">
-          Paper first · live only when you arm
+          Live Kraken · $200 budget
         </p>
         <h1 className="font-display mt-3 text-5xl leading-[0.92] font-semibold tracking-[0.04em] uppercase sm:text-6xl">
-          Ops Floor
+          ShellOut Bot
         </h1>
         <p className="mt-4 max-w-xl text-lg leading-snug text-muted sm:text-xl">
-          Multi-agent paper/live trading desk.
+          Live Kraken desk. $200 budget. Not financial advice.
         </p>
         <div className="mt-8 flex flex-wrap gap-2.5">
           <Button asChild size="lg">
@@ -345,7 +345,7 @@ function LaunchSketch() {
   return (
     <div className="flex h-full flex-col justify-center gap-1.5 p-3">
       <SketchLine label="Goal" value="target" />
-      <SketchLine label="Capital" value="paper cash" />
+      <SketchLine label="Capital" value="$200 live sleeve" />
       <SketchLine label="Risk" value="steady · balanced · push" />
       <SketchLine label="Session" value="15m → until stop" />
     </div>

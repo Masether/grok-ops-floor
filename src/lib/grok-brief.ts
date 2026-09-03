@@ -67,7 +67,7 @@ export const askBrain = createServerFn({ method: "POST" })
           {
             role: "system",
             content:
-              "You are the MaSether Ops Floor brain. Rapid desk chat. 2-4 short lines. Use the stored pattern memory. No hype. Not financial advice. Paper rehearsal unless they armed live.",
+              "You are the ShellOut Bot brain. Rapid desk chat. 2-4 short lines. Use the stored pattern memory. No hype. Not financial advice. Live Kraken desk.",
           },
           { role: "user", content: `${data.context}\n\nQ: ${data.prompt}` },
         ],

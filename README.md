@@ -1,8 +1,8 @@
-# MaSether Ops Floor
+# ShellOut Bot
 
-Multi-agent Kraken trading desk. Paper by default. Live only after you paste keys and arm. Live spends **only your budget** (default **$200**).
+Live Kraken desk. **$200 USD budget**. Scalp + grid + DCA together. Profits can sweep back to Kraken USD.
 
-Twelve desks read the Kraken tape, size tickets, journal fills, and watch news that moves names on the book.
+The bot only trades while the tab is **awake**. Lid closed = no tickets.
 
 ## On your laptop
 
@@ -15,69 +15,16 @@ npm install
 npm run dev
 ```
 
-Then open the URL Vite prints (same machine, in Chrome or Edge). Install from the phone-icon next to kill if you want a Home Screen / desktop app.
+Open the URL Vite prints. Keys stay in that browser. Do **not** put a withdrawal key on the API.
 
-Do **not** put a withdrawal key on the API. Keys stay in that browser.
+## Arm live ($200)
 
-## $200 live budget (USD)
-
-The bot will not size tickets off your whole Kraken wallet. It only uses the **Live budget** (default **$200 USD**). Extra funds on Kraken stay untouched.
-
-1. On Kraken: deposit **$200 USD** (Funding → Deposit → USD).
+1. Kraken: deposit USD (Funding → Deposit → USD).
 2. API key: **Query + Create & Modify Orders**. Leave **Withdraw** off.
-3. In the desk: **Live** → budget **$200** → I'm human → paste keys → **Test connection** → **Arm live**.
-4. Auto-trade on. Kill switch is the power button.
+3. ShellOut Bot → Settings → paste keys → **Test connection**.
+4. Auto-scan every 5s. **Scan tape** is the manual poke.
+5. Kill switch is the power button.
 
-If Kraken USD is under ~$15, the runner waits. Daily-loss halt, stops, and max lots all apply to that $200 sleeve — not the rest of the account.
+Tickets size from **$12 min** to **$100 max**, using the rest of the $200 so cash does not sit idle. Daily-loss halt and Kraken fees are in every ticket.
 
-### Kraken API key
-
-1. Kraken → profile menu → **Settings** → **API**.
-2. **Create API key**.
-3. Turn **on**: Query Funds, Query Open Orders & Trades, Query Closed Orders & Trades, Query Ledger, Create & Modify Orders.
-4. Leave **Withdraw Funds** **off**.
-5. Optional: restrict to your home IP.
-6. Create, copy **API Key** and **Private Key** once, paste them in desk Settings. Never send those here.
-
-The bot cannot deposit or withdraw. You move USD on Kraken yourself.
-
-## What it does
-
-- **Paper / demo** — live Kraken 1-minute prices, fake cash. Auto-trade on.
-- **Live** — real market orders after **Test connection → Live → Arm**. Capped at your budget. Withdrawal permission is never required and should stay off.
-- **Core / Heat / xStocks** — BTC-ETH-SOL plus rising memes and Kraken tokenized names. Heat only if the tape is actually rising.
-- **Self-learning brain** — adjusts RSI bands, confidence, size, and pair bias from closed trades.
-- **The Wire** — headlines, org catalysts, CoinGecko trending, Fear & Greed.
-
-This is not a promise to multiply capital. Memes can go to zero. Live can lose the budget you set.
-
-### Paper rehearsal
-
-1. Leave **Paper** on, **Auto-trade** on.
-2. Hit **Scan live tape** — real RSI/EMA/MACD on Kraken 1m candles.
-3. Watch The Wire and the orbit. Fills say `PAPER FILL`. No Kraken cash moves.
-
-### Live (your account)
-
-1. Deposit **$200 USD** on Kraken. The bot cannot deposit or withdraw.
-2. API key: **Query + Create & Modify Orders**. Leave **Withdrawal** off.
-3. Settings → Live budget **$200** → paste key + private key → **Test connection**.
-4. **Arm live**. Kill switch is the power button.
-
-Kraken keys stay in this browser (`localStorage`). They are not in the repo.
-
-## Stack
-
-TanStack Start · Vite · React 19 · Zustand · Kraken REST + WebSocket v2.
-
-## Safety
-
-- Paper is default.
-- Live blocked until keys test OK and you arm.
-- Live size is capped at the budget you set (default $200).
-- Daily-loss halt, stops, max positions, 2-meme cap, cooldown.
-- Public rate limits: ticker WebSocket, OHLC only on the hottest names each cycle.
-
-## License
-
-Private project for Masether. Not financial advice.
+Not financial advice. Live money can go to zero.

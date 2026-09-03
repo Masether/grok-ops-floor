@@ -44,7 +44,7 @@ export function LiveStatusBar() {
         <p className={cn("stat-num text-sm", live ? "text-danger" : "text-fg")}>
           {connected
             ? `USD + BTC · fees in the ticket · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
-            : "Query + Orders keys in Settings. No paper book."}
+            : "Query + Orders keys in Settings. Live Kraken only."}
         </p>
         <p className="mt-1 text-micro text-subtle">
           Auto scan every 5s — or tap Scan tape. Overnight: this tab must stay awake.

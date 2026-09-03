@@ -162,7 +162,7 @@ function Login() {
           <div className="flex items-start gap-2.5">
             <img src="/favicon.svg" alt="" className="size-8 shrink-0 rounded-sm" />
             <div>
-              <p className="panel-kicker">MaSether Ops Floor</p>
+              <p className="panel-kicker">ShellOut Bot</p>
               <p className="panel-sub">{sub}</p>
             </div>
           </div>

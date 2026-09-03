@@ -259,7 +259,7 @@ export function TheDesk() {
         >
           <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            Same dollars as Kraken. Brain journal is this book, not paper stocks.
+            Same dollars as Kraken. In and out on this book.
           </p>
         </button>
         <span
@@ -450,8 +450,6 @@ export function PairStrip() {
   const signals = useFloor((s) => s.signals);
   const inspect = useFloor((s) => s.inspectPair);
   const setInspect = useFloor((s) => s.setInspectPair);
-  const opsMode = useFloor((s) => s.opsMode);
-  const setDeskOpen = useFloor((s) => s.setDeskOpen);
   return (
     <div className="flex gap-2 overflow-x-auto px-1">
       {pairs.map((id) => {
@@ -464,7 +462,6 @@ export function PairStrip() {
             type="button"
             onClick={() => {
               setInspect(on ? null : id);
-              if (!on && opsMode === "paper") setDeskOpen(true);
             }}
             className={cn(
               "min-h-11 min-w-[7.5rem] rounded-sm px-2.5 py-1.5 text-left shadow-[0_0_0_1px_var(--color-border)] transition-transform duration-150 ease-out active:scale-[0.96]",
@@ -473,10 +470,12 @@ export function PairStrip() {
           >
             <div className="flex items-center justify-between">
               <span className="font-display text-2xs tracking-[0.12em] uppercase">
-                {PAIR_BY_ID[id].base}
+                {getPair(id)?.base ?? PAIR_BY_ID[id]?.base ?? id}
               </span>
               <span className="text-micro text-subtle uppercase">
-                {PAIR_BY_ID[id].sleeve === "stock" ? "stk" : PAIR_BY_ID[id].sleeve}
+                {(getPair(id) ?? PAIR_BY_ID[id])?.sleeve === "stock"
+                  ? "stk"
+                  : (getPair(id) ?? PAIR_BY_ID[id])?.sleeve ?? ""}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">

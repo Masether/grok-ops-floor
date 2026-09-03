@@ -16,7 +16,7 @@ function Home() {
   if (!ready) {
     return (
       <div className="grid min-h-dvh place-items-center bg-bg text-fg">
-        <p className="font-display tracking-[0.16em] text-micro uppercase">MaSether Ops Floor</p>
+        <p className="font-display tracking-[0.16em] text-micro uppercase">ShellOut Bot</p>
       </div>
     );
   }

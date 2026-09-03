@@ -4,7 +4,7 @@ import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { AppErrorComponent } from "@/lib/error-component";
 import appCss from "../styles.css?url";
 
-const APP_NAME = "GROK OPS FLOOR";
+const APP_NAME = "ShellOut Bot";
 
 export const Route = createRootRoute({
   errorComponent: AppErrorComponent,
@@ -16,7 +16,7 @@ export const Route = createRootRoute({
       {
         name: "description",
         content:
-          "Multi-agent Kraken ops floor — live desk, $200 budget.",
+          "ShellOut Bot — live Kraken desk, $200 budget.",
       },
       { name: "theme-color", content: "#05060a" },
     ],
