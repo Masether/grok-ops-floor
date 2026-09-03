@@ -458,9 +458,7 @@ async function refreshOhlcAll() {
         enqueueEval(row.pair, candles);
       } catch (err) {
         if (!useSim) {
-          const candles = makeSimCandles(row.pair);
-          patch({ candles: { ...useFloor.getState().candles, [row.pair]: candles } });
-          enqueueEval(row.pair, candles);
+          bumpAgent("sentinel", `ohlc miss ${row.pair}`, 0.5);
           return;
         }
         bumpAgent("sentinel", `ohlc miss ${row.pair}`, 0.8);
@@ -502,8 +500,11 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const btcUsd = btcOnBook(s0.liveBalance) * btcPx;
     const usd = Number(s0.liveBalance?.ZUSD ?? s0.liveBalance?.USD ?? 0);
     if (btcUsd >= MIN_LIVE_TICKET && !isBtcQuote(pair)) {
-      bumpAgent("hunter", "BTC book — skip USD hop", 0.35);
-      return;
+      const btcTape = s0.pairs.some((id) => isBtcQuote(id) && (s0.tickers[id]?.last ?? 0) > 0);
+      if (btcTape) {
+        bumpAgent("hunter", "BTC book — skip USD hop", 0.35);
+        return;
+      }
     }
     if (btcUsd < MIN_LIVE_TICKET && isBtcQuote(pair)) {
       bumpAgent("hunter", "BTC dust — USD book", 0.35);
