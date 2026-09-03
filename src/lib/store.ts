@@ -923,32 +923,25 @@ export const useFloor = create<FloorState>()(
         const opsMode: OpsMode =
           p.opsMode === "learn" ? "learn" : launched ? "auto" : "paper";
         const autoTrade = launched && opsMode === "auto";
+        const keyed =
+          typeof (p.keys ?? current.keys)?.apiKey === "string" &&
+          ((p.keys ?? current.keys)?.apiKey?.trim().length ?? 0) > 8 &&
+          typeof (p.keys ?? current.keys)?.apiSecret === "string" &&
+          ((p.keys ?? current.keys)?.apiSecret?.trim().length ?? 0) > 8;
+        const liveOn = Boolean((p.liveArmed || p.mode === "live") && keyed);
         return {
           ...current,
           ...p,
           pairs,
           launched,
-          venueId,
+          venueId: liveOn ? "kraken" : venueId,
           opsMode: launched ? opsMode : "paper",
           playbooks: normalizePlaybooks(p.playbooks ?? ALL_PLAYBOOKS),
           floorOpen: launched,
-          autoTrade,
+          autoTrade: launched ? true : autoTrade,
           agents: freshAgents(),
-          mode:
-            Boolean(
-              p.liveArmed &&
-                typeof (p.keys ?? current.keys)?.apiKey === "string" &&
-                ((p.keys ?? current.keys)?.apiKey?.length ?? 0) > 8,
-            ) || p.mode === "live"
-              ? "live"
-              : p.mode === "paper"
-                ? "paper"
-                : current.mode,
-          liveArmed: Boolean(
-            p.liveArmed &&
-              typeof (p.keys ?? current.keys)?.apiKey === "string" &&
-              ((p.keys ?? current.keys)?.apiKey?.length ?? 0) > 8,
-          ),
+          mode: liveOn ? "live" : p.mode === "paper" ? "paper" : current.mode,
+          liveArmed: liveOn,
           liveBudget: clampLiveBudget(
             typeof p.liveBudget === "number" ? p.liveBudget : current.liveBudget,
           ),

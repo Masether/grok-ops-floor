@@ -28,6 +28,16 @@ export function usdtStable(bal: Record<string, string> | null | undefined): numb
   );
 }
 
+export function krakenKeysOn(keys: { apiKey?: string; apiSecret?: string } | null | undefined): {
+  apiKey: string;
+  apiSecret: string;
+} | null {
+  const apiKey = keys?.apiKey?.trim() ?? "";
+  const apiSecret = keys?.apiSecret?.trim() ?? "";
+  if (apiKey.length < 8 || apiSecret.length < 8) return null;
+  return { apiKey, apiSecret };
+}
+
 export function hasKrakenBook(bal: Record<string, string> | null | undefined): boolean {
   return Boolean(bal && Object.keys(bal).length > 0);
 }

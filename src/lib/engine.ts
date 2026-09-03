@@ -28,7 +28,7 @@ import {
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
-import { hasKrakenBook, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
+import { hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -924,6 +924,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     emitPulse({ from: "sentinel", to: "runner" });
     patch({ handoff: { from: "sentinel", to: "runner" } });
 
+    const keysOn = krakenKeysOn(st.keys);
+    const liveDesk = Boolean(keysOn && (st.liveArmed || st.mode === "live"));
     const order: Order = {
       id: uid("ord"),
       pair,
@@ -931,34 +933,23 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       qty: verdict.qty,
       price,
       status: "queued",
-      mode: st.liveArmed || st.mode === "live" ? "live" : "paper",
+      mode: liveDesk ? "live" : "paper",
       reason: `${(playbook ?? "scalp").toUpperCase()} · MACD ${lane} · ${read.reason}`,
       book: playbook ?? "scalp",
       ts: Date.now(),
     };
 
-    if (st.liveArmed && !st.autoTrade) {
-      patch({ pendingLive: order });
-      pushEvent({
-        agent: "runner",
-        next: "archivist",
-        stage: "signed",
-        pair,
-        title: "LIVE ticket waiting",
-        detail: "Manual confirm required",
-        tone: "warn",
-      });
+    if (liveDesk) {
+      if (!st.autoTrade) {
+        patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true });
+      }
+      await executeOrder(order);
       return;
     }
 
-    if (st.liveArmed && (!st.keys.apiKey || !st.keys.apiSecret)) {
-      pushQueue({
-        title: "LIVE NOT ARMED",
-        detail: "Connect Kraken keys and arm live before the runner hits the book",
-        severity: "empty",
-        pair,
-      });
-      bumpAgent("runner", "live blocked", 0.7);
+    if ((st.liveArmed || st.mode === "live") && !keysOn) {
+      patch({ pendingLive: order, mode: "live" });
+      bumpAgent("runner", "waiting on Kraken keys", 0.7);
       return;
     }
 
@@ -985,10 +976,9 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
   const s = useFloor.getState();
   const live = s.liveArmed || s.mode === "live";
   if (!live) return { ok: true, cash: s.cash };
-  if (!s.keys.apiKey || !s.keys.apiSecret) {
+  if (!krakenKeysOn(s.keys)) {
     return { ok: false, why: "no Kraken keys — paste them in settings" };
   }
-  if (!s.liveArmed) return { ok: false, why: "live runner is not armed" };
   if (!hasKrakenBook(s.liveBalance)) {
     return { ok: false, why: "treasury has not read the Kraken wallet yet" };
   }
@@ -1096,20 +1086,16 @@ export function executeOrder(order: Order): Promise<void> {
 
 async function executeOrderNow(order: Order) {
   const s = useFloor.getState();
-  const live = Boolean(
-    (s.liveArmed || s.mode === "live") && s.keys.apiKey && s.keys.apiSecret && order.mode === "live",
-  );
-  if (s.liveArmed || s.mode === "live" || order.mode === "live") {
-    if (!live) {
-      const rejected: Order = {
-        ...order,
-        mode: "live",
-        status: "rejected",
-        reason: "Live not armed — paper cash is parked",
-      };
-      patch({ orders: [rejected, ...useFloor.getState().orders].slice(0, 80) });
-      toastLiveReject(order, rejected.reason);
+  const keys = krakenKeysOn(s.keys);
+  const wantLive = s.liveArmed || s.mode === "live" || order.mode === "live";
+  if (wantLive) {
+    if (!keys) {
+      patch({ pendingLive: order, mode: "live" });
+      bumpAgent("runner", "waiting on Kraken keys", 0.7);
       return;
+    }
+    if (!s.liveArmed) {
+      patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true });
     }
     try {
       const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
@@ -1117,8 +1103,8 @@ async function executeOrderNow(order: Order) {
       const volume = order.qty.toFixed(Math.min(def.decimals, 8));
       const venue = getLiveVenue("kraken");
       const res = await venue.placeMarketOrder({
-        apiKey: s.keys.apiKey,
-        apiSecret: s.keys.apiSecret,
+        apiKey: keys.apiKey,
+        apiSecret: keys.apiSecret,
         pair: order.pair,
         side: order.side,
         volume,
@@ -1697,6 +1683,11 @@ export async function refreshTreasury() {
     useFloor.getState().setKeysOk(true);
     const usd = usdOnBook(bal);
     bumpAgent("treasury", `Kraken USD ${usd.toFixed(2)}`, 0.7);
+    const pending = useFloor.getState().pendingLive;
+    if (pending && krakenKeysOn(useFloor.getState().keys)) {
+      useFloor.getState().setPendingLive(null);
+      void executeOrder(pending);
+    }
   } catch (err) {
     bumpAgent("treasury", "wallet read failed", 0.9);
     pushQueue({
