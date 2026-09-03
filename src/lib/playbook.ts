@@ -3,7 +3,7 @@
 export type PlaybookId = "scalp" | "grid" | "dca";
 
 export const PLAYBOOKS: { id: PlaybookId; label: string; hint: string }[] = [
-  { id: "scalp", label: "Scalp", hint: "2–5m lots · MACD up" },
+  { id: "scalp", label: "Scalp", hint: "clip in seconds when net green" },
   { id: "grid", label: "Grid", hint: "range · MACD chop" },
   { id: "dca", label: "DCA", hint: "dip adds · MACD reset" },
 ];

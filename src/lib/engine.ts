@@ -479,7 +479,7 @@ async function refreshOhlcAll() {
 function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
   if (!running || evaluating.has(pair) || evalBusy >= 4) return;
   const last = lastEvalAt.get(pair) ?? 0;
-  if (Date.now() - last < 6_000) return;
+  if (Date.now() - last < 4_000) return;
   evalBusy += 1;
   lastEvalAt.set(pair, Date.now());
   void evaluatePair(pair, candles)
@@ -1617,8 +1617,8 @@ function manageOpenLot(
 ): { action: BookAction; stop: number; sellFrac: number } {
   if (playbook === "grid") return gridManage(p);
   if (playbook === "dca") return dcaManage(p);
-  const m = scalpManage(p);
-  if (m.action === "time" && p.mark >= p.entry) {
+  const m = scalpManage(p, Date.now(), takerPct(p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD", liveTaker));
+  if (m.action === "take" || (m.action === "time" && p.mark >= p.entry)) {
     const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
     const taker = takerPct(quote, liveTaker);
     const net = netPnl({
@@ -1628,7 +1628,11 @@ function manageOpenLot(
       taker,
       entryFee: p.fee,
     });
-    if (net <= 0) return { action: "hold", stop: m.stop, sellFrac: 0 };
+    if (net <= 0) {
+      if (m.action === "time") return { action: "stop", stop: m.stop, sellFrac: 1 };
+      return { action: "hold", stop: m.stop, sellFrac: 0 };
+    }
+    return { action: "take", stop: m.stop, sellFrac: 1 };
   }
   return { action: m.action, stop: m.stop, sellFrac: m.action === "hold" ? 0 : 1 };
 }

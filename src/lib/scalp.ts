@@ -1,11 +1,13 @@
-/** Auto-desk scalp: short lots, hold only while the tape is still paying. */
+/** Clip when the lot is net-green after fees. Seconds if it pays; minutes only if it's still growing. */
 
-/** Auto-desk scalp: cut losers fast, let a paying lot run to take. */
+import { minTakePct, USD_TAKER } from "./fees.ts";
 
 export const SCALP = {
-  maxHoldMs: 5 * 60_000,
-  growHoldMs: 90_000,
-  deadMs: 45_000,
+  maxHoldMs: 3 * 60_000,
+  growHoldMs: 20_000,
+  deadMs: 12_000,
+  fastTakeMs: 5_000,
+  clipMs: 10_000,
   stopPct: 0.0035,
   takePct: 0.0105,
   heatStopPct: 0.007,
@@ -13,8 +15,8 @@ export const SCALP = {
   trailArmPct: 0.0012,
   trailGapPct: 0.0018,
   growPct: 0.0006,
-  cooldownMs: 10_000,
-  minConf: 0.36,
+  cooldownMs: 4_000,
+  minConf: 0.34,
 } as const;
 
 export type ScalpAction = "hold" | "stop" | "take" | "time";
@@ -28,20 +30,24 @@ export function scalpStops(entry: number, heat: boolean): { stop: number; take: 
 export function scalpManage(
   p: { openedAt: number; entry: number; mark: number; stop: number; take: number },
   now = Date.now(),
+  taker = USD_TAKER,
 ): { action: ScalpAction; stop: number } {
   const age = now - p.openedAt;
   const pnlPct = p.entry > 0 ? (p.mark - p.entry) / p.entry : 0;
   const growing = pnlPct > SCALP.growPct;
+  const need = minTakePct(taker);
+  const netReady = pnlPct >= need;
   let stop = p.stop;
   if (pnlPct >= SCALP.trailArmPct) {
     stop = Math.max(stop, p.entry * 1.0002);
     stop = Math.max(stop, p.mark * (1 - SCALP.trailGapPct));
   }
-  if (pnlPct >= SCALP.takePct * 0.55) {
-    stop = Math.max(stop, p.entry * (1 + SCALP.takePct * 0.2));
+  if (pnlPct >= need * 0.55) {
+    stop = Math.max(stop, p.entry * (1 + need * 0.2));
   }
   if (p.mark <= stop) return { action: "stop", stop };
   if (p.mark >= p.take) return { action: "take", stop };
+  if (age >= SCALP.fastTakeMs && netReady) return { action: "take", stop };
   if (age >= SCALP.maxHoldMs) return { action: "time", stop };
   if (age >= SCALP.growHoldMs && !growing) return { action: "time", stop };
   if (age >= SCALP.deadMs && pnlPct <= 0) return { action: "time", stop };

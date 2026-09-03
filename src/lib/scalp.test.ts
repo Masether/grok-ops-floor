@@ -13,13 +13,18 @@ describe("scalpStops", () => {
 describe("scalpManage", () => {
   const base = { openedAt: 1_000, entry: 100, mark: 100.1, stop: 99.65, take: 101.05 };
 
-  it("holds a fresh growing lot", () => {
-    const r = scalpManage(base, 1_000 + 30_000);
+  it("holds a fresh lot that has not cleared fees", () => {
+    const r = scalpManage(base, 1_000 + 3_000);
     assert.equal(r.action, "hold");
   });
 
-  it("takes at the scalp target", () => {
-    const r = scalpManage({ ...base, mark: 101.1 }, 1_000 + 10_000);
+  it("takes at the stretch target", () => {
+    const r = scalpManage({ ...base, mark: 101.1 }, 1_000 + 6_000);
+    assert.equal(r.action, "take");
+  });
+
+  it("clips in seconds once the move covers fees", () => {
+    const r = scalpManage({ ...base, mark: 101.2 }, 1_000 + SCALP.fastTakeMs);
     assert.equal(r.action, "take");
   });
 
@@ -28,20 +33,15 @@ describe("scalpManage", () => {
     assert.equal(r.action, "stop");
   });
 
-  it("cuts a dead lot after ~75s", () => {
+  it("cuts a dead lot after ~12s", () => {
     const r = scalpManage({ ...base, mark: 99.95 }, 1_000 + SCALP.deadMs);
     assert.equal(r.action, "time");
   });
 
-  it("holds past 2m only if still growing", () => {
+  it("lets a still-growing lot run past 20s", () => {
     const dead = scalpManage({ ...base, mark: 100.02 }, 1_000 + SCALP.growHoldMs);
     assert.equal(dead.action, "time");
     const live = scalpManage({ ...base, mark: 100.2 }, 1_000 + SCALP.growHoldMs);
     assert.equal(live.action, "hold");
-  });
-
-  it("flattens at 5m even if green", () => {
-    const r = scalpManage({ ...base, mark: 100.3 }, 1_000 + SCALP.maxHoldMs);
-    assert.equal(r.action, "time");
   });
 });
