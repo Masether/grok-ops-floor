@@ -17,7 +17,8 @@ export function clampLiveBudget(n: number): number {
 
 export function usdStable(bal: Record<string, string> | null | undefined): number {
   if (!bal) return 0;
-  return Number(bal.ZUSD ?? 0) + Number(bal.USD ?? 0);
+  const keys = ["ZUSD", "USD", "ZUSD.F", "USD.F", "USD.HOLD", "ZUSD.HOLD"];
+  return keys.reduce((a, k) => a + Number(bal[k] ?? 0), 0);
 }
 
 export function usdtStable(bal: Record<string, string> | null | undefined): number {
@@ -25,6 +26,10 @@ export function usdtStable(bal: Record<string, string> | null | undefined): numb
   return (
     Number(bal.USDT ?? 0) + Number(bal.ZUSDT ?? 0) + Number(bal["USDT.F"] ?? 0)
   );
+}
+
+export function hasKrakenBook(bal: Record<string, string> | null | undefined): boolean {
+  return Boolean(bal && Object.keys(bal).length > 0);
 }
 
 export function livePositions(positions: Position[]): Position[] {

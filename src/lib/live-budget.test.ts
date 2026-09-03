@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET } from "./live-budget.ts";
+import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, usdStable } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
@@ -22,6 +22,15 @@ describe("clampLiveBudget", () => {
     assert.equal(clampLiveBudget(10), 20);
     assert.equal(clampLiveBudget(200), 200);
     assert.equal(clampLiveBudget(99_999), 50_000);
+  });
+});
+
+describe("usdStable", () => {
+  it("reads ZUSD and HOLD, not USDT", () => {
+    assert.equal(usdStable({ ZUSD: "180", USDT: "50" }), 180);
+    assert.equal(usdStable({ "USD.HOLD": "20", USD: "10" }), 30);
+    assert.equal(hasKrakenBook({}), false);
+    assert.equal(hasKrakenBook({ ZUSD: "1" }), true);
   });
 });
 

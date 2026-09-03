@@ -28,7 +28,7 @@ import {
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
-import { livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
+import { hasKrakenBook, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -931,7 +931,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       qty: verdict.qty,
       price,
       status: "queued",
-      mode: st.liveArmed ? "live" : "paper",
+      mode: st.liveArmed || st.mode === "live" ? "live" : "paper",
       reason: `${(playbook ?? "scalp").toUpperCase()} · MACD ${lane} · ${read.reason}`,
       book: playbook ?? "scalp",
       ts: Date.now(),
@@ -989,7 +989,9 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
     return { ok: false, why: "no Kraken keys — paste them in settings" };
   }
   if (!s.liveArmed) return { ok: false, why: "live runner is not armed" };
-  if (!s.liveBalance) return { ok: false, why: "treasury has not read the Kraken wallet yet" };
+  if (!hasKrakenBook(s.liveBalance)) {
+    return { ok: false, why: "treasury has not read the Kraken wallet yet" };
+  }
   const sleeve = liveSleeve({
     liveBudget: s.liveBudget,
     liveBalance: s.liveBalance,
@@ -1094,8 +1096,10 @@ export function executeOrder(order: Order): Promise<void> {
 
 async function executeOrderNow(order: Order) {
   const s = useFloor.getState();
-  const live = Boolean(s.liveArmed && s.keys.apiKey && s.keys.apiSecret && order.mode === "live");
-  if (s.liveArmed || order.mode === "live") {
+  const live = Boolean(
+    (s.liveArmed || s.mode === "live") && s.keys.apiKey && s.keys.apiSecret && order.mode === "live",
+  );
+  if (s.liveArmed || s.mode === "live" || order.mode === "live") {
     if (!live) {
       const rejected: Order = {
         ...order,
@@ -1108,9 +1112,10 @@ async function executeOrderNow(order: Order) {
       return;
     }
     try {
-      const def = PAIR_BY_ID[order.pair];
+      const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
+      if (!def) throw new Error("Unknown pair");
       const volume = order.qty.toFixed(Math.min(def.decimals, 8));
-      const venue = getLiveVenue(s.venueId);
+      const venue = getLiveVenue("kraken");
       const res = await venue.placeMarketOrder({
         apiKey: s.keys.apiKey,
         apiSecret: s.keys.apiSecret,
@@ -1133,7 +1138,7 @@ async function executeOrderNow(order: Order) {
         next: "archivist",
         stage: "signed",
         pair: order.pair,
-        title: `LIVE FILL ${order.side.toUpperCase()} ${PAIR_BY_ID[order.pair].label}`,
+        title: `LIVE FILL ${order.side.toUpperCase()} ${def.label}`,
         detail: res.descr || res.txid,
         tone: "good",
       });
@@ -1686,7 +1691,7 @@ export async function refreshTreasury() {
   const s = useFloor.getState();
   if (!s.keys.apiKey || !s.keys.apiSecret) return;
   try {
-    const venue = getLiveVenue(s.venueId);
+    const venue = getLiveVenue("kraken");
     const bal = await venue.fetchBalance(s.keys);
     useFloor.getState().setLiveBalance(bal);
     useFloor.getState().setKeysOk(true);
@@ -1716,7 +1721,7 @@ export async function haltLive() {
   toastKillSwitch();
   if (s.mode === "live" && s.keys.apiKey && s.keys.apiSecret) {
     try {
-      const venue = getLiveVenue(s.venueId);
+      const venue = getLiveVenue("kraken");
       const res = await venue.cancelAll({
         apiKey: s.keys.apiKey,
         apiSecret: s.keys.apiSecret,

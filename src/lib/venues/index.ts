@@ -28,6 +28,6 @@ export function getVenue(id: string): VenueAdapter {
   return adapters[asVenueId(meta.id)];
 }
 
-export function getLiveVenue(id: string): VenueAdapter {
-  return adapters[asVenueId(resolveLiveVenueId(id))];
+export function getLiveVenue(_id?: string): VenueAdapter {
+  return krakenAdapter;
 }

@@ -533,6 +533,7 @@ export const useFloor = create<FloorState>()(
           set({
             liveArmed: true,
             mode: "live",
+            venueId: "kraken",
             opsMode: "auto",
             autoTrade: true,
             floorOpen: true,
@@ -918,7 +919,7 @@ export const useFloor = create<FloorState>()(
           },
         );
         const launched = launchedThisSession || inferLaunched(p);
-        const venueId: VenueId = p.venueId === "paper" ? "paper" : "kraken";
+        const venueId: VenueId = p.liveArmed || p.mode === "live" ? "kraken" : p.venueId === "paper" ? "paper" : "kraken";
         const opsMode: OpsMode =
           p.opsMode === "learn" ? "learn" : launched ? "auto" : "paper";
         const autoTrade = launched && opsMode === "auto";

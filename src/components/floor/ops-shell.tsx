@@ -76,6 +76,15 @@ export function OpsShell() {
       try {
         const s = useFloor.getState();
         if (s.keys.apiKey && s.keys.apiSecret) {
+          if (s.liveArmed || s.mode === "live") {
+            useFloor.setState({
+              venueId: "kraken",
+              mode: "live",
+              liveArmed: true,
+              autoTrade: true,
+              floorOpen: true,
+            });
+          }
           await refreshTreasury();
         }
         const res = await scanLiveTape();
