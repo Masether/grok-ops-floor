@@ -134,7 +134,7 @@ export const AGENTS: AgentDef[] = [
     orbit: 11,
   },
   {
-    id: "lilyrose",
+    id: "wire",
     name: "LILYROSE",
     role: "Assign → execute → verify. AI-product brief, bait killed",
     color: "#ff8ad4",
