@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   NEAR_STOP_PCT,
   bookDayPnl,
+  bookTotal,
   dayLossAlert,
   equityMultiple,
   fillLeg,
@@ -11,6 +12,8 @@ import {
   haltCapUsd,
   lotMetrics,
   pctOfCapital,
+  profitBarPct,
+  sessionProfit,
 } from "./desk-pnl.ts";
 
 describe("pctOfCapital", () => {
@@ -24,6 +27,23 @@ describe("pctOfCapital", () => {
     assert.equal(pctOfCapital(50, 0), 0);
     assert.equal(pctOfCapital(50, -1), 0);
     assert.equal(pctOfCapital(50, Number.NaN), 0);
+  });
+});
+
+describe("bookDayPnl", () => {
+  it("is equity minus day start", () => {
+    assert.equal(bookDayPnl(200, 200), 0);
+    assert.equal(bookDayPnl(212, 200), 12);
+  });
+});
+
+describe("sessionProfit", () => {
+  it("adds realized and open mark, and desk = cash + lots", () => {
+    assert.equal(sessionProfit(8, 4), 12);
+    assert.equal(sessionProfit(-3, 0), -3);
+    assert.equal(bookTotal(180, 20), 200);
+    assert.equal(profitBarPct(20, 200), 10);
+    assert.equal(profitBarPct(-40, 200), -20);
   });
 });
 

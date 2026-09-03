@@ -30,6 +30,23 @@ export function bookDayPnl(equity: number, dayStart: number): number {
   return equity - start;
 }
 
+/** Closed fills plus open mark — profit for this shift. */
+export function sessionProfit(realized: number, unrealized: number): number {
+  const r = Number.isFinite(realized) ? realized : 0;
+  const u = Number.isFinite(unrealized) ? unrealized : 0;
+  return r + u;
+}
+
+/** Desk book = free cash + lots. */
+export function bookTotal(cash: number, lots: number): number {
+  return (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(lots) ? lots : 0);
+}
+
+export function profitBarPct(profit: number, base: number): number {
+  if (!Number.isFinite(profit) || !Number.isFinite(base) || !(base > 0)) return 0;
+  return Math.max(-100, Math.min(100, (profit / base) * 100));
+}
+
 export function equityMultiple(equity: number, startingCash: number): number {
   if (!Number.isFinite(equity) || !Number.isFinite(startingCash) || startingCash <= 0) {
     return 1;

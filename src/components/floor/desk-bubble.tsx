@@ -153,7 +153,7 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
       />
       <GoalDeskRow onEdit={onEditGoal} />
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-3 py-2.5 sm:grid-cols-4">
-        <Stat label="Book" value={moneyFull(desk.equity)} extra="live on the floor" />
+        <Stat label="Desk" value={moneyFull(desk.equity)} extra="same as the header" />
         <Stat label="Day" value={money(desk.dayPnl)} tone={signedTone(desk.dayPnl)} />
         <Stat label="Free cash" value={moneyFull(desk.cash)} />
         <Stat label="In lots" value={moneyFull(desk.exposure)} extra={`${desk.openPositions} open`} />

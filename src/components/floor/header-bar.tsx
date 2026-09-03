@@ -7,6 +7,7 @@ import { clock, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
+import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
 import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
 import type { OpsMode, PairId } from "@/lib/types";
@@ -17,7 +18,6 @@ import { Link } from "@tanstack/react-router";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { InstallAppButton } from "./install-app";
-import { GoalChip } from "./goal-chip";
 
 const OPS: { id: OpsMode; label: string; hint: string }[] = [
   { id: "paper", label: "Paper", hint: "You size tickets" },
@@ -70,14 +70,42 @@ export function HeaderBar() {
     return () => window.clearInterval(id);
   }, []);
 
-  const multiple = startingCash > 0 ? desk.equity / startingCash : 1;
   const latest = events[0];
   const last: Partial<Record<PairId, number>> = {};
   for (const p of pairs) last[p] = tickers[p]?.last;
   const walletUsd = fundingCash + vaultMark(vault, last);
+  const live = mode === "live" || liveArmed;
+  const profit = sessionProfit(desk.realized, desk.unrealized);
+  const krakenUsd = usdOnBook(liveBalance);
+  const barBase = live ? liveBudget : startingCash;
+  const barPct = profitBarPct(profit, barBase);
 
   return (
     <header className="shrink-0">
+      <div className="border-b border-border px-3 py-1.5 lg:px-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">Profit</span>
+          <span
+            className={cn(
+              "stat-num text-sm",
+              profit > 0 ? "text-good" : profit < 0 ? "text-danger" : "text-fg",
+            )}
+          >
+            {profit >= 0 ? "+" : ""}
+            {moneyFull(profit)}
+            <span className="ml-2 text-micro text-subtle">
+              {clock(now - (shiftStartedAt || now))} running · closed {money(desk.realized)} · open{" "}
+              {money(desk.unrealized)}
+            </span>
+          </span>
+        </div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-xs bg-surface-3" aria-hidden>
+          <div
+            className={cn("h-full", profit >= 0 ? "bg-good" : "bg-danger")}
+            style={{ width: `${Math.abs(barPct)}%` }}
+          />
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-3 py-2 lg:px-4">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-sm" aria-hidden>
@@ -108,12 +136,15 @@ export function HeaderBar() {
           >
             <Stat label="Wallet" value={moneyFull(walletUsd)} tone={walletUsd > 0 ? "good" : undefined} always />
           </button>
-          {mode === "live" ? <Stat label="Kraken" value={money(usdOnBook(liveBalance))} /> : null}
-          {mode === "live" ? <Stat label="Budget" value={moneyFull(liveBudget)} always /> : null}
-          <Stat label="Day" value={moneyFull(desk.dayPnl)} tone={desk.dayPnl >= 0 ? "good" : "bad"} always />
-          <GoalChip />
-          <Stat label={mode === "live" ? "Live" : "Paper"} value={sessionEndsAt == null ? "24/7" : "sitting"} always />
-          <Stat label="Mult" value={`${multiple.toFixed(2)}x`} />
+          {live ? <Stat label="Kraken" value={moneyFull(krakenUsd)} always /> : null}
+          {live ? <Stat label="Budget" value={moneyFull(liveBudget)} always /> : null}
+          <Stat
+            label="Day"
+            value={`${desk.dayPnl >= 0 ? "+" : ""}${moneyFull(desk.dayPnl)}`}
+            tone={desk.dayPnl > 0 ? "good" : desk.dayPnl < 0 ? "bad" : undefined}
+            always
+          />
+          <Stat label={live ? "Live" : "Paper"} value="24/7" always />
           <button
             type="button"
             className="min-h-11 text-left"
