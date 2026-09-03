@@ -10,7 +10,8 @@ export type AgentId =
   | "regime"
   | "flow"
   | "treasury"
-  | "wire";
+  | "wire"
+  | "lilyrose";
 
 export type AgentStatus = "idle" | "working" | "handoff" | "blocked" | "halted";
 
