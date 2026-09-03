@@ -586,18 +586,37 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       s0.mode === "paper"
         ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
         : Math.max(0.38, Math.min(pairMinConf(brain, pair), 0.5));
-    const equity = markEquity(s0);
+    const swarmSleeve =
+      s0.liveArmed || s0.mode === "live"
+        ? liveSleeve({
+            liveBudget: s0.liveBudget,
+            liveBalance: s0.liveBalance,
+            positions: s0.positions,
+            tickers: s0.tickers,
+          })
+        : null;
+    const equity = swarmSleeve ? swarmSleeve.equity : markEquity(s0);
+    const swarmCash = swarmSleeve ? swarmSleeve.cash : s0.cash;
+    const swarmDayStart = swarmSleeve
+      ? s0.dayStartEquity > 0
+        ? s0.dayStartEquity
+        : swarmSleeve.equity
+      : s0.dayStartEquity || s0.startingCash;
+    const swarmDayPnl = equity - swarmDayStart;
+    const swarmHalt = swarmSleeve
+      ? haltCapUsd(swarmSleeve.budget, s0.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
+      : (s0.dayStartEquity || s0.startingCash) * s0.risk.maxDailyLossPct;
     const vote = await rollInSwarm(
       tallySwarm({
         pair,
         signal: { kind: read.kind, confidence: read.confidence, rsi: read.rsi },
         ticker,
         volumes,
-        positions: s0.positions,
-        cash: s0.cash,
+        positions: swarmSleeve ? livePositions(s0.positions) : s0.positions,
+        cash: swarmCash,
         equity,
-        dayPnl: equity - (s0.dayStartEquity || s0.startingCash),
-        maxDailyLoss: (s0.dayStartEquity || s0.startingCash) * s0.risk.maxDailyLossPct,
+        dayPnl: swarmDayPnl,
+        maxDailyLoss: swarmHalt,
         maxPositions: s0.risk.maxPositions,
         brain,
         wire: s0.wire,
@@ -695,7 +714,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       existingLot && existingLot.entry > 0
         ? Math.max(0, (existingLot.entry - (ticker?.last ?? existingLot.mark)) / existingLot.entry)
         : 0;
-    const playbook = pickPlaybook({
+    let playbook = pickPlaybook({
       enabled: normalizePlaybooks(stNow.playbooks),
       sleeve,
       lane,
@@ -708,6 +727,9 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       adds: existingLot?.adds ?? 1,
       msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
     });
+    if (!playbook && autoDesk && ticketKind === "buy" && lane !== "down") {
+      playbook = "scalp";
+    }
     if (!playbook) {
       ticketKind = "hold";
     } else if (playbook !== "scalp") {

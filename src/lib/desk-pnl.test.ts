@@ -30,10 +30,10 @@ describe("pctOfCapital", () => {
   });
 });
 
-describe("bookDayPnl", () => {
-  it("is equity minus day start", () => {
+describe("live swarm must not use paper $10k as the day base", () => {
+  it("a $200 live book vs $10k paper start looks like a 100% halt", () => {
+    assert.ok(bookDayPnl(200, 10_000) <= -400);
     assert.equal(bookDayPnl(200, 200), 0);
-    assert.equal(bookDayPnl(212, 200), 12);
   });
 });
 
