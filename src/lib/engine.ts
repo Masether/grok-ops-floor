@@ -5,6 +5,7 @@ import { macdHist, readScalp } from "./indicators";
 import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api";
 import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken";
 import { budgetStake } from "./budget-size";
+import { liveEntry } from "./sharp";
 import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct } from "./fees";
 import { fairValue, mispricing, pricerQuiet } from "./pricer";
 import { rankScout } from "./scout";
@@ -583,7 +584,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const minConf =
       s0.mode === "paper"
         ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
-        : Math.min(pairMinConf(brain, pair), SCALP.minConf + 0.04);
+        : Math.max(0.5, Math.min(pairMinConf(brain, pair), 0.58));
     const equity = markEquity(s0);
     const vote = await rollInSwarm(
       tallySwarm({
@@ -708,6 +709,37 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       ticketKind = "hold";
     } else if (playbook !== "scalp") {
       ticketKind = "buy";
+    }
+
+    if (!paper && ticketKind === "buy") {
+      const recentPnl = stNow.orders
+        .filter((o) => o.status === "filled" && o.mode === "live" && o.side === "sell")
+        .slice(0, 4)
+        .map((o) => o.pnl ?? 0);
+      const gate = liveEntry({
+        grokKind,
+        readKind: read.kind,
+        lane,
+        playbook,
+        conf: ticketConf,
+        heat: sleeve === "heat",
+        changePct: ticker?.changePct ?? 0,
+        recentPnl,
+        sessionPnl: stNow.realized,
+        budget: stNow.liveBudget || 200,
+      });
+      if (!gate.ok) {
+        bumpAgent("risk", gate.why, 0.7);
+        pushEvent({
+          agent: "risk",
+          stage: "handout",
+          pair,
+          title: `SKIP ${label}`,
+          detail: gate.why,
+          tone: "info",
+        });
+        return;
+      }
     }
 
     if (playbook && playbook !== "scalp" && ticketKind === "buy") {

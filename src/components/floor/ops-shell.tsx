@@ -11,6 +11,7 @@ import { BrainBubble } from "./brain-bubble";
 import { DeskBubble } from "./desk-bubble";
 import { FundingRail } from "./funding-rail";
 import { LiveStatusBar } from "./live-status";
+import { SessionBoard } from "./session-board";
 import { HeaderBar } from "./header-bar";
 import { LaunchSetup } from "./launch-setup";
 import { OrbitStage } from "./orbit-stage";
@@ -69,20 +70,28 @@ export function OpsShell() {
       if (started && st.mode !== "live") {
         toast.success("Paper desk is on — $10k play money. 24/7.");
       }
-      if (!useFloor.getState().launched) {
-        setShowLaunch(true);
-        return;
+      const s = useFloor.getState();
+      const keyed = Boolean(s.keys.apiKey && s.keys.apiSecret);
+      if (!s.launched && !keyed) {
+        ensurePaperDesk();
       }
+      useFloor.setState({
+        launched: true,
+        floorOpen: true,
+        autoTrade: true,
+      });
+      setShowLaunch(false);
       try {
-        const s = useFloor.getState();
-        if (s.keys.apiKey && s.keys.apiSecret) {
-          if (s.liveArmed || s.mode === "live") {
+        const now = useFloor.getState();
+        if (now.keys.apiKey && now.keys.apiSecret) {
+          if (now.liveArmed || now.mode === "live") {
             useFloor.setState({
               venueId: "kraken",
               mode: "live",
               liveArmed: true,
               autoTrade: true,
               floorOpen: true,
+              launched: true,
             });
           }
           await refreshTreasury();
@@ -144,6 +153,7 @@ export function OpsShell() {
         <HeaderBar />
         <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3">
           <LiveStatusBar />
+          <SessionBoard />
           <FundingRail />
           <div className="min-h-[260px] lg:min-h-0 lg:flex-1">
             <OrbitStage />

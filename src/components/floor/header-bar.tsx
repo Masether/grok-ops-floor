@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive, studyBook } from "@/lib/engine";
-import { clock, money, moneyFull, pct } from "@/lib/format";
+import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
@@ -105,7 +105,7 @@ export function HeaderBar() {
             {profit >= 0 ? "+" : ""}
             {moneyFull(profit)}
             <span className="ml-2 text-micro text-subtle">
-              {clock(now - (shiftStartedAt || now))} · closed {money(desk.realized)} · open{" "}
+              {clockHms(now - (shiftStartedAt || now))} running · closed {money(desk.realized)} · open{" "}
               {money(desk.unrealized)} · H {money(range.high)} · L {money(range.low)}
             </span>
           </span>
@@ -180,7 +180,13 @@ export function HeaderBar() {
             tone={desk.dayPnl > 0 ? "good" : desk.dayPnl < 0 ? "bad" : undefined}
             always
           />
-          <Stat label={live ? "Live" : "Paper"} value="24/7" always />
+          <Stat label="Running" value={clockHms(now - (shiftStartedAt || now))} always />
+          <Stat
+            label="P&L"
+            value={`${profit >= 0 ? "+" : ""}${moneyFull(profit)}`}
+            tone={profit > 0 ? "good" : profit < 0 ? "bad" : undefined}
+            always
+          />
           <button
             type="button"
             className="min-h-11 text-left"

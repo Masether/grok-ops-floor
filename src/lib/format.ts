@@ -52,6 +52,15 @@ export function clock(ms: number): string {
   return `${pad(mm)}:${pad(ss)}`;
 }
 
+export function clockHms(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const hh = Math.floor(s / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (v: number) => v.toString().padStart(2, "0");
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+}
+
 export function ago(ts: number, now = Date.now()): string {
   const d = Math.max(0, now - ts);
   if (d < 1000) return "now";
