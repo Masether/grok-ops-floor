@@ -3,16 +3,45 @@
 export type PlaybookId = "scalp" | "grid" | "dca";
 
 export const PLAYBOOKS: { id: PlaybookId; label: string; hint: string }[] = [
-  { id: "scalp", label: "Scalp", hint: "2–5m lots · cut dead tape" },
-  { id: "grid", label: "Grid", hint: "buy dips / sell rips in a range" },
-  { id: "dca", label: "DCA", hint: "add on dips · hold for the average" },
+  { id: "scalp", label: "Scalp", hint: "2–5m lots · MACD up" },
+  { id: "grid", label: "Grid", hint: "range · MACD chop" },
+  { id: "dca", label: "DCA", hint: "dip adds · MACD reset" },
 ];
 
+export const ALL_PLAYBOOKS: PlaybookId[] = ["scalp", "grid", "dca"];
+
 export const DEFAULT_PLAYBOOK: PlaybookId = "scalp";
+
+/** Split of the $200 (or paper equity) across books when they run together. */
+export const BOOK_SHARE: Record<PlaybookId, number> = {
+  scalp: 0.4,
+  grid: 0.35,
+  dca: 0.25,
+};
 
 export function asPlaybook(v: unknown): PlaybookId {
   if (v === "grid" || v === "dca" || v === "scalp") return v;
   return DEFAULT_PLAYBOOK;
+}
+
+export function normalizePlaybooks(v: unknown): PlaybookId[] {
+  if (Array.isArray(v)) {
+    const next = [...new Set(v.map(asPlaybook).filter((id, i, a) => a.indexOf(id) === i))];
+    const uniq = ALL_PLAYBOOKS.filter((id) => next.includes(id));
+    if (uniq.length) return uniq;
+  }
+  if (v === "grid" || v === "dca" || v === "scalp") return [v];
+  return [...ALL_PLAYBOOKS];
+}
+
+export type MacdLane = "up" | "down" | "chop";
+
+export function macdLane(hist: number, prev: number): MacdLane {
+  if (prev <= 0 && hist > 0) return "up";
+  if (prev >= 0 && hist < 0) return "down";
+  if (hist > 0 && hist >= prev) return "up";
+  if (hist < 0 && hist <= prev) return "down";
+  return "chop";
 }
 
 export const GRID = {
@@ -99,20 +128,66 @@ export function playbookWantsBuy(input: {
   dipFromEntry: number;
   adds: number;
   msSinceAdd: number;
+  macd?: MacdLane;
 }): boolean {
   const { playbook, kind, rsi, changePct, hasPos, dipFromEntry, adds, msSinceAdd } = input;
-  if (playbook === "scalp") return kind === "buy";
+  const lane = input.macd ?? "chop";
+  if (playbook === "scalp") return kind === "buy" && lane !== "down";
   if (kind === "sell") return false;
   if (playbook === "grid") {
-    if (hasPos) {
-      return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds;
-    }
-    return kind === "buy" || (rsi < 48 && changePct <= 0.15);
+    if (lane === "up" && !hasPos) return false;
+    if (hasPos) return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds && lane !== "up";
+    return lane === "chop" && (kind === "buy" || (rsi < 48 && changePct <= 0.15));
   }
   if (hasPos) {
-    return dipFromEntry >= DCA.dipPct && adds < DCA.maxAdds && msSinceAdd >= DCA.cooldownMs;
+    return (
+      dipFromEntry >= DCA.dipPct &&
+      adds < DCA.maxAdds &&
+      msSinceAdd >= DCA.cooldownMs &&
+      lane !== "up"
+    );
   }
-  return kind === "buy" || rsi < 52;
+  return lane !== "up" && (kind === "buy" || rsi < 52);
+}
+
+/** Assign a free pair to one of the enabled books using MACD. */
+export function pickPlaybook(input: {
+  enabled: PlaybookId[];
+  sleeve: "core" | "heat" | "stock";
+  lane: MacdLane;
+  kind: "buy" | "sell" | "hold";
+  rsi: number;
+  changePct: number;
+  hasPos: boolean;
+  existingBook?: PlaybookId;
+  dipFromEntry: number;
+  adds: number;
+  msSinceAdd: number;
+}): PlaybookId | null {
+  const enabled = normalizePlaybooks(input.enabled);
+  if (input.existingBook) {
+    if (!enabled.includes(input.existingBook)) return null;
+    return playbookWantsBuy({ playbook: input.existingBook, ...input, macd: input.lane })
+      ? input.existingBook
+      : null;
+  }
+  if (input.sleeve === "heat") {
+    return enabled.includes("scalp") &&
+      playbookWantsBuy({ playbook: "scalp", ...input, macd: input.lane })
+      ? "scalp"
+      : null;
+  }
+  const order: PlaybookId[] =
+    input.lane === "chop"
+      ? ["grid", "dca", "scalp"]
+      : input.lane === "up"
+        ? ["scalp", "grid", "dca"]
+        : ["dca", "grid", "scalp"];
+  for (const pb of order) {
+    if (!enabled.includes(pb)) continue;
+    if (playbookWantsBuy({ playbook: pb, ...input, macd: input.lane })) return pb;
+  }
+  return null;
 }
 
 export function playbookSlicePct(playbook: PlaybookId): number {

@@ -124,6 +124,7 @@ export type Position = {
   krakenTxid?: string;
   note?: string;
   adds?: number;
+  book?: "scalp" | "grid" | "dca";
 };
 
 export type Order = {
@@ -140,6 +141,7 @@ export type Order = {
   fee?: number;
   pnl?: number;
   krakenTxid?: string;
+  book?: "scalp" | "grid" | "dca";
 };
 
 export type TapeEvent = {

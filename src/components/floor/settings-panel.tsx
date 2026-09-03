@@ -35,7 +35,7 @@ export function SettingsPanel() {
   const setMode = useFloor((s) => s.setMode);
   const autoTrade = useFloor((s) => s.autoTrade);
   const setAutoTrade = useFloor((s) => s.setAutoTrade);
-  const playbook = useFloor((s) => s.playbook);
+  const playbooks = useFloor((s) => s.playbooks);
   const setPlaybook = useFloor((s) => s.setPlaybook);
   const liveArmed = useFloor((s) => s.liveArmed);
   const setLiveArmed = useFloor((s) => s.setLiveArmed);
@@ -307,7 +307,7 @@ export function SettingsPanel() {
                     key={b.id}
                     type="button"
                     size="sm"
-                    variant={playbook === b.id ? "default" : "outline"}
+                    variant={playbooks.includes(b.id) ? "default" : "outline"}
                     onClick={() => {
                       setPlaybook(b.id as PlaybookId);
                       toast.message(`${b.label} · ${b.hint}`);
@@ -317,7 +317,10 @@ export function SettingsPanel() {
                   </Button>
                 ))}
               </div>
-              <p className="text-2xs text-subtle">{PLAYBOOKS.find((b) => b.id === playbook)?.hint}</p>
+              <p className="text-2xs text-subtle">
+                All three run together, split across the $200 cap (40% scalp / 35% grid / 25% DCA).
+                MACD routes: up → scalp, chop → grid, reset → DCA. Tap a book to pause it.
+              </p>
               {mode === "paper" ? (
                 <Button
                   size="sm"

@@ -8,6 +8,8 @@ import {
   dcaStops,
   gridManage,
   gridStops,
+  macdLane,
+  pickPlaybook,
   playbookWantsBuy,
 } from "./playbook.ts";
 
@@ -99,5 +101,48 @@ describe("dca", () => {
       false,
     );
     assert.ok(GRID.slicePct < 0.2);
+  });
+});
+
+describe("macd lanes + all books together", () => {
+  it("flips and trends", () => {
+    assert.equal(macdLane(1, -1), "up");
+    assert.equal(macdLane(-1, 1), "down");
+    assert.equal(macdLane(0.5, 0.8), "chop");
+  });
+
+  it("routes MACD up to scalp, chop to grid, down to dca", () => {
+    const base = {
+      enabled: ["scalp", "grid", "dca"] as const,
+      sleeve: "core" as const,
+      kind: "buy" as const,
+      rsi: 42,
+      changePct: -0.3,
+      hasPos: false,
+      dipFromEntry: 0,
+      adds: 0,
+      msSinceAdd: 1e12,
+    };
+    assert.equal(pickPlaybook({ ...base, lane: "up", enabled: [...base.enabled] }), "scalp");
+    assert.equal(pickPlaybook({ ...base, lane: "chop", kind: "hold", enabled: [...base.enabled] }), "grid");
+    assert.equal(pickPlaybook({ ...base, lane: "down", kind: "hold", enabled: [...base.enabled] }), "dca");
+  });
+
+  it("keeps heat on scalp only", () => {
+    assert.equal(
+      pickPlaybook({
+        enabled: ["scalp", "grid", "dca"],
+        sleeve: "heat",
+        lane: "chop",
+        kind: "buy",
+        rsi: 40,
+        changePct: 1,
+        hasPos: false,
+        dipFromEntry: 0,
+        adds: 0,
+        msSinceAdd: 0,
+      }),
+      "scalp",
+    );
   });
 });

@@ -1,7 +1,7 @@
 import { AGENT_BY_ID, AGENTS } from "./agents";
 import { emitPulse } from "./bus";
 import { uid, px, money } from "./format";
-import { readScalp } from "./indicators";
+import { macdHist, readScalp } from "./indicators";
 import { PAIR_BY_ID } from "./kraken";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
 import { fetchOhlc, fetchTickers } from "./kraken-api";
@@ -12,12 +12,15 @@ import { SCALP, scalpManage } from "./scalp";
 import {
   asPlaybook,
   bookStops,
+  BOOK_SHARE,
   dcaManage,
   GRID,
   DCA,
   gridManage,
+  macdLane,
+  normalizePlaybooks,
+  pickPlaybook,
   playbookSlicePct,
-  playbookWantsBuy,
   type BookAction,
   type PlaybookId,
 } from "./playbook";
@@ -602,7 +605,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       grokKind !== "hold" ? grokKind : read.kind !== "hold" ? read.kind : "hold";
     if (ticketKind === "sell" && !hasPos) ticketKind = "hold";
     const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0);
-    const playbook = asPlaybook(stNow.playbook);
+    const histPrev = closes.length > 28 ? macdHist(closes.slice(0, -1)) : read.macdHist;
+    const lane = macdLane(read.macdHist, histPrev);
     const existingLot = bookNow.find((p) => p.pair === pair);
     const lastBuy = stNow.orders.find(
       (o) => o.pair === pair && o.status === "filled" && o.side === "buy",
@@ -611,18 +615,23 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       existingLot && existingLot.entry > 0
         ? Math.max(0, (existingLot.entry - (ticker?.last ?? existingLot.mark)) / existingLot.entry)
         : 0;
-    if (playbook !== "scalp") {
-      const want = playbookWantsBuy({
-        playbook,
-        kind: ticketKind,
-        rsi: signal.rsi,
-        changePct: ticker?.changePct ?? 0,
-        hasPos: Boolean(existingLot),
-        dipFromEntry,
-        adds: existingLot?.adds ?? 1,
-        msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
-      });
-      ticketKind = want ? "buy" : "hold";
+    const playbook = pickPlaybook({
+      enabled: normalizePlaybooks(stNow.playbooks),
+      sleeve,
+      lane,
+      kind: ticketKind,
+      rsi: signal.rsi,
+      changePct: ticker?.changePct ?? 0,
+      hasPos: Boolean(existingLot),
+      existingBook: existingLot?.book,
+      dipFromEntry,
+      adds: existingLot?.adds ?? 1,
+      msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
+    });
+    if (!playbook) {
+      ticketKind = "hold";
+    } else if (playbook !== "scalp") {
+      ticketKind = "buy";
     }
 
     patch({
@@ -632,7 +641,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       ].slice(0, 40),
     });
 
-    if (playbook !== "scalp" && sleeve === "heat") {
+    if ((playbook === "grid" || playbook === "dca") && sleeve === "heat") {
       bumpAgent("hunter", `${playbook} skips heat`, 0.4);
       return;
     }
@@ -755,7 +764,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     emitPulse({ from: "flow", to: "risk" });
     await sleep(160);
 
-    const verdict = sizeTicket(pair, ticketKind === "buy" ? "buy" : "sell", price, ticketConf);
+    const verdict = sizeTicket(pair, ticketKind === "buy" ? "buy" : "sell", price, ticketConf, playbook ?? "scalp");
     if (!verdict.ok) {
       bumpAgent("risk", verdict.why, 0.9);
       pushQueue({
@@ -855,7 +864,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       price,
       status: "queued",
       mode: st.liveArmed ? "live" : "paper",
-      reason: `${playbook.toUpperCase()} · ${read.reason}`,
+      reason: `${(playbook ?? "scalp").toUpperCase()} · MACD ${lane} · ${read.reason}`,
+      book: playbook ?? "scalp",
       ts: Date.now(),
     };
 
@@ -939,6 +949,7 @@ function sizeTicket(
   side: "buy" | "sell",
   price: number,
   confidence: number,
+  playbook: PlaybookId,
 ): { ok: true; qty: number; side: "buy" | "sell" } | { ok: false; why: string } {
   const s = useFloor.getState();
   const live = s.liveArmed || s.mode === "live";
@@ -956,8 +967,12 @@ function sizeTicket(
   const existing = book.find((p) => p.pair === pair);
   const def = PAIR_BY_ID[pair];
   const bias = s.brain.pairBias[pair] ?? 0;
-  const playbook = asPlaybook(s.playbook);
   const slicePct = playbookSlicePct(playbook);
+  const share = BOOK_SHARE[playbook];
+  const bookCap = equity * share;
+  const bookUsed = book
+    .filter((p) => (p.book ?? "scalp") === playbook)
+    .reduce((a, p) => a + p.mark * p.qty, 0);
 
   if (side === "sell") {
     if (!existing) return { ok: false, why: "no inventory to sell" };
@@ -1013,6 +1028,9 @@ function sizeTicket(
   }
   if (notional < 10) return { ok: false, why: "size below min ticket" };
   if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
+  if (bookUsed + notional > bookCap + 1e-9) {
+    return { ok: false, why: `${playbook} sleeve full (${Math.round(share * 100)}% of book)` };
+  }
   const rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
   if (rounded < def.ordermin) return { ok: false, why: "below Kraken ordermin" };
   return { ok: true, qty: rounded, side: "buy" };
@@ -1299,7 +1317,7 @@ function applyFill(order: Order) {
     } else if (existing) {
       const totalQty = existing.qty + order.qty;
       const entry = (existing.entry * existing.qty + fill * order.qty) / totalQty;
-      const pb = asPlaybook(s.playbook);
+      const pb = asPlaybook(order.book ?? existing.book ?? "scalp");
       const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
       const band = bookStops(pb, entry, heat);
       positions = positions.map((p) =>
@@ -1312,6 +1330,7 @@ function applyFill(order: Order) {
               stop: band.stop,
               take: band.take,
               adds: (existing.adds ?? 1) + 1,
+              book: pb,
             }
           : p,
       );
@@ -1319,7 +1338,7 @@ function applyFill(order: Order) {
     } else {
       if (!liveFill) cash -= fill * order.qty + fee;
       const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
-      const pb = asPlaybook(s.playbook);
+      const pb = asPlaybook(order.book ?? "scalp");
       const band = bookStops(pb, fill, heat);
       positions = [
         ...positions,
@@ -1337,6 +1356,7 @@ function applyFill(order: Order) {
           krakenTxid: order.krakenTxid,
           note: order.reason,
           adds: 1,
+          book: pb,
         },
       ];
     }
@@ -1401,7 +1421,7 @@ function restoreOrphanLots() {
       const fill = o.fillPrice ?? o.price;
       if (!(fill > 0) || !(o.qty > 0)) continue;
       const heat = PAIR_BY_ID[o.pair]?.sleeve === "heat";
-      const band = bookStops(asPlaybook(s.playbook), fill, heat);
+      const band = bookStops(asPlaybook(o.book ?? s.playbooks?.[0] ?? "scalp"), fill, heat);
       extra.push({
         id: uid("pos"),
         pair: o.pair,
@@ -1445,18 +1465,19 @@ function checkStops() {
   const s = useFloor.getState();
   if (!s.launched || s.positions.length === 0) return;
   if (s.mode === "live" && !s.liveArmed && !s.floorOpen) return;
-  const playbook = asPlaybook(s.playbook);
   let trailed = false;
   const nextPos = s.positions.map((p) => {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
-    const managed = manageOpenLot(playbook, { ...p, mark });
+    const pb = asPlaybook(p.book);
+    const managed = manageOpenLot(pb, { ...p, mark });
     if (managed.stop !== p.stop) trailed = true;
     return { ...p, mark, stop: managed.stop };
   });
   if (trailed) patch({ positions: nextPos });
 
   for (const p of nextPos) {
-    const managed = manageOpenLot(playbook, p);
+    const pb = asPlaybook(p.book);
+    const managed = manageOpenLot(pb, p);
     if (managed.action === "hold") continue;
     if (flattening.has(p.id)) continue;
     flattening.add(p.id);

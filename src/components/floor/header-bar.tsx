@@ -33,7 +33,7 @@ export function HeaderBar() {
   const mode = useFloor((s) => s.mode);
   const opsMode = useFloor((s) => s.opsMode);
   const setOpsMode = useFloor((s) => s.setOpsMode);
-  const playbook = useFloor((s) => s.playbook);
+  const playbooks = useFloor((s) => s.playbooks);
   const setPlaybook = useFloor((s) => s.setPlaybook);
   const liveArmed = useFloor((s) => s.liveArmed);
   const feedOk = useFloor((s) => s.feedOk);
@@ -266,13 +266,17 @@ export function HeaderBar() {
                 type="button"
                 size="sm"
                 className="min-h-11"
-                variant={playbook === b.id ? "default" : "outline"}
-                aria-pressed={playbook === b.id}
+                variant={playbooks.includes(b.id) ? "default" : "outline"}
+                aria-pressed={playbooks.includes(b.id)}
                 title={b.hint}
                 disabled={!launched}
                 onClick={() => {
                   setPlaybook(b.id as PlaybookId);
-                  toast.message(`${b.label} book · ${b.hint}`);
+                  toast.message(
+                    playbooks.includes(b.id) && playbooks.length > 1
+                      ? `${b.label} off`
+                      : `${b.label} on · ${b.hint}`,
+                  );
                 }}
               >
                 {b.label}
