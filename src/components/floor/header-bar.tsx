@@ -1,7 +1,7 @@
 import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
-import { haltLive, studyBook } from "@/lib/engine";
+import { haltLive, scanLiveTape, studyBook } from "@/lib/engine";
 import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
@@ -216,6 +216,18 @@ export function HeaderBar() {
             <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
           <div className="relative z-20 flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void scanLiveTape().then((r) => {
+                  toast.message(r.note);
+                });
+              }}
+            >
+              Scan tape
+            </Button>
             <Button
               type="button"
               size="sm"

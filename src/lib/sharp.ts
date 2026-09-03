@@ -23,14 +23,14 @@ export function liveEntry(input: {
   if (input.playbook === "scalp" && input.lane === "down") {
     return { ok: false, why: "MACD down — no scalp" };
   }
-  if (input.heat && input.changePct < 0.3) {
-    return { ok: false, why: "heat not moving" };
+  if (input.heat && input.changePct < -1) {
+    return { ok: false, why: "heat dumping" };
   }
   const lastTwo = input.recentPnl.slice(0, 2);
-  if (lastTwo.length >= 2 && lastTwo.every((n) => n < 0)) {
+  if (lastTwo.length >= 2 && lastTwo.every((n) => n < -0.5)) {
     return { ok: false, why: "two losses in a row — cooling" };
   }
-  if (input.sessionPnl < -input.budget * 0.06) {
+  if (input.sessionPnl < -input.budget * 0.12) {
     return { ok: false, why: "session drawdown — wait" };
   }
   return { ok: true };

@@ -22,6 +22,6 @@ describe("liveEntry", () => {
     assert.equal(liveEntry({ ...base, grokKind: "sell" }).ok, false);
     assert.equal(liveEntry({ ...base, lane: "down" }).ok, false);
     assert.equal(liveEntry({ ...base, recentPnl: [-1.1, -0.8] }).ok, false);
-    assert.equal(liveEntry({ ...base, sessionPnl: -14 }).ok, false);
+    assert.equal(liveEntry({ ...base, sessionPnl: -30 }).ok, false);
   });
 });

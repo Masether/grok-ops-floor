@@ -1794,18 +1794,20 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
     live.sort((a, b) => b.confidence - a.confidence);
     const best = live[0];
     if (best) {
+    const def = getPair(best.pair) ?? PAIR_BY_ID[best.pair];
       return {
         ok: true,
         acted: true,
-        note: `${best.kind.toUpperCase()} ${PAIR_BY_ID[best.pair].label} · ${best.reason} · ${(best.confidence * 100).toFixed(0)}%`,
+        note: `${best.kind.toUpperCase()} ${def?.label ?? best.pair} · ${best.reason} · ${(best.confidence * 100).toFixed(0)}%`,
       };
     }
     const hold = [...latestByPair.values()][0];
+    const holdDef = hold ? getPair(hold.pair) ?? PAIR_BY_ID[hold.pair] : null;
     return {
       ok: true,
       acted: false,
       note: hold
-        ? `HOLD ${PAIR_BY_ID[hold.pair].label} · RSI ${hold.rsi.toFixed(0)} · ${hold.reason}`
+        ? `HOLD ${holdDef?.label ?? hold.pair} · RSI ${hold.rsi.toFixed(0)} · ${hold.reason}`
         : "tape scanned — no print yet",
     };
   } finally {
@@ -2028,7 +2030,7 @@ export function startEngine(): () => void {
     if (!running) return;
     if (!st.launched && !krakenKeysOn(st.keys)) return;
     void refreshOhlcAll();
-  }, 8_000);
+  }, 5_000);
   const stageSpin = window.setInterval(() => {
     if (!tabShouldRun()) return;
     const s = useFloor.getState();
@@ -2075,9 +2077,9 @@ export function startEngine(): () => void {
   );
 
   void (async () => {
+    await refreshTreasury();
     await refreshTickersRest();
     await refreshOhlcAll();
-    await refreshTreasury();
     await refreshWire();
     sampleEquity(true);
   })();

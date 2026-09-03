@@ -47,9 +47,9 @@ export function LiveStatusBar() {
             : "Query + Orders keys in Settings. No paper book."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Overnight: this tab must stay awake. Lid closed = no trades. Auto scans every 8s.
-          Budget $200. Scout {scoutScanned || "—"} books · dropped {scoutDropped} under $10k liq ·
-          hot {scoutHot?.length ?? 0}.
+          Auto scan every 5s — or tap Scan tape. Overnight: this tab must stay awake.
+          Lid closed = no trades. Budget $200. Scout {scoutScanned || "—"} books · dropped{" "}
+          {scoutDropped} under $10k liq · hot {scoutHot?.length ?? 0}.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

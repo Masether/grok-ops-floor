@@ -45,7 +45,7 @@ export function readRegime(closes: number[]): RegimeRead {
 }
 
 export function readFlow(ticker: Ticker | undefined, volumes: number[]): FlowRead {
-  if (!ticker) return { ok: false, spreadPct: 0, note: "no tape" };
+  if (!ticker) return { ok: true, spreadPct: 0, note: "ohlc tape — waiting on bid/ask" };
   const mid = ticker.last || (ticker.bid + ticker.ask) / 2;
   const spreadPct = mid > 0 ? (ticker.ask - ticker.bid) / mid : 0;
   const sleeve = PAIR_BY_ID[ticker.pair]?.sleeve ?? "core";
