@@ -190,7 +190,8 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
         </div>
         {lots.length === 0 ? (
           <p className="mt-2 text-2xs text-subtle">
-            Flat. Nothing in the book. When the bot buys, the lot lands here until it sells.
+            Cash is USD — no coin lot is open. That is normal. A live buy shows here as IN until it
+            sells. Brain is the journal, not inventory.
           </p>
         ) : (
           <ul className="mt-2 space-y-1.5">

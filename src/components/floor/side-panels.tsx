@@ -307,7 +307,8 @@ export function TheDesk() {
             if (bookPos.length === 0 && tape.length === 0) {
               return (
                 <li className="text-micro text-subtle">
-                  Flat. IN is a buy. OUT is a sell (take or stop).
+                  Cash is USD — no coin is open. Brain below is the journal, not a position. IN
+                  appears on the next live buy.
                 </li>
               );
             }
