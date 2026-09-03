@@ -1,5 +1,4 @@
 import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
-import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
 import { haltLive, studyBook } from "@/lib/engine";
@@ -19,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { useNow } from "@/lib/use-now";
 import { InstallAppButton } from "./install-app.tsx";
 
 export function HeaderBar() {
@@ -58,12 +58,7 @@ export function HeaderBar() {
   const brainOpen = useFloor((s) => s.brainOpen);
   const swarm = useFloor((s) => s.swarm);
   const equityHistory = useFloor((s) => s.equityHistory);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  const now = useNow();
 
   const latest = events[0];
   const last: Partial<Record<PairId, number>> = {};

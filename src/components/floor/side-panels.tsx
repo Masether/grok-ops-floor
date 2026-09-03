@@ -2,6 +2,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, YAxis } from
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
 import { px, money, moneyFull, pct, qty, ago, clockHms } from "@/lib/format";
+import { useNow } from "@/lib/use-now";
 import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
 import { deskIsLive } from "@/lib/live-budget";
@@ -70,7 +71,7 @@ export function RunnerDeck() {
   const agents = useFloor((s) => s.agents);
   const lastEngineAt = useFloor((s) => s.lastEngineAt);
   const shiftStartedAt = useFloor((s) => s.shiftStartedAt);
-  const now = Date.now();
+  const now = useNow();
   const tickAgo = lastEngineAt ? clockHms(Math.max(0, now - lastEngineAt)) : "—";
   const running = clockHms(now - (shiftStartedAt || now));
   return (

@@ -2,12 +2,13 @@ import { useMemo } from "react";
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { ago } from "@/lib/format";
 import { useFloor } from "@/lib/store";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
 export function TheTape() {
   const events = useFloor((s) => s.events);
   const recent = events.slice(0, 18);
-  const now = Date.now();
+  const now = useNow();
   const span = 90_000;
   const t0 = now - span;
 

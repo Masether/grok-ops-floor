@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { clockHms, money, moneyFull } from "@/lib/format";
 import { sessionProfit } from "@/lib/desk-pnl";
 import { useDesk, useFloor } from "@/lib/store";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
 export function SessionBoard() {
@@ -13,12 +13,7 @@ export function SessionBoard() {
   const orders = useFloor((s) => s.orders);
   const liveArmed = useFloor((s) => s.liveArmed);
   const mode = useFloor((s) => s.mode);
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
+  const now = useNow();
 
   const live = mode === "live" || liveArmed;
   const profit = sessionProfit(desk.realized, desk.unrealized);
@@ -71,7 +66,7 @@ export function SessionBoard() {
         </div>
       </div>
       <div className="h-[160px] px-1 pb-1">
-        {data.length < 2 ? (
+        {now === 0 || data.length < 2 ? (
           <div className="grid h-full place-items-center text-2xs text-subtle">
             Chart fills as the desk works. Check here when you wake.
           </div>
