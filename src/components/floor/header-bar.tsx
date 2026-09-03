@@ -220,8 +220,9 @@ export function HeaderBar() {
           {sessionEndsAt != null ? (
             <Stat label="Left" value={clock(sessionRemainingMs(sessionEndsAt, now) ?? 0)} always />
           ) : null}
-          <div className="flex items-center gap-1.5">
+          <div className="relative z-20 flex items-center gap-1.5">
             <Button
+              type="button"
               size="sm"
               variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
               onClick={() => setFloorOpen(!floorOpen)}
@@ -229,6 +230,7 @@ export function HeaderBar() {
               {liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
             </Button>
             <Button
+              type="button"
               size="sm"
               variant={deskOpen ? "default" : "outline"}
               aria-pressed={deskOpen}
@@ -244,6 +246,7 @@ export function HeaderBar() {
               Desk
             </Button>
             <Button
+              type="button"
               size="sm"
               variant={chartsOpen ? "default" : "outline"}
               aria-pressed={chartsOpen}
@@ -253,6 +256,7 @@ export function HeaderBar() {
               Charts
             </Button>
             <Button
+              type="button"
               size="icon"
               variant="ghost"
               aria-label="Settings"
@@ -261,6 +265,7 @@ export function HeaderBar() {
               <Settings2 className="size-4" />
             </Button>
             <Button
+              type="button"
               size="icon"
               variant="live"
               aria-label="Kill switch"

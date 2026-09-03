@@ -267,7 +267,7 @@ export function OrbitStage() {
 
       <div ref={wrapRef} className="absolute inset-0">
         <SwarmCanvas swarm={swarm} reduced={reduced} />
-        <svg ref={svgRef} className="absolute inset-0 size-full" />
+        <svg ref={svgRef} className="pointer-events-none absolute inset-0 size-full" />
         <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
           <GrokCore size={96} />
         </div>

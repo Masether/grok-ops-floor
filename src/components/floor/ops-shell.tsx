@@ -65,7 +65,6 @@ export function OpsShell() {
       if (!alive) return;
       openLiveNow();
       const keyed = Boolean(useFloor.getState().keys.apiKey && useFloor.getState().keys.apiSecret);
-      if (!keyed) useFloor.getState().setSettingsOpen(true);
       try {
         if (keyed) await refreshTreasury();
       } catch {

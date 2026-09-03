@@ -420,8 +420,8 @@ export function hydrateFloor(): Promise<void> {
 export const useFloor = create<FloorState>()(
   persist(
     (set, get) => ({
-      launched: false,
-      floorOpen: false,
+      launched: true,
+      floorOpen: true,
       mode: "live",
       opsMode: "auto",
       playbooks: [...ALL_PLAYBOOKS],
@@ -1051,6 +1051,3 @@ export function bootFloorFromDisk() {
     /* corrupt disk — keep defaults */
   }
 }
-
-if (typeof window !== "undefined") bootFloorFromDisk();
-
