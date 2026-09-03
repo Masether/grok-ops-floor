@@ -1,12 +1,40 @@
 # ShellOut Bot
 
-Live Kraken desk. **$200 USD budget**. Scalp + grid + DCA together. Profits can sweep back to Kraken USD.
+Live Kraken desk. **$200 USD budget**. Scalp + grid + DCA together.
 
-The bot only trades while the tab is **awake**. Lid closed = no tickets.
+Two ways to run it:
 
-## On your laptop
+1. **Watch UI** — `npm run dev` — browser tab. Trades only while that tab is awake.
+2. **Headless** — `npm run bot` — no window. Trades while **this process** stays up (laptop lid open with the process running, or a VPS).
 
-Repo: **https://github.com/Masether/grok-ops-floor**
+## Headless (lid can be shut only if the process is on another machine)
+
+Keys never go in git. Either:
+
+```bash
+export KRAKEN_API_KEY="your-query-orders-key"
+export KRAKEN_API_SECRET="your-private-key"
+export SHELLOUT_BUDGET=200
+npm run bot
+```
+
+or write `.shellout-keys.json` (already gitignored):
+
+```json
+{ "apiKey": "…", "apiSecret": "…" }
+```
+
+Then:
+
+```bash
+npm run bot
+```
+
+Leave that terminal running. Journal is `.shellout-book.json`. Kill with Ctrl+C.
+
+Do **not** put a withdrawal key on the API.
+
+## Watch UI (laptop)
 
 ```bash
 git clone https://github.com/Masether/grok-ops-floor.git
@@ -15,16 +43,6 @@ npm install
 npm run dev
 ```
 
-Open the URL Vite prints. Keys stay in that browser. Do **not** put a withdrawal key on the API.
-
-## Arm live ($200)
-
-1. Kraken: deposit USD (Funding → Deposit → USD).
-2. API key: **Query + Create & Modify Orders**. Leave **Withdraw** off.
-3. ShellOut Bot → Settings → paste keys → **Test connection**.
-4. Auto-scan every 5s. **Scan tape** is the manual poke.
-5. Kill switch is the power button.
-
-Tickets size from **$12 min** to **$100 max**, using the rest of the $200 so cash does not sit idle. Daily-loss halt and Kraken fees are in every ticket.
+Open the URL Vite prints. Same $12–$100 tickets, $200 sleeve.
 
 Not financial advice. Live money can go to zero.
