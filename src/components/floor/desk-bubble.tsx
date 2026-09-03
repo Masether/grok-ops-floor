@@ -17,6 +17,7 @@ import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { WalletTab } from "./wallet-tab";
+import { GoalDeskRow, GoalDialog } from "./goal-chip";
 
 type Tab = DeskTab;
 
@@ -25,6 +26,7 @@ export function DeskBubble() {
   const setOpen = useFloor((s) => s.setDeskOpen);
   const tab = useFloor((s) => s.deskTab);
   const setTab = useFloor((s) => s.setDeskTab);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -94,16 +96,19 @@ export function DeskBubble() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === "blotter" ? <BlotterTab onTicket={() => setTab("ticket")} /> : null}
+          {tab === "blotter" ? (
+            <BlotterTab onTicket={() => setTab("ticket")} onEditGoal={() => setGoalOpen(true)} />
+          ) : null}
           {tab === "money" ? <WalletTab /> : null}
           {tab === "ticket" ? <TicketTab /> : null}
         </div>
       </div>
+      <GoalDialog open={goalOpen} onOpenChange={setGoalOpen} />
     </div>
   );
 }
 
-function BlotterTab({ onTicket }: { onTicket: () => void }) {
+function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal: () => void }) {
   const desk = useDesk();
   const positions = useFloor((s) => s.positions);
   const tickers = useFloor((s) => s.tickers);
@@ -131,6 +136,7 @@ function BlotterTab({ onTicket }: { onTicket: () => void }) {
         dayPnlPct={alert.dayPnlPct}
         usedOfHaltPct={alert.usedOfHaltPct}
       />
+      <GoalDeskRow onEdit={onEditGoal} />
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-b border-border px-3 py-2.5 sm:grid-cols-4">
         <Stat label="Book" value={moneyFull(desk.equity)} extra="live on the floor" />
         <Stat label="Day" value={money(desk.dayPnl)} tone={signedTone(desk.dayPnl)} />

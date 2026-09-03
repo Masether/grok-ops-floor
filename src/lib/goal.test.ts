@@ -23,14 +23,14 @@ import {
 } from "./goal.ts";
 
 describe("normalizeGoalProfit / days", () => {
-  it("clamps profit and days", () => {
+  it("clamps profit and days — 0 days means no deadline", () => {
     assert.equal(normalizeGoalProfit(10_000), 10_000);
-    assert.equal(normalizeGoalProfit(0), 1);
-    assert.equal(normalizeGoalProfit(-5), 1);
+    assert.equal(normalizeGoalProfit(0), 0);
+    assert.equal(normalizeGoalProfit(-5), 0);
     assert.equal(normalizeGoalProfit(99_000_000), 10_000_000);
     assert.equal(normalizeGoalDays(7), 7);
-    assert.equal(normalizeGoalDays(0), 1);
-    assert.equal(normalizeGoalDays(0.4), 1);
+    assert.equal(normalizeGoalDays(0), 0);
+    assert.equal(normalizeGoalDays(-3), 0);
     assert.equal(normalizeGoalDays(900), 365);
   });
 });
@@ -288,9 +288,9 @@ describe("ticketUsd and launch bounds", () => {
 });
 
 describe("custom presets recompute levels", () => {
-  it("has $1k–$100k and 7/14/30 presets", () => {
-    assert.deepEqual([...GOAL_PRESETS], [1_000, 5_000, 10_000, 20_000, 50_000, 100_000]);
-    assert.deepEqual([...DAY_PRESETS], [7, 14, 30]);
+  it("has $200–$10k presets and an open window", () => {
+    assert.deepEqual([...GOAL_PRESETS], [200, 500, 1_000, 2_000, 5_000, 10_000]);
+    assert.deepEqual([...DAY_PRESETS], [0, 7, 14, 30]);
   });
 
   it("a $100k / 7d / $10k book is wild and red-path (unrealistic)", () => {
@@ -311,14 +311,15 @@ describe("session mapping", () => {
     assert.equal(suggestedSessionMinutes(1), 8 * 60);
   });
 
-  it("duration default stays 4h unless the goal is a single day", () => {
-    assert.equal(sessionMinutesForDays(7), 240);
+  it("open window stays 24/7; a one-day goal maps to 8h", () => {
+    assert.equal(sessionMinutesForDays(0), 0);
+    assert.equal(sessionMinutesForDays(7), 0);
     assert.equal(sessionMinutesForDays(1), 480);
   });
 });
 
 describe("goal progress chip", () => {
-  it("is dayPnl / G, not a forecast", () => {
+  it("is PnL / G, not a forecast; 0 days prints open", () => {
     assert.equal(goalProgressPct(1_200, 10_000), 12);
     assert.equal(goalProgressPct(-500, 10_000), -5);
     assert.equal(goalProgressPct(10, 0), 0);
@@ -326,5 +327,10 @@ describe("goal progress chip", () => {
       goalChipLine({ goalProfit: 10_000, goalDays: 7, dayPnl: 1_200 }),
       "goal $10k · 7d · 12% there",
     );
+    assert.equal(
+      goalChipLine({ goalProfit: 1_000, goalDays: 0, dayPnl: -10 }),
+      "goal $1k · open · -1% there",
+    );
+    assert.equal(goalChipLine({ goalProfit: 0, goalDays: 30, dayPnl: 10 }), "set goal");
   });
 });

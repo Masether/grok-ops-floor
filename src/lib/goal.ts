@@ -86,14 +86,14 @@ export const GOAL_DEFAULTS = {
 };
 
 /** Preset profit targets (USD). Custom field accepts any other amount. */
-export const GOAL_PRESETS = [1_000, 5_000, 10_000, 20_000, 50_000, 100_000] as const;
+export const GOAL_PRESETS = [200, 500, 1_000, 2_000, 5_000, 10_000] as const;
 
-/** Preset deadlines. Custom field accepts any other day count >= 1. */
-export const DAY_PRESETS = [7, 14, 30] as const;
+/** Preset windows. 0 = no deadline. */
+export const DAY_PRESETS = [0, 7, 14, 30] as const;
 
 export const GOAL_BOUNDS = {
-  goalProfit: { min: 1, max: 10_000_000 },
-  days: { min: 1, max: 365 },
+  goalProfit: { min: 0, max: 10_000_000 },
+  days: { min: 0, max: 365 },
 };
 
 /** requiredReturn / day under this → easy */
@@ -171,12 +171,15 @@ function clamp(n: number, min: number, max: number): number {
 
 export function normalizeGoalProfit(n: unknown): number {
   const v = Math.round(Number(n));
+  if (!Number.isFinite(v) || v <= 0) return 0;
   return clamp(v, GOAL_BOUNDS.goalProfit.min, GOAL_BOUNDS.goalProfit.max);
 }
 
+/** 0 = no deadline. */
 export function normalizeGoalDays(n: unknown): number {
   const v = Math.round(Number(n));
-  return clamp(v, GOAL_BOUNDS.days.min, GOAL_BOUNDS.days.max);
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return clamp(v, 1, GOAL_BOUNDS.days.max);
 }
 
 export function asGoalLevel(value: unknown): GoalLevelId {
@@ -328,13 +331,14 @@ function pickRecommended(levels: GoalLevel[]): GoalLevelId {
  * Does not auto-arm live. UI still defaults to 4h unless D is 1 (maps to 8h).
  */
 export function suggestedSessionMinutes(days: number): number {
-  const d = normalizeGoalDays(days);
+  const d = days <= 0 ? 1 : normalizeGoalDays(days) || 1;
   return Math.min(d * CALENDAR_DAY_MINUTES, d * TRADING_DAY_MINUTES);
 }
 
 /** Duration-pill default: 8h if the goal is a single day, else the usual 4h. */
 export function sessionMinutesForDays(days: number): number {
   const d = normalizeGoalDays(days);
+  if (d <= 0) return 0;
   if (d <= 1) return TRADING_DAY_MINUTES;
   return DEFAULT_SESSION_MINUTES;
 }
@@ -355,17 +359,20 @@ export function goalAskLine(goalProfit: number, capital: number, days: number): 
   return `That is +${pct}% on a ${c} book in ${days} ${dayWord}.`;
 }
 
-/** Header / desk chip: "goal $10k · 7d · 12% there". dayPnl vs G, not a forecast. */
+/** Header / desk chip: "goal $10k · 7d · 12% there" or "goal $1k · open · 4% there". */
 export function goalChipLine(input: {
   goalProfit: number;
   goalDays: number;
   dayPnl: number;
 }): string {
-  const g = fmtGoalUsd(input.goalProfit);
+  const profit = normalizeGoalProfit(input.goalProfit);
+  if (profit <= 0) return "set goal";
+  const g = fmtGoalUsd(profit);
   const d = normalizeGoalDays(input.goalDays);
-  const pctThere = goalProgressPct(input.dayPnl, input.goalProfit);
+  const window = d > 0 ? `${d}d` : "open";
+  const pctThere = goalProgressPct(input.dayPnl, profit);
   const shown = Number.isFinite(pctThere) ? Math.round(pctThere) : 0;
-  return `goal ${g} · ${d}d · ${shown}% there`;
+  return `goal ${g} · ${window} · ${shown}% there`;
 }
 
 export function goalProgressPct(dayPnl: number, goalProfit: number): number {
@@ -380,8 +387,9 @@ export function planGoal(input?: {
   goalProfit?: number;
   days?: number;
 }): GoalPlan {
-  const goalProfit = normalizeGoalProfit(input?.goalProfit ?? GOAL_DEFAULTS.goalProfit);
-  const days = normalizeGoalDays(input?.days ?? GOAL_DEFAULTS.days);
+  const goalProfit =
+    normalizeGoalProfit(input?.goalProfit ?? GOAL_DEFAULTS.goalProfit) || GOAL_DEFAULTS.goalProfit;
+  const days = normalizeGoalDays(input?.days ?? GOAL_DEFAULTS.days) || GOAL_DEFAULTS.days;
   const capital = clampLaunch({
     startingCash: input?.capital ?? GOAL_DEFAULTS.capital,
   }).startingCash;
@@ -504,7 +512,7 @@ function buildFixes(ref: GoalLevel, goalProfit: number, capital: number, days: n
   }
 
   const smallerGoal = roundDownNice(ref.reachableProfit);
-  if (smallerGoal >= GOAL_BOUNDS.goalProfit.min && smallerGoal < goalProfit) {
+  if (smallerGoal >= 1 && smallerGoal < goalProfit) {
     fixes.push({
       id: "goal",
       label: `Aim for ${fmtGoalUsd(smallerGoal)}`,

@@ -9,6 +9,8 @@ import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import {
   GOAL_DEFAULTS,
   asGoalLevel,
+  normalizeGoalDays,
+  normalizeGoalProfit,
   type GoalLevelId,
 } from "./goal";
 import {
@@ -36,7 +38,7 @@ import {
   type ChartInterval,
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
-import { clampLiveBudget, DEFAULT_LIVE_BUDGET } from "./live-budget";
+import { clampLiveBudget, DEFAULT_LIVE_BUDGET, livePositions, liveSleeve } from "./live-budget";
 import { idleSwarm, type SwarmSnap } from "./swarm";
 import type { VenueId } from "./venues/types";
 import type {
@@ -184,6 +186,7 @@ export type FloorState = {
   setAutoTrade: (v: boolean) => void;
   setLiveArmed: (v: boolean) => void;
   setLiveBudget: (n: number) => void;
+  setGoal: (input: { goalProfit?: number; goalDays?: number; goalLevel?: GoalLevelId }) => void;
   setVenueId: (id: VenueId) => void;
   setHumanVerified: (v: boolean) => void;
   launchDesk: (
@@ -254,35 +257,61 @@ export type FloorState = {
 };
 
 export function computeDesk(s: FloorState): DeskSnapshot {
+  const live = s.mode === "live";
+  const book = live ? livePositions(s.positions) : s.positions;
   let posValue = 0;
   let unrealized = 0;
-  for (const p of s.positions) {
+  for (const p of book) {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     posValue += mark * p.qty;
     unrealized += (mark - p.entry) * p.qty;
   }
-  const equity = s.cash + posValue;
-  const fills = s.orders.filter((o) => o.status === "filled");
+  const sleeve = live
+    ? liveSleeve({
+        liveBudget: s.liveBudget,
+        liveBalance: s.liveBalance,
+        positions: s.positions,
+        tickers: s.tickers,
+      })
+    : null;
+  const cash = live ? (sleeve?.cash ?? 0) : s.cash;
+  const equity = live ? (sleeve?.equity ?? 0) : s.cash + posValue;
+  const fills = s.orders.filter(
+    (o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"),
+  );
   const wins = fills.filter((o) => o.reason.includes("TP")).length;
   const losses = fills.filter((o) => o.reason.includes("SL")).length;
-  const dayBase =
-    s.dayStartEquity > 0 ? s.dayStartEquity : s.startingCash > 0 ? s.startingCash : equity;
+  const dayBase = live
+    ? (sleeve?.budget ?? s.liveBudget)
+    : s.dayStartEquity > 0
+      ? s.dayStartEquity
+      : s.startingCash > 0
+        ? s.startingCash
+        : equity;
   return {
     equity,
-    cash: s.cash,
+    cash,
     exposure: posValue,
     unrealized,
-    realized: s.realized,
+    realized: live ? unrealized : s.realized,
     dayPnl: equity - dayBase,
     fills: fills.length,
     wins,
     losses,
     briefs: s.briefs,
-    openPositions: s.positions.length,
+    openPositions: book.length,
   };
 }
 
 export function markEquity(s: FloorState): number {
+  if (s.mode === "live") {
+    return liveSleeve({
+      liveBudget: s.liveBudget,
+      liveBalance: s.liveBalance,
+      positions: s.positions,
+      tickers: s.tickers,
+    }).equity;
+  }
   let posValue = 0;
   for (const p of s.positions) {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
@@ -469,8 +498,39 @@ export const useFloor = create<FloorState>()(
           floorOpen: v ? true : get().floorOpen,
         });
       },
-      setLiveArmed: (v) => set({ liveArmed: v, autoSweep: v ? true : get().autoSweep }),
+      setLiveArmed: (v) => {
+        if (v) {
+          const s = get();
+          const sleeve = liveSleeve({
+            liveBudget: s.liveBudget,
+            liveBalance: s.liveBalance,
+            positions: s.positions,
+            tickers: s.tickers,
+          });
+          set({
+            liveArmed: true,
+            mode: "live",
+            opsMode: "auto",
+            autoTrade: true,
+            floorOpen: true,
+            autoSweep: true,
+            dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
+          });
+          return;
+        }
+        set({ liveArmed: false });
+      },
       setLiveBudget: (n) => set({ liveBudget: clampLiveBudget(n) }),
+      setGoal: (input) => {
+        const s = get();
+        set({
+          goalProfit:
+            input.goalProfit != null ? normalizeGoalProfit(input.goalProfit) : s.goalProfit,
+          goalDays: input.goalDays != null ? normalizeGoalDays(input.goalDays) : s.goalDays,
+          goalLevel: input.goalLevel != null ? asGoalLevel(input.goalLevel) : s.goalLevel,
+        });
+        queueMicrotask(flushFloorPersist);
+      },
       setVenueId: (id) => set({ venueId: id === "paper" ? "paper" : "kraken" }),
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
@@ -498,9 +558,10 @@ export const useFloor = create<FloorState>()(
           },
           sessionMinutes: minutes,
           sessionEndsAt: sessionEndsAtFromMinutes(minutes),
-          goalProfit: 0,
-          goalDays: 0,
-          goalLevel: GOAL_DEFAULTS.level,
+          goalProfit:
+            input.goalProfit != null ? normalizeGoalProfit(input.goalProfit) : get().goalProfit,
+          goalDays: input.goalDays != null ? normalizeGoalDays(input.goalDays) : get().goalDays,
+          goalLevel: input.goalLevel != null ? asGoalLevel(input.goalLevel) : get().goalLevel,
         });
         get().resetPaper();
         queueMicrotask(flushFloorPersist);
@@ -861,8 +922,12 @@ export const useFloor = create<FloorState>()(
           deskOpen: false,
           deskTab: "blotter",
           brainOpen: false,
-          goalProfit: 0,
-          goalDays: 0,
+          goalProfit: normalizeGoalProfit(
+            typeof p.goalProfit === "number" ? p.goalProfit : current.goalProfit,
+          ),
+          goalDays: normalizeGoalDays(
+            typeof p.goalDays === "number" ? p.goalDays : current.goalDays,
+          ),
           goalLevel: asGoalLevel(p.goalLevel ?? current.goalLevel),
           sessionMinutes: 0,
           sessionEndsAt: null,
