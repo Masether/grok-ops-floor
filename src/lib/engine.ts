@@ -87,9 +87,30 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 }
 
+let patchQ: Partial<FloorState> = {};
+let patchRaf = 0;
+
+function patch(partial: Partial<FloorState>) {
+  if (partial.agents && patchQ.agents) {
+    patchQ = { ...patchQ, ...partial, agents: { ...patchQ.agents, ...partial.agents } };
+  } else {
+    patchQ = { ...patchQ, ...partial };
+  }
+  if (patchRaf) return;
+  patchRaf = window.requestAnimationFrame(() => {
+    const next = patchQ;
+    patchQ = {};
+    patchRaf = 0;
+    if (Object.keys(next).length) useFloor.setState(next);
+  });
+}
+
+const lastBumpAt = new Map<AgentId, number>();
+
 async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
   const pings = pingSwarm();
-  if (typeof document !== "undefined" && document.hidden) {
+  const skipRoll = document.hidden || evalBusy >= 2;
+  if (skipRoll) {
     const done = finishRoll(vote, pings);
     patch({ swarm: done, grokNote: done.grok });
     return done;
@@ -100,12 +121,11 @@ async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, la
   const order = GUILDS.slice().sort((a, b) => pings[a.id]! - pings[b.id]!);
   let elapsed = 0;
   for (const g of order) {
-    const wait = Math.min(36, Math.max(0, pings[g.id]! - elapsed));
+    const wait = Math.min(12, Math.max(0, pings[g.id]! - elapsed));
     if (wait) await sleep(wait);
     elapsed = pings[g.id]!;
     rolling = landGuild(rolling, vote, g.id, pings[g.id]!);
     patch({ swarm: rolling, grokNote: rolling.grok });
-    bumpAgent(g.lead, `${g.name} ${pings[g.id]}ms`, rolling.guilds[g.id]!.heat);
   }
   const done = finishRoll(vote, pings);
   patch({ swarm: done, grokNote: done.grok });
@@ -114,7 +134,7 @@ async function rollInSwarm(vote: ReturnType<typeof tallySwarm>, pair: PairId, la
   return done;
 }
 
-async function walkDebate(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
+function walkDebate(vote: ReturnType<typeof tallySwarm>, pair: PairId, label: string) {
   const merge = vote.debate.rounds.find((r) => r.role === "merge") ?? vote.debate.rounds.at(-1);
   if (merge) {
     bumpAgent("dispatcher", `${merge.kind} ${label}`, 0.9);
@@ -123,12 +143,11 @@ async function walkDebate(vote: ReturnType<typeof tallySwarm>, pair: PairId, lab
   void pair;
 }
 
-function patch(partial: Partial<FloorState>) {
-  if (!running) return;
-  useFloor.setState(partial);
-}
-
 function bumpAgent(id: AgentId, action: string, heat = 1) {
+  const now = Date.now();
+  const prevBump = lastBumpAt.get(id) ?? 0;
+  if (now - prevBump < 120 && heat < 0.95) return;
+  lastBumpAt.set(id, now);
   const s = useFloor.getState();
   const prev = s.agents[id];
   if (!prev) return;
@@ -475,7 +494,7 @@ async function refreshOhlcAll() {
 }
 
 function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
-  if (!running || evaluating.has(pair) || evalBusy >= 4) return;
+  if (!running || evaluating.has(pair) || evalBusy >= 2) return;
   const last = lastEvalAt.get(pair) ?? 0;
   if (Date.now() - last < 4_000) return;
   evalBusy += 1;
@@ -572,7 +591,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const grokConf =
       grokKind === read.kind ? read.confidence : grokKind === "hold" ? 0.22 : Math.max(read.confidence, 0.52);
     const grokReason = vote.grok;
-    await walkDebate(vote, pair, label);
+    walkDebate(vote, pair, label);
 
     const signal = {
       id: uid("sig"),
@@ -589,8 +608,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       setup: read.setup,
     };
     patch({ signals: [signal, ...useFloor.getState().signals].slice(0, 40) });
-    await sleep(160);
-
     const autoDesk = true;
 
     const stNow = useFloor.getState();
@@ -775,7 +792,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const regime = readRegime(closes);
     bumpAgent("regime", regime.state, 0.9);
     emitPulse({ from: "signal", to: "regime" });
-    await sleep(140);
     if (ticketKind === "buy" && !regime.allowBuy && !paper && ticketConf < 0.4) {
       bumpAgent("regime", "fade blocked", 1);
       pushQueue({
@@ -800,7 +816,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const flow = readFlow(ticker, volumes);
     bumpAgent("flow", flow.ok ? "book clean" : "thin book", flow.ok ? 0.7 : 1);
     emitPulse({ from: "regime", to: "flow" });
-    await sleep(120);
     if (!flow.ok && ticketKind === "buy") {
       const hard = !paper && (s0.mode === "live" || flow.spreadPct > 0.004);
       if (hard) {
@@ -826,7 +841,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
 
     bumpAgent("risk", "size check", 1);
     emitPulse({ from: "flow", to: "risk" });
-    await sleep(160);
 
     const verdict = sizeTicket(pair, ticketKind === "buy" ? "buy" : "sell", price, ticketConf, playbook ?? "scalp");
     if (!verdict.ok) {
@@ -852,7 +866,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
 
     bumpAgent("treasury", "cash check", 0.9);
     emitPulse({ from: "risk", to: "treasury" });
-    await sleep(120);
     const purse = workingPurse();
     if (!purse.ok) {
       bumpAgent("treasury", purse.why, 1);
@@ -877,7 +890,6 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     setStage("second");
     bumpAgent("sentinel", "second read", 0.85);
     emitPulse({ from: "treasury", to: "sentinel" });
-    await sleep(180);
 
     const st = useFloor.getState();
     const liveHalt = st.mode === "live" || st.liveArmed;
