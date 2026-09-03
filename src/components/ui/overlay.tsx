@@ -50,10 +50,10 @@ export function DialogContent({
 }: ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-bg/70" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-[200] bg-[#05060a]" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface p-5 shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed top-1/2 left-1/2 z-[201] w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-[#0c0e16] p-5 shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
         {...props}
@@ -94,10 +94,10 @@ export function SheetContent({
 }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-bg/60" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-[200] bg-[#05060a]" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-0 right-0 z-50 flex h-dvh w-[min(420px,100vw)] flex-col bg-surface shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed inset-0 z-[201] flex h-dvh w-full flex-col bg-[#0c0e16] sm:inset-auto sm:top-0 sm:right-0 sm:h-dvh sm:w-[min(420px,100vw)] sm:shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
         {...props}

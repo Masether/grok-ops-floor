@@ -366,6 +366,7 @@ export function SettingsPanel() {
               <Input
                 type="text"
                 autoComplete="off"
+                className="min-h-11 bg-[#12141e]"
                 placeholder={krakenKeysOn(keys) ? "API key saved on this device" : "API key"}
                 disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiKey}
@@ -374,6 +375,7 @@ export function SettingsPanel() {
               <Input
                 type="password"
                 autoComplete="off"
+                className="min-h-11 bg-[#12141e]"
                 placeholder={krakenKeysOn(keys) ? "Secret saved on this device" : "API secret (base64) — not a wallet key"}
                 disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiSecret}

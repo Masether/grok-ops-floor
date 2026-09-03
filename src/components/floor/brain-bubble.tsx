@@ -99,7 +99,7 @@ export function BrainBubble() {
 
   return (
     <div
-      className="fixed inset-0 z-[80] grid place-items-end bg-bg/45 p-2 backdrop-blur-[3px] sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-[80] grid place-items-end bg-[#05060a] p-2 sm:place-items-center sm:p-4"
       role="presentation"
       onClick={() => setOpen(false)}
     >
@@ -107,7 +107,7 @@ export function BrainBubble() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="brain-title"
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-surface/80 shadow-[0_0_0_1px_var(--color-border-strong),0_24px_80px_rgb(0_0_0/0.45)] backdrop-blur-md"
+        className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-[#0c0e16] shadow-[0_0_0_1px_var(--color-border-strong),0_24px_80px_rgb(0_0_0/0.45)]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2">
