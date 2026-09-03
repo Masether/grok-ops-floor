@@ -2,6 +2,8 @@
 
 Live Kraken desk. **$200 USD budget**. Scalp + grid + DCA together.
 
+**LilyRose** sits on this floor (Grok Build app). Dock flower → Run cycle. She scans GitHub for new AI products, kills engagement bait, ships one brief. She does not send orders. Hands stay on Runner.
+
 Two ways to run it:
 
 1. **Watch UI** — `npm run dev` — browser tab. Trades only while that tab is awake.
