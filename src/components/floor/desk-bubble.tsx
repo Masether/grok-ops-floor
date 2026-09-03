@@ -13,6 +13,7 @@ import {
 import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
 import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine";
 import { PAIR_BY_ID } from "@/lib/kraken";
+import { MIN_LIVE_HALT_USD } from "@/lib/live-budget";
 import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -119,15 +120,25 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
   const startingCash = useFloor((s) => s.startingCash);
   const dayStartEquity = useFloor((s) => s.dayStartEquity);
   const risk = useFloor((s) => s.risk);
-
-  const fills = orders.filter((o) => o.status === "filled");
-  const wr = fillWinRatePct(desk.wins, desk.losses);
-  const haltBase = dayStartEquity > 0 ? dayStartEquity : startingCash;
+  const liveArmed = useFloor((s) => s.liveArmed);
+  const mode = useFloor((s) => s.mode);
+  const liveBudget = useFloor((s) => s.liveBudget);
+  const live = liveArmed || mode === "live";
+  const haltBase = live
+    ? dayStartEquity > 0 && dayStartEquity <= liveBudget * 1.25
+      ? dayStartEquity
+      : liveBudget
+    : dayStartEquity > 0
+      ? dayStartEquity
+      : startingCash;
   const alert = dayLossAlert({
     dayPnl: desk.dayPnl,
     haltBase,
     maxDailyLossPct: risk.maxDailyLossPct,
+    minHaltUsd: live ? MIN_LIVE_HALT_USD : 0,
   });
+  const fills = orders.filter((o) => o.status === "filled");
+  const wr = fillWinRatePct(desk.wins, desk.losses);
 
   return (
     <>

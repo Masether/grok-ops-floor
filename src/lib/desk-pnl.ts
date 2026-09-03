@@ -15,6 +15,21 @@ export function pctOfCapital(amount: number, capital: number): number {
   return (amount / capital) * 100;
 }
 
+export function haltCapUsd(
+  haltBase: number,
+  maxDailyLossPct: number,
+  minUsd = 0,
+): number {
+  if (!(haltBase > 0) || !(maxDailyLossPct > 0)) return 0;
+  return Math.max(haltBase * maxDailyLossPct, minUsd);
+}
+
+export function bookDayPnl(equity: number, dayStart: number): number {
+  if (!Number.isFinite(equity)) return 0;
+  const start = Number.isFinite(dayStart) && dayStart > 0 ? dayStart : equity;
+  return equity - start;
+}
+
 export function equityMultiple(equity: number, startingCash: number): number {
   if (!Number.isFinite(equity) || !Number.isFinite(startingCash) || startingCash <= 0) {
     return 1;
@@ -37,6 +52,7 @@ export function dayLossAlert(input: {
   dayPnl: number;
   haltBase: number;
   maxDailyLossPct: number;
+  minHaltUsd?: number;
 }): {
   level: DayAlertLevel;
   dayPnlPct: number;
@@ -46,7 +62,7 @@ export function dayLossAlert(input: {
   const capFrac = Number.isFinite(input.maxDailyLossPct) ? input.maxDailyLossPct : 0;
   const dayPnl = Number.isFinite(input.dayPnl) ? input.dayPnl : 0;
   const dayPnlPct = pctOfCapital(dayPnl, haltBase);
-  const maxLoss = haltBase * capFrac;
+  const maxLoss = haltCapUsd(haltBase, capFrac, input.minHaltUsd ?? 0);
   const loss = dayPnl < 0 ? -dayPnl : 0;
   const usedOfHaltPct = maxLoss > 0 ? (loss / maxLoss) * 100 : 0;
 

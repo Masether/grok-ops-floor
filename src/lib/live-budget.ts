@@ -7,6 +7,7 @@ export const MIN_LIVE_BUDGET = 20;
 export const MAX_LIVE_BUDGET = 50_000;
 export const LIVE_BUDGET_PRESETS = [50, 100, 200, 500] as const;
 export const MIN_LIVE_TICKET = 12;
+export const MIN_LIVE_HALT_USD = 40;
 
 export function clampLiveBudget(n: number): number {
   const x = Math.round(Number(n) * 100) / 100;

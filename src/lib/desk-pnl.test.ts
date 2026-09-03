@@ -2,11 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   NEAR_STOP_PCT,
+  bookDayPnl,
   dayLossAlert,
   equityMultiple,
   fillLeg,
   fillWhy,
   fillWinRatePct,
+  haltCapUsd,
   lotMetrics,
   pctOfCapital,
 } from "./desk-pnl.ts";
@@ -79,6 +81,30 @@ describe("dayLossAlert", () => {
 
   it("stays ok when the cap is unset", () => {
     assert.equal(dayLossAlert({ dayPnl: -500, haltBase: 10_000, maxDailyLossPct: 0 }).level, "ok");
+  });
+
+  it("does not treat a $100 book sitting in cash as a 100% loss", () => {
+    const dayPnl = bookDayPnl(100, 100);
+    assert.equal(dayPnl, 0);
+    const r = dayLossAlert({
+      dayPnl,
+      haltBase: 100,
+      maxDailyLossPct: 0.04,
+      minHaltUsd: 40,
+    });
+    assert.equal(r.level, "ok");
+    assert.equal(r.dayPnlPct, 0);
+  });
+
+  it("does not halt a scalp stop under the $40 live floor", () => {
+    const r = dayLossAlert({
+      dayPnl: -12,
+      haltBase: 200,
+      maxDailyLossPct: 0.04,
+      minHaltUsd: 40,
+    });
+    assert.equal(r.level, "ok");
+    assert.equal(haltCapUsd(200, 0.04, 40), 40);
   });
 });
 

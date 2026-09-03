@@ -6,6 +6,7 @@ import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn";
 import { DEFAULT_PAIRS } from "./kraken";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
+import { bookDayPnl } from "./desk-pnl";
 import {
   GOAL_DEFAULTS,
   asGoalLevel,
@@ -83,7 +84,7 @@ function freshAgents(): Record<AgentId, AgentState> {
 export const DEFAULT_RISK: RiskConfig = {
   sizePct: 0.35,
   maxPosPct: 1,
-  maxDailyLossPct: 0.04,
+  maxDailyLossPct: 0.15,
   stopPct: 0.0035,
   takePct: 0.0105,
   maxPositions: 6,
@@ -290,7 +291,9 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   const wins = fills.filter((o) => o.reason.includes("TP")).length;
   const losses = fills.filter((o) => o.reason.includes("SL")).length;
   const dayBase = live
-    ? (sleeve?.budget ?? s.liveBudget)
+    ? s.dayStartEquity > 0 && s.dayStartEquity <= (sleeve?.budget ?? s.liveBudget) * 1.25
+      ? s.dayStartEquity
+      : sleeve?.equity || s.liveBudget
     : s.dayStartEquity > 0
       ? s.dayStartEquity
       : s.startingCash > 0
@@ -302,7 +305,7 @@ export function computeDesk(s: FloorState): DeskSnapshot {
     exposure: posValue,
     unrealized,
     realized: live ? unrealized : s.realized,
-    dayPnl: equity - dayBase,
+    dayPnl: bookDayPnl(equity, dayBase),
     fills: fills.length,
     wins,
     losses,

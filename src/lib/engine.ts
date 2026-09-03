@@ -27,7 +27,8 @@ import {
 } from "./playbook";
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
-import { livePositions, liveSleeve, MIN_LIVE_TICKET } from "./live-budget";
+import { bookDayPnl, haltCapUsd } from "./desk-pnl";
+import { livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET } from "./live-budget";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -628,12 +629,17 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const bookNow = liveNow ? livePositions(stNow.positions) : stNow.positions;
     const hasPos = bookNow.some((p) => p.pair === pair);
     const haltBase = liveNow
-      ? (liveNowSleeve?.budget ?? stNow.liveBudget)
+      ? stNow.dayStartEquity > 0 &&
+        stNow.dayStartEquity <= (liveNowSleeve?.budget ?? stNow.liveBudget) * 1.25
+        ? stNow.dayStartEquity
+        : (liveNowSleeve?.equity ?? stNow.liveBudget)
       : stNow.dayStartEquity || stNow.startingCash;
-    const haltCap = haltBase * stNow.risk.maxDailyLossPct;
+    const haltCap = liveNow
+      ? haltCapUsd(liveNowSleeve?.budget ?? stNow.liveBudget, stNow.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
+      : haltBase * stNow.risk.maxDailyLossPct;
     const dayNow = liveNow
-      ? (liveNowSleeve?.equity ?? 0) - haltBase
-      : markEquity(stNow) - haltBase;
+      ? bookDayPnl(liveNowSleeve?.equity ?? 0, haltBase)
+      : bookDayPnl(markEquity(stNow), haltBase);
     const halted = haltCap > 0 && dayNow <= -haltCap;
 
     let ticketKind: "buy" | "sell" | "hold" =
@@ -860,8 +866,26 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     await sleep(180);
 
     const st = useFloor.getState();
-    const dayPnl = markEquity(st) - st.dayStartEquity;
-    const maxLoss = st.dayStartEquity * st.risk.maxDailyLossPct;
+    const liveHalt = st.mode === "live" || st.liveArmed;
+    const sleeveNow = liveHalt
+      ? liveSleeve({
+          liveBudget: st.liveBudget,
+          liveBalance: st.liveBalance,
+          positions: st.positions,
+          tickers: st.tickers,
+        })
+      : null;
+    const gateBase = liveHalt
+      ? st.dayStartEquity > 0 && st.dayStartEquity <= st.liveBudget * 1.25
+        ? st.dayStartEquity
+        : (sleeveNow?.equity ?? st.liveBudget)
+      : st.dayStartEquity || st.startingCash;
+    const dayPnl = liveHalt
+      ? bookDayPnl(sleeveNow?.equity ?? 0, gateBase)
+      : bookDayPnl(markEquity(st), gateBase);
+    const maxLoss = liveHalt
+      ? haltCapUsd(st.liveBudget, st.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
+      : gateBase * st.risk.maxDailyLossPct;
     if (dayPnl < -maxLoss) {
       bumpAgent("sentinel", "daily loss halt", 1);
       pushQueue({
@@ -1798,6 +1822,24 @@ export function startEngine(): () => void {
   restoreOrphanLots();
   if (!useFloor.getState().shiftStartedAt) {
     patch({ shiftStartedAt: Date.now() });
+  }
+  const st0 = useFloor.getState();
+  if (st0.mode === "live" || st0.liveArmed) {
+    const sleeve = liveSleeve({
+      liveBudget: st0.liveBudget,
+      liveBalance: st0.liveBalance,
+      positions: st0.positions,
+      tickers: st0.tickers,
+    });
+    const openLive = livePositions(st0.positions).length;
+    if (
+      openLive === 0 &&
+      sleeve.equity > 0 &&
+      st0.dayStartEquity > 0 &&
+      st0.dayStartEquity < sleeve.equity * 0.6
+    ) {
+      patch({ dayStartEquity: sleeve.equity });
+    }
   }
   seedHistory();
   applySessionEnd();
