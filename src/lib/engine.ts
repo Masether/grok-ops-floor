@@ -1035,7 +1035,7 @@ function sizeTicket(
   const wr =
     s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
   const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
-  const remaining = live ? cash : Math.min(cash, s.liveBudget || 200);
+  const remaining = live ? cash : Math.min(cash, 100);
   const usd = budgetStake({
     remaining,
     confidence,
@@ -1414,16 +1414,29 @@ function applyFill(order: Order) {
   sampleEquity(true);
   toastOrderFill(order, closePnl);
   if (closePnl != null && closePnl >= 0.5 && useFloor.getState().autoSweep) {
-    const swept = useFloor.getState().sweepProfit();
-    if (swept.ok) {
-      toastSweep(swept.amount);
+    const profit = closePnl;
+    if (order.mode === "live") {
+      useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + profit }));
+      toastSweep(profit);
       pushEvent({
         agent: "treasury",
         stage: "signed",
-        title: `SWEEP ${money(swept.amount)}`,
-        detail: "Profit moved to the bot wallet — off the desk, not at risk",
+        title: `SWEEP ${money(profit)}`,
+        detail: "Profit is USD on Kraken — dry powder for the next ticket",
         tone: "good",
       });
+    } else {
+      const swept = useFloor.getState().sweepProfit();
+      if (swept.ok) {
+        toastSweep(swept.amount);
+        pushEvent({
+          agent: "treasury",
+          stage: "signed",
+          title: `SWEEP ${money(swept.amount)}`,
+          detail: "Profit swept off the paper desk",
+          tone: "good",
+        });
+      }
     }
   }
   flushFloorPersist();

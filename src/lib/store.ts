@@ -435,7 +435,7 @@ export const useFloor = create<FloorState>()(
       cash: 10_000,
       fundingCash: 0,
       vault: [],
-      autoSweep: false,
+      autoSweep: true,
       sweptTotal: 0,
       transfers: [],
       realized: 0,
@@ -533,7 +533,7 @@ export const useFloor = create<FloorState>()(
             opsMode: "auto",
             autoTrade: true,
             floorOpen: true,
-            autoSweep: false,
+            autoSweep: true,
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
           return;
@@ -978,7 +978,7 @@ export const useFloor = create<FloorState>()(
           chartTool: DEFAULT_CHART_TOOL,
           fundingCash: typeof p.fundingCash === "number" && p.fundingCash >= 0 ? p.fundingCash : 0,
           vault: Array.isArray(p.vault) ? p.vault : [],
-          autoSweep: p.autoSweep === true,
+          autoSweep: p.autoSweep !== false,
           sweptTotal: typeof p.sweptTotal === "number" && p.sweptTotal >= 0 ? p.sweptTotal : 0,
           transfers: Array.isArray(p.transfers) ? p.transfers.slice(0, 24) : [],
           brain: {

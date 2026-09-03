@@ -133,8 +133,8 @@ function WalletPane({ onSend, onConvert }: { onSend: () => void; onConvert: () =
           <p className="text-2xs text-muted">
             {autoSweep
               ? liveArmed
-                ? `Armed · every winning close ≥ $0.50 lands here · swept ${moneyFull(sweptTotal)}`
-                : `On · winning closes land here · swept ${moneyFull(sweptTotal)} · ${moneyFull(due)} ready`
+                ? `On · winning closes settle to USD on Kraken · logged ${moneyFull(sweptTotal)}`
+                : `On · winning paper closes sweep off the desk · swept ${moneyFull(sweptTotal)} · ${moneyFull(due)} ready`
               : "Off — profit stays on the desk"}
           </p>
         </div>

@@ -48,8 +48,8 @@ export function LiveStatusBar() {
               : "Play money only. Keys + Arm live to spend Kraken USD."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Overnight: leave this tab open and plugged in. Tickets from min (~$12) up to remaining
-          cash inside the $200 cap. Winners stay on the desk to compound — sweep is off. Scout{" "}
+          Overnight: leave this tab open. Max $100 in lots so $100 stays as change. Tickets from
+          min (~$12) to remaining working cash. Winning closes settle to USD on Kraken. Scout{" "}
           {scoutScanned || "—"} books · dropped {scoutDropped} under $10k liq · hot{" "}
           {scoutHot?.length ?? 0}.
         </p>

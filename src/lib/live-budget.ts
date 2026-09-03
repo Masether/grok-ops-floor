@@ -2,6 +2,7 @@ import { usdOnBook } from "./specialists.ts";
 import type { Position, Ticker, PairId } from "./types.ts";
 
 export const DEFAULT_LIVE_BUDGET = 200;
+export const LIVE_WORKING_CAP = 100;
 export const MIN_LIVE_BUDGET = 20;
 export const MAX_LIVE_BUDGET = 50_000;
 export const LIVE_BUDGET_PRESETS = [50, 100, 200, 500] as const;
@@ -45,6 +46,7 @@ export function liveSleeve(input: {
   equity: number;
 } {
   const budget = clampLiveBudget(input.liveBudget);
+  const working = Math.min(budget, LIVE_WORKING_CAP);
   const venue = usdOnBook(input.liveBalance);
   const usd = usdStable(input.liveBalance);
   const usdt = usdtStable(input.liveBalance);
@@ -54,7 +56,7 @@ export function liveSleeve(input: {
     const mark = input.tickers?.[p.pair]?.last ?? p.mark;
     return a + mark * p.qty;
   }, 0);
-  const cash = Math.max(0, Math.min(venue, Math.max(0, budget - cost)));
+  const cash = Math.max(0, Math.min(venue, Math.max(0, budget - cost), Math.max(0, working - cost)));
   return {
     budget,
     venue,

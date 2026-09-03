@@ -1,4 +1,4 @@
-/** Ticket notional from Kraken min up to remaining budget (cap $200). */
+/** Ticket notional from min up to remaining working cash (max $100 in lots). */
 
 import { kellyFraction } from "./kelly.ts";
 import { MIN_LIVE_TICKET } from "./live-budget.ts";
