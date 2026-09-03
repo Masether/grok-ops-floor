@@ -1,12 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, liveDayBase, restoreLiveBudget, spotQty, usdStable } from "./live-budget.ts";
+import { btcOnBook, clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, liveDayBase, restoreLiveBudget, spotQty, usdStable } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
   return {
     id: "p1",
-    pair: "XBTUSD",
+    pair: "ETHUSD",
     side: "buy",
     stop: 0,
     take: 0,
@@ -39,6 +39,20 @@ describe("usdStable", () => {
     assert.ok(krakenKeysOn({ apiKey: "k".repeat(10), apiSecret: "s".repeat(10) }));
     assert.equal(spotQty({ XETH: "0.0049" }, "ETH"), 0.0049);
     assert.equal(spotQty({ ZUSD: "200" }, "WIF"), 0);
+  });
+});
+
+describe("btcOnBook", () => {
+  it("values XXBT and does not treat leftover BTC as a USD scalp", () => {
+    assert.equal(btcOnBook({ XXBT: "0.00287" }), 0.00287);
+    const s = liveSleeve({
+      liveBudget: 200,
+      liveBalance: { ZUSD: "290.77", XXBT: "0.00287" },
+      positions: [],
+      tickers: { XBTUSD: { last: 77419 } as never },
+    });
+    assert.ok(s.btcUsd > 200);
+    assert.equal(s.cash, 200);
   });
 });
 

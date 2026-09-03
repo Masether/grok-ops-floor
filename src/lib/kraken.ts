@@ -327,3 +327,57 @@ export function findPairResult<T>(
 }
 
 export const USD_BALANCE_KEYS = ["ZUSD", "USD", "USDT", "USDC", "ZUSDT"];
+
+/** Alt/USD → alt/XBT so the book spends BTC instead of paying USD fees every hop. */
+const BTC_TWINS: Array<{
+  usd: PairId;
+  id: string;
+  kraken: string;
+  ws: string;
+  resultKeys: string[];
+}> = [
+  { usd: "ETHUSD", id: "ETHXBT", kraken: "ETHXBT", ws: "ETH/XBT", resultKeys: ["XETHXXBT", "ETHXBT"] },
+  { usd: "SOLUSD", id: "SOLXBT", kraken: "SOLXBT", ws: "SOL/XBT", resultKeys: ["SOLXBT"] },
+  { usd: "XRPUSD", id: "XRPXBT", kraken: "XRPXBT", ws: "XRP/XBT", resultKeys: ["XXRPXXBT", "XRPXBT"] },
+  { usd: "ADAUSD", id: "ADAXBT", kraken: "ADAXBT", ws: "ADA/XBT", resultKeys: ["ADAXBT"] },
+  { usd: "LINKUSD", id: "LINKXBT", kraken: "LINKXBT", ws: "LINK/XBT", resultKeys: ["LINKXBT"] },
+  { usd: "AVAXUSD", id: "AVAXXBT", kraken: "AVAXXBT", ws: "AVAX/XBT", resultKeys: ["AVAXXBT"] },
+  { usd: "SUIUSD", id: "SUIXBT", kraken: "SUIXBT", ws: "SUI/XBT", resultKeys: ["SUIXBT"] },
+  { usd: "DOGEUSD", id: "XDGXBT", kraken: "XDGXBT", ws: "DOGE/XBT", resultKeys: ["XDGXBT", "XXDGXXBT"] },
+  { usd: "PEPEUSD", id: "PEPEXBT", kraken: "PEPEXBT", ws: "PEPE/XBT", resultKeys: ["PEPEXBT"] },
+  { usd: "WIFUSD", id: "WIFXBT", kraken: "WIFXBT", ws: "WIF/XBT", resultKeys: ["WIFXBT"] },
+  { usd: "BONKUSD", id: "BONKXBT", kraken: "BONKXBT", ws: "BONK/XBT", resultKeys: ["BONKXBT"] },
+];
+
+export function isBtcQuote(id: string): boolean {
+  const d = getPair(id);
+  return d?.quote === "XBT" || d?.quote === "BTC" || id.endsWith("XBT");
+}
+
+export function isBtcUsd(id: string): boolean {
+  return id === "XBTUSD";
+}
+
+export function ensureBtcQuotePairs(): PairId[] {
+  const ids: PairId[] = [];
+  for (const t of BTC_TWINS) {
+    const usd = PAIR_BY_ID[t.usd];
+    if (!usd) continue;
+    const id = registerPair({
+      id: t.id as PairId,
+      kraken: t.kraken,
+      wsSymbol: t.ws,
+      resultKeys: t.resultKeys,
+      base: usd.base,
+      quote: "XBT",
+      label: `${usd.base}/BTC`,
+      decimals: Math.max(usd.decimals, 8),
+      ordermin: usd.ordermin,
+      sleeve: usd.sleeve,
+    });
+    ids.push(id);
+  }
+  return ids;
+}
+
+export const BTC_BOOK: PairId[] = ensureBtcQuotePairs();

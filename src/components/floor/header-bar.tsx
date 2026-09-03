@@ -8,6 +8,7 @@ import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
 import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
+import { btcOnBook } from "@/lib/live-budget";
 import { pnlRange } from "@/lib/live-pnl";
 import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
@@ -165,6 +166,13 @@ export function HeaderBar() {
             <Stat label="Wallet" value={moneyFull(walletUsd)} tone={walletUsd > 0 ? "good" : undefined} always />
           </button>
           {live ? <Stat label="Kraken" value={moneyFull(krakenUsd)} always /> : null}
+          {live ? (
+            <Stat
+              label="BTC"
+              value={`${btcOnBook(liveBalance).toFixed(5)}`}
+              always
+            />
+          ) : null}
           {live ? <Stat label="Budget" value={moneyFull(liveBudget)} always /> : null}
           <Stat
             label="Day"

@@ -1,4 +1,5 @@
 import { usdOnBook } from "./specialists.ts";
+import { getPair, isBtcQuote } from "./kraken.ts";
 import type { Position, Ticker, PairId } from "./types.ts";
 
 export const DEFAULT_LIVE_BUDGET = 200;
@@ -69,8 +70,33 @@ export function spotQty(bal: Record<string, string> | null | undefined, base: st
   return krakenBaseKeys(base).reduce((a, k) => a + Number(bal[k] ?? 0), 0);
 }
 
+export function btcOnBook(bal: Record<string, string> | null | undefined): number {
+  return spotQty(bal, "BTC");
+}
+
+export function btcUsdValue(
+  bal: Record<string, string> | null | undefined,
+  btcUsd: number,
+): number {
+  const btc = btcOnBook(bal);
+  if (!(btc > 0) || !(btcUsd > 0)) return 0;
+  return btc * btcUsd;
+}
+
 export function hasKrakenBook(bal: Record<string, string> | null | undefined): boolean {
   return Boolean(bal && Object.keys(bal).length > 0);
+}
+
+export function lotUsd(
+  p: { pair: PairId; qty: number; mark: number; entry?: number },
+  tickers: Partial<Record<PairId, Ticker>> | undefined,
+  btcPx: number,
+  useEntry = false,
+): number {
+  const px = useEntry ? (p.entry ?? p.mark) : (tickers?.[p.pair]?.last ?? p.mark);
+  const notion = px * p.qty;
+  if (isBtcQuote(p.pair) && btcPx > 0) return notion * btcPx;
+  return notion;
 }
 
 export function livePositions(positions: Position[]): Position[] {
@@ -87,27 +113,31 @@ export function liveSleeve(input: {
   venue: number;
   usd: number;
   usdt: number;
+  btc: number;
+  btcUsd: number;
   cost: number;
   deployed: number;
   cash: number;
   equity: number;
 } {
   const budget = clampLiveBudget(input.liveBudget);
-  const venue = usdOnBook(input.liveBalance);
   const usd = usdStable(input.liveBalance);
   const usdt = usdtStable(input.liveBalance);
-  const lots = livePositions(input.positions);
-  const cost = lots.reduce((a, p) => a + p.entry * p.qty, 0);
-  const deployed = lots.reduce((a, p) => {
-    const mark = input.tickers?.[p.pair]?.last ?? p.mark;
-    return a + mark * p.qty;
-  }, 0);
+  const btcPx = input.tickers?.XBTUSD?.last ?? 0;
+  const btc = btcOnBook(input.liveBalance);
+  const btcUsd = btcUsdValue(input.liveBalance, btcPx);
+  const venue = usdOnBook(input.liveBalance) + btcUsd;
+  const lots = livePositions(input.positions).filter((p) => p.pair !== "XBTUSD");
+  const cost = lots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx, true), 0);
+  const deployed = lots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx), 0);
   const cash = Math.max(0, Math.min(venue, Math.max(0, budget - cost)));
   return {
     budget,
     venue,
     usd,
     usdt,
+    btc,
+    btcUsd,
     cost,
     deployed,
     cash,

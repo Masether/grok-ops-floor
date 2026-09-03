@@ -3,7 +3,7 @@ import { emitPulse } from "./bus";
 import { uid, px, money } from "./format";
 import { macdHist, readScalp } from "./indicators";
 import { fetchOhlc, fetchTickers, fetchUsdUniverse } from "./kraken-api";
-import { PAIR_BY_ID, getPair, registerPair } from "./kraken";
+import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken";
 import { budgetStake } from "./budget-size";
 import { fairValue, mispricing, pricerQuiet } from "./pricer";
 import { rankScout } from "./scout";
@@ -28,7 +28,7 @@ import {
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
-import { hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
+import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
 import { lotsMark } from "./live-pnl";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
@@ -551,6 +551,19 @@ function enqueueEval(pair: PairId, candles: { close: number; volume: number }[])
 async function evaluatePair(pair: PairId, candles: { close: number; volume: number }[]) {
   const s0 = useFloor.getState();
   if (!running || !s0.launched || !s0.floorOpen) return;
+  const liveBook = s0.liveArmed || s0.mode === "live";
+  if (liveBook && isBtcUsd(pair)) {
+    bumpAgent("treasury", "BTC is the reserve — not a scalp", 0.4);
+    return;
+  }
+  if (liveBook) {
+    const btcPx = s0.tickers.XBTUSD?.last ?? 0;
+    const btcUsd = btcOnBook(s0.liveBalance) * btcPx;
+    if (btcUsd >= MIN_LIVE_TICKET && !isBtcQuote(pair)) {
+      bumpAgent("hunter", "BTC book — skip USD hop", 0.45);
+      return;
+    }
+  }
   evaluating.add(pair);
   try {
     const closes = candles.map((c) => c.close);
@@ -1004,10 +1017,13 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
     positions: s.positions,
     tickers: s.tickers,
   });
+  if (sleeve.btcUsd >= MIN_LIVE_TICKET) {
+    return { ok: true, cash: sleeve.cash };
+  }
   if (sleeve.usd < 12 && sleeve.usdt >= 12) {
     return {
       ok: false,
-      why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD there. This book spends USD.`,
+      why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD or keep BTC as the book.`,
     };
   }
   if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USD on Kraken" };
@@ -1068,6 +1084,28 @@ function sizeTicket(
     s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
   const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
   const remaining = live ? cash : Math.min(cash, s.liveBudget || 200);
+  const defQuote = def.quote;
+  const btcPx = s.tickers.XBTUSD?.last ?? 0;
+  if (live && isBtcUsd(pair)) return { ok: false, why: "BTC is the reserve — not sold for USD" };
+  if (live && (defQuote === "XBT" || defQuote === "BTC")) {
+    const btcHave = spotQty(s.liveBalance, "BTC");
+    const usd = budgetStake({
+      remaining,
+      confidence,
+      pWin: wr,
+      payoff,
+      heat: sleeveKind === "heat",
+    });
+    if (!(usd > 0) || !(btcPx > 0)) return { ok: false, why: "under min BTC ticket" };
+    const btcSpend = Math.min(btcHave * 0.98, usd / btcPx);
+    if (!(btcSpend * btcPx >= MIN_LIVE_TICKET)) {
+      return { ok: false, why: "need more BTC on Kraken for an XBT ticket" };
+    }
+    let qty = btcSpend / price;
+    qty = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
+    if (qty < def.ordermin) return { ok: false, why: "below Kraken ordermin" };
+    return { ok: true, qty, side: "buy" };
+  }
   const usd = budgetStake({
     remaining,
     confidence,
@@ -1110,9 +1148,20 @@ async function executeOrderNow(order: Order) {
       bumpAgent("runner", "waiting on Kraken keys", 0.7);
       return;
     }
-    if (!s.liveArmed) {
-      patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true });
+  if (s.liveArmed || s.mode === "live") {
+    if (isBtcUsd(order.pair) && order.side === "sell") {
+      bumpAgent("treasury", "blocked BTC dump — reserve stays", 0.9);
+      pushEvent({
+        agent: "treasury",
+        stage: "signed",
+        pair: order.pair,
+        title: "SKIP SELL BTC",
+        detail: "BTC is the working book. Not sold for USD to buy alts.",
+        tone: "warn",
+      });
+      return;
     }
+  }
     try {
       const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
       if (!def) throw new Error("Unknown pair");
@@ -1585,6 +1634,7 @@ function checkStops() {
 
   for (const p of nextPos) {
     if ((s.mode === "live" || s.liveArmed) && p.mode !== "live") continue;
+    if ((s.mode === "live" || s.liveArmed) && p.pair === "XBTUSD") continue;
     if ((s.mode === "live" || s.liveArmed) && !p.krakenTxid) {
       dropPhantomLot(p.pair);
       continue;
