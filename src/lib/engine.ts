@@ -8,7 +8,19 @@ import { fetchOhlc, fetchTickers } from "./kraken-api";
 import { getLiveVenue } from "./venues";
 import { connectTickerFeed } from "./kraken-ws";
 import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn";
-import { SCALP, scalpManage, scalpStops } from "./scalp";
+import { SCALP, scalpManage } from "./scalp";
+import {
+  asPlaybook,
+  bookStops,
+  dcaManage,
+  GRID,
+  DCA,
+  gridManage,
+  playbookSlicePct,
+  playbookWantsBuy,
+  type BookAction,
+  type PlaybookId,
+} from "./playbook";
 import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { livePositions, liveSleeve, MIN_LIVE_TICKET } from "./live-budget";
@@ -590,6 +602,28 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       grokKind !== "hold" ? grokKind : read.kind !== "hold" ? read.kind : "hold";
     if (ticketKind === "sell" && !hasPos) ticketKind = "hold";
     const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0);
+    const playbook = asPlaybook(stNow.playbook);
+    const existingLot = bookNow.find((p) => p.pair === pair);
+    const lastBuy = stNow.orders.find(
+      (o) => o.pair === pair && o.status === "filled" && o.side === "buy",
+    );
+    const dipFromEntry =
+      existingLot && existingLot.entry > 0
+        ? Math.max(0, (existingLot.entry - (ticker?.last ?? existingLot.mark)) / existingLot.entry)
+        : 0;
+    if (playbook !== "scalp") {
+      const want = playbookWantsBuy({
+        playbook,
+        kind: ticketKind,
+        rsi: signal.rsi,
+        changePct: ticker?.changePct ?? 0,
+        hasPos: Boolean(existingLot),
+        dipFromEntry,
+        adds: existingLot?.adds ?? 1,
+        msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
+      });
+      ticketKind = want ? "buy" : "hold";
+    }
 
     patch({
       signals: [
@@ -597,6 +631,11 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         ...useFloor.getState().signals.filter((x) => x.id !== signal.id),
       ].slice(0, 40),
     });
+
+    if (playbook !== "scalp" && sleeve === "heat") {
+      bumpAgent("hunter", `${playbook} skips heat`, 0.4);
+      return;
+    }
 
     if (sleeve === "heat" && ticketKind === "buy" && (ticker?.changePct ?? 0) < 0.4) {
       bumpAgent("hunter", "heat flat", 0.55);
@@ -613,6 +652,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     }
 
     if (
+      playbook === "scalp" &&
       ticketKind === "buy" &&
       sleeve === "core" &&
       (ticker?.changePct ?? 0) < -1.2 &&
@@ -814,12 +854,12 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       qty: verdict.qty,
       price,
       status: "queued",
-      mode: st.mode,
-      reason: read.reason,
+      mode: st.liveArmed ? "live" : "paper",
+      reason: `${playbook.toUpperCase()} · ${read.reason}`,
       ts: Date.now(),
     };
 
-    if (st.mode === "live" && !st.autoTrade) {
+    if (st.liveArmed && !st.autoTrade) {
       patch({ pendingLive: order });
       pushEvent({
         agent: "runner",
@@ -833,7 +873,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (st.mode === "live" && (!st.liveArmed || !st.keys.apiKey || !st.keys.apiSecret)) {
+    if (st.liveArmed && (!st.keys.apiKey || !st.keys.apiSecret)) {
       pushQueue({
         title: "LIVE NOT ARMED",
         detail: "Connect Kraken keys and arm live before the runner hits the book",
@@ -865,7 +905,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
 
 function workingPurse(): { ok: true; cash: number } | { ok: false; why: string } {
   const s = useFloor.getState();
-  if (s.mode !== "live") return { ok: true, cash: s.cash };
+  const live = s.liveArmed || s.mode === "live";
+  if (!live) return { ok: true, cash: s.cash };
   if (!s.keys.apiKey || !s.keys.apiSecret) {
     return { ok: false, why: "no Kraken keys — paste them in settings" };
   }
@@ -900,7 +941,7 @@ function sizeTicket(
   confidence: number,
 ): { ok: true; qty: number; side: "buy" | "sell" } | { ok: false; why: string } {
   const s = useFloor.getState();
-  const live = s.mode === "live";
+  const live = s.liveArmed || s.mode === "live";
   const sleeve = live
     ? liveSleeve({
         liveBudget: s.liveBudget,
@@ -915,20 +956,29 @@ function sizeTicket(
   const existing = book.find((p) => p.pair === pair);
   const def = PAIR_BY_ID[pair];
   const bias = s.brain.pairBias[pair] ?? 0;
+  const playbook = asPlaybook(s.playbook);
+  const slicePct = playbookSlicePct(playbook);
 
   if (side === "sell") {
     if (!existing) return { ok: false, why: "no inventory to sell" };
     return { ok: true, qty: existing.qty, side: "sell" };
   }
 
-  if (existing) return { ok: false, why: "already long this pair" };
-  if (book.length >= s.risk.maxPositions) {
+  if (existing && playbook === "scalp") return { ok: false, why: "already long this pair" };
+  if (existing && playbook !== "scalp") {
+    const cap = playbook === "grid" ? GRID.maxAdds : DCA.maxAdds;
+    if ((existing.adds ?? 1) >= cap) return { ok: false, why: "max adds on this pair" };
+  }
+  if (!existing && book.length >= s.risk.maxPositions) {
     return { ok: false, why: "max positions open" };
   }
   if (s.brain.enabled && bias < -0.35) {
     return { ok: false, why: "brain retired this pair" };
   }
   const sleeveKind = def.sleeve;
+  if (playbook !== "scalp" && sleeveKind === "heat") {
+    return { ok: false, why: `${playbook} book skips memes` };
+  }
   if (sleeveKind === "heat") {
     const heatOpen = book.filter((p) => PAIR_BY_ID[p.pair].sleeve === "heat").length;
     if (heatOpen >= 2) return { ok: false, why: "heat book full — max 2 meme lots" };
@@ -953,6 +1003,9 @@ function sizeTicket(
     price;
   const maxQty = (equity * s.risk.maxPosPct * (sleeveKind === "heat" ? 0.7 : 1)) / price;
   let qty = Math.min(sized, maxQty);
+  if (slicePct > 0) {
+    qty = Math.min(qty, (equity * slicePct) / price);
+  }
   let notional = qty * price;
   if (live && notional < MIN_LIVE_TICKET && cash >= MIN_LIVE_TICKET) {
     qty = MIN_LIVE_TICKET / price;
@@ -978,7 +1031,19 @@ export function executeOrder(order: Order): Promise<void> {
 
 async function executeOrderNow(order: Order) {
   const s = useFloor.getState();
-  if (order.mode === "live") {
+  const live = Boolean(s.liveArmed && s.keys.apiKey && s.keys.apiSecret && order.mode === "live");
+  if (s.liveArmed || order.mode === "live") {
+    if (!live) {
+      const rejected: Order = {
+        ...order,
+        mode: "live",
+        status: "rejected",
+        reason: "Live not armed — paper cash is parked",
+      };
+      patch({ orders: [rejected, ...useFloor.getState().orders].slice(0, 80) });
+      toastLiveReject(order, rejected.reason);
+      return;
+    }
     try {
       const def = PAIR_BY_ID[order.pair];
       const volume = order.qty.toFixed(Math.min(def.decimals, 8));
@@ -992,12 +1057,14 @@ async function executeOrderNow(order: Order) {
       });
       const filled: Order = {
         ...order,
+        mode: "live",
         status: "filled",
         fillPrice: order.price,
         krakenTxid: res.txid,
         ts: Date.now(),
       };
       applyFill(filled);
+      void refreshTreasury();
       pushEvent({
         agent: "runner",
         next: "archivist",
@@ -1010,6 +1077,7 @@ async function executeOrderNow(order: Order) {
     } catch (err) {
       const rejected: Order = {
         ...order,
+        mode: "live",
         status: "rejected",
         reason: err instanceof Error ? err.message : "Kraken reject",
       };
@@ -1083,7 +1151,11 @@ export async function placeManualTicket(input: {
   const def = PAIR_BY_ID[input.pair];
   const qty = Number((dollars / price).toFixed(Math.min(Math.max(def.decimals, 0), 8)));
   if (qty < def.ordermin) return { ok: false, reason: "Below min size." };
-  if (dollars > s.cash * 0.98) return { ok: false, reason: "Not enough free cash." };
+  const purse = workingPurse();
+  if (!purse.ok) return { ok: false, reason: purse.why };
+  if (dollars > purse.cash * 0.98) {
+    return { ok: false, reason: s.liveArmed ? "Over live USD budget." : "Not enough free cash." };
+  }
   const order: Order = {
     id: uid("ord"),
     pair: input.pair,
@@ -1091,7 +1163,7 @@ export async function placeManualTicket(input: {
     qty,
     price,
     status: "queued",
-    mode: s.mode,
+    mode: s.liveArmed ? "live" : "paper",
     reason: "manual ticket",
     ts: Date.now(),
   };
@@ -1193,6 +1265,7 @@ function applyFill(order: Order) {
     const fee = order.fee ?? fill * order.qty * 0.0026;
     const existing = s.positions.find((p) => p.pair === order.pair);
     let positions = s.positions.slice();
+    const liveFill = order.mode === "live";
     let cash = s.cash;
     let realized = s.realized;
     let reason = order.reason;
@@ -1206,26 +1279,48 @@ function applyFill(order: Order) {
           ),
         };
       }
-      const pnl = (fill - existing.entry) * existing.qty - fee;
+      const sellQty = Math.min(order.qty, existing.qty);
+      const pnl = (fill - existing.entry) * sellQty - fee;
       closePnl = pnl;
       realized += pnl;
-      cash += fill * existing.qty - fee;
-      positions = positions.filter((p) => p.pair !== order.pair);
-      if (!reason.includes("TP") && !reason.includes("SL")) {
-        reason = `${reason} · ${pnl >= 0 ? "TP" : "SL"}`;
+      if (!liveFill) cash += fill * sellQty - fee;
+      if (sellQty + 1e-12 < existing.qty) {
+        positions = positions.map((p) =>
+          p.pair === order.pair ? { ...p, qty: existing.qty - sellQty, mark: fill } : p,
+        );
+        reason = `${reason} · GRID OUT`;
+      } else {
+        positions = positions.filter((p) => p.pair !== order.pair);
+        if (!reason.includes("TP") && !reason.includes("SL")) {
+          reason = `${reason} · ${pnl >= 0 ? "TP" : "SL"}`;
+        }
+        lessonReason = existing.note || order.reason;
       }
-      lessonReason = existing.note || order.reason;
     } else if (existing) {
       const totalQty = existing.qty + order.qty;
       const entry = (existing.entry * existing.qty + fill * order.qty) / totalQty;
-      positions = positions.map((p) =>
-        p.pair === order.pair ? { ...p, qty: totalQty, entry, mark: fill } : p,
-      );
-      cash -= fill * order.qty + fee;
-    } else {
-      cash -= fill * order.qty + fee;
+      const pb = asPlaybook(s.playbook);
       const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
-      const band = scalpStops(fill, heat);
+      const band = bookStops(pb, entry, heat);
+      positions = positions.map((p) =>
+        p.pair === order.pair
+          ? {
+              ...p,
+              qty: totalQty,
+              entry,
+              mark: fill,
+              stop: band.stop,
+              take: band.take,
+              adds: (existing.adds ?? 1) + 1,
+            }
+          : p,
+      );
+      if (!liveFill) cash -= fill * order.qty + fee;
+    } else {
+      if (!liveFill) cash -= fill * order.qty + fee;
+      const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
+      const pb = asPlaybook(s.playbook);
+      const band = bookStops(pb, fill, heat);
       positions = [
         ...positions,
         {
@@ -1241,6 +1336,7 @@ function applyFill(order: Order) {
           mode: order.mode,
           krakenTxid: order.krakenTxid,
           note: order.reason,
+          adds: 1,
         },
       ];
     }
@@ -1305,7 +1401,7 @@ function restoreOrphanLots() {
       const fill = o.fillPrice ?? o.price;
       if (!(fill > 0) || !(o.qty > 0)) continue;
       const heat = PAIR_BY_ID[o.pair]?.sleeve === "heat";
-      const band = scalpStops(fill, heat);
+      const band = bookStops(asPlaybook(s.playbook), fill, heat);
       extra.push({
         id: uid("pos"),
         pair: o.pair,
@@ -1335,38 +1431,57 @@ function maybeCheckStops() {
   checkStops();
 }
 
+function manageOpenLot(
+  playbook: PlaybookId,
+  p: { openedAt: number; entry: number; mark: number; stop: number; take: number; qty: number },
+): { action: BookAction; stop: number; sellFrac: number } {
+  if (playbook === "grid") return gridManage(p);
+  if (playbook === "dca") return dcaManage(p);
+  const m = scalpManage(p);
+  return { action: m.action, stop: m.stop, sellFrac: m.action === "hold" ? 0 : 1 };
+}
+
 function checkStops() {
   const s = useFloor.getState();
   if (!s.launched || s.positions.length === 0) return;
   if (s.mode === "live" && !s.liveArmed && !s.floorOpen) return;
+  const playbook = asPlaybook(s.playbook);
   let trailed = false;
   const nextPos = s.positions.map((p) => {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
-    const managed = scalpManage({ ...p, mark });
+    const managed = manageOpenLot(playbook, { ...p, mark });
     if (managed.stop !== p.stop) trailed = true;
     return { ...p, mark, stop: managed.stop };
   });
   if (trailed) patch({ positions: nextPos });
 
   for (const p of nextPos) {
-    const managed = scalpManage(p);
+    const managed = manageOpenLot(playbook, p);
     if (managed.action === "hold") continue;
     if (flattening.has(p.id)) continue;
     flattening.add(p.id);
+    const def = PAIR_BY_ID[p.pair];
+    const frac = managed.sellFrac <= 0 ? 1 : managed.sellFrac;
+    let qty = frac >= 0.999 ? p.qty : p.qty * frac;
+    qty = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
+    if (qty < def.ordermin) qty = p.qty;
+    if (qty > p.qty) qty = p.qty;
     const side = p.side === "buy" ? "sell" : "buy";
     const reason =
       managed.action === "stop"
         ? "SL"
         : managed.action === "take"
           ? "TP"
-          : p.mark >= p.entry
-            ? "TIME TP"
-            : "TIME SL";
+          : managed.action === "reduce"
+            ? "GRID OUT"
+            : p.mark >= p.entry
+              ? "TIME TP"
+              : "TIME SL";
     const order: Order = {
       id: uid("ord"),
       pair: p.pair,
       side,
-      qty: p.qty,
+      qty,
       price: p.mark,
       status: "queued",
       mode: p.mode,
@@ -1488,7 +1603,7 @@ export async function runDemoTicket() {
   return scanLiveTape();
 }
 
-async function refreshTreasury() {
+export async function refreshTreasury() {
   const s = useFloor.getState();
   if (!s.keys.apiKey || !s.keys.apiSecret) return;
   try {

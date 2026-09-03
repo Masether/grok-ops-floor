@@ -39,6 +39,7 @@ import {
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
 import { clampLiveBudget, DEFAULT_LIVE_BUDGET, livePositions, liveSleeve } from "./live-budget";
+import { asPlaybook, DEFAULT_PLAYBOOK, type PlaybookId } from "./playbook";
 import { idleSwarm, type SwarmSnap } from "./swarm";
 import type { VenueId } from "./venues/types";
 import type {
@@ -114,6 +115,7 @@ export type FloorState = {
   floorOpen: boolean;
   mode: TradeMode;
   opsMode: OpsMode;
+  playbook: PlaybookId;
   autoTrade: boolean;
   liveArmed: boolean;
   liveBudget: number;
@@ -183,6 +185,7 @@ export type FloorState = {
   setFloorOpen: (open: boolean) => void;
   setMode: (mode: TradeMode) => void;
   setOpsMode: (mode: OpsMode) => void;
+  setPlaybook: (id: PlaybookId) => void;
   setAutoTrade: (v: boolean) => void;
   setLiveArmed: (v: boolean) => void;
   setLiveBudget: (n: number) => void;
@@ -409,6 +412,7 @@ export const useFloor = create<FloorState>()(
       floorOpen: false,
       mode: "paper",
       opsMode: "paper",
+      playbook: DEFAULT_PLAYBOOK,
       autoTrade: false,
       liveArmed: false,
       liveBudget: DEFAULT_LIVE_BUDGET,
@@ -490,6 +494,7 @@ export const useFloor = create<FloorState>()(
           brain: { ...get().brain, enabled: true },
         });
       },
+      setPlaybook: (id) => set({ playbook: asPlaybook(id) }),
       setAutoTrade: (v) => {
         if (v && !get().launched) return;
         set({
@@ -818,6 +823,7 @@ export const useFloor = create<FloorState>()(
           venueId: s.venueId,
           mode: s.mode,
           opsMode: s.opsMode,
+          playbook: s.playbook,
           autoTrade: s.autoTrade,
           liveArmed: s.liveArmed,
           liveBudget: s.liveBudget,
@@ -903,6 +909,7 @@ export const useFloor = create<FloorState>()(
           launched,
           venueId,
           opsMode: launched ? opsMode : "paper",
+          playbook: asPlaybook(p.playbook ?? current.playbook),
           floorOpen: launched,
           autoTrade,
           agents: freshAgents(),

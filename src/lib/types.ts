@@ -123,6 +123,7 @@ export type Position = {
   mode: TradeMode;
   krakenTxid?: string;
   note?: string;
+  adds?: number;
 };
 
 export type Order = {

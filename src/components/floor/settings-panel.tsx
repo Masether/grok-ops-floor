@@ -11,7 +11,7 @@ import {
   SheetContent,
 } from "@/components/ui/overlay";
 import { HumanGate } from "@/components/floor/human-gate";
-import { executeOrder, scanLiveTape } from "@/lib/engine";
+import { executeOrder, refreshTreasury, scanLiveTape } from "@/lib/engine";
 import { secondRead } from "@/lib/grok-brief";
 import { testVenueKeys } from "@/lib/human-gate-api";
 import { PAIRS, PAIR_BY_ID, SLEEVE_META } from "@/lib/kraken";
@@ -25,6 +25,7 @@ import { COMING_SOON_VENUES } from "@/lib/venues";
 import { DurationPills } from "./duration-pills";
 import { InstallAppButton } from "./install-app";
 import { LIVE_BUDGET_PRESETS, clampLiveBudget, liveSleeve } from "@/lib/live-budget";
+import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
 import { moneyFull } from "@/lib/format";
 
 export function SettingsPanel() {
@@ -34,6 +35,8 @@ export function SettingsPanel() {
   const setMode = useFloor((s) => s.setMode);
   const autoTrade = useFloor((s) => s.autoTrade);
   const setAutoTrade = useFloor((s) => s.setAutoTrade);
+  const playbook = useFloor((s) => s.playbook);
+  const setPlaybook = useFloor((s) => s.setPlaybook);
   const liveArmed = useFloor((s) => s.liveArmed);
   const setLiveArmed = useFloor((s) => s.setLiveArmed);
   const liveBudget = useFloor((s) => s.liveBudget);
@@ -295,9 +298,26 @@ export function SettingsPanel() {
                 <Switch id="auto" checked={autoTrade} onCheckedChange={setAutoTrade} />
               </div>
               <p className="text-2xs text-subtle">
-                Paper is demo on live Kraken candles — real RSI/EMA/MACD, fake cash. Bar size is
-                the Charts interval. Live sends real market orders only after you arm.
+                Paper is demo on live Kraken candles. Live spends only the budget. Scalp, Grid, and
+                DCA all sit inside that cap.
               </p>
+              <div className="flex flex-wrap gap-1.5">
+                {PLAYBOOKS.map((b) => (
+                  <Button
+                    key={b.id}
+                    type="button"
+                    size="sm"
+                    variant={playbook === b.id ? "default" : "outline"}
+                    onClick={() => {
+                      setPlaybook(b.id as PlaybookId);
+                      toast.message(`${b.label} · ${b.hint}`);
+                    }}
+                  >
+                    {b.label}
+                  </Button>
+                ))}
+              </div>
+              <p className="text-2xs text-subtle">{PLAYBOOKS.find((b) => b.id === playbook)?.hint}</p>
               {mode === "paper" ? (
                 <Button
                   size="sm"

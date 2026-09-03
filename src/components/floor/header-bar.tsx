@@ -10,6 +10,7 @@ import { usdOnBook } from "@/lib/specialists";
 import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
 import type { OpsMode, PairId } from "@/lib/types";
+import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Link } from "@tanstack/react-router";
@@ -20,7 +21,7 @@ import { GoalChip } from "./goal-chip";
 
 const OPS: { id: OpsMode; label: string; hint: string }[] = [
   { id: "paper", label: "Paper", hint: "You size tickets" },
-  { id: "auto", label: "Auto", hint: "Scalp 2–5m lots" },
+  { id: "auto", label: "Auto", hint: "Runs the selected book" },
   { id: "learn", label: "Learn", hint: "Brain walks history" },
 ];
 
@@ -32,6 +33,8 @@ export function HeaderBar() {
   const mode = useFloor((s) => s.mode);
   const opsMode = useFloor((s) => s.opsMode);
   const setOpsMode = useFloor((s) => s.setOpsMode);
+  const playbook = useFloor((s) => s.playbook);
+  const setPlaybook = useFloor((s) => s.setPlaybook);
   const liveArmed = useFloor((s) => s.liveArmed);
   const feedOk = useFloor((s) => s.feedOk);
   const feedSource = useFloor((s) => s.feedSource);
@@ -255,6 +258,27 @@ export function HeaderBar() {
           <span className="hidden text-micro text-subtle sm:inline">
             {OPS.find((m) => m.id === opsMode)?.hint}
           </span>
+          <span className="hidden text-subtle sm:inline">·</span>
+          <div className="flex gap-1">
+            {PLAYBOOKS.map((b) => (
+              <Button
+                key={b.id}
+                type="button"
+                size="sm"
+                className="min-h-11"
+                variant={playbook === b.id ? "default" : "outline"}
+                aria-pressed={playbook === b.id}
+                title={b.hint}
+                disabled={!launched}
+                onClick={() => {
+                  setPlaybook(b.id as PlaybookId);
+                  toast.message(`${b.label} book · ${b.hint}`);
+                }}
+              >
+                {b.label}
+              </Button>
+            ))}
+          </div>
         </div>
         <span className="text-subtle">·</span>
         <div className="flex min-w-0 flex-1 gap-4 overflow-hidden">
