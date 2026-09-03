@@ -31,6 +31,11 @@ export function OrbitStage() {
   const swarm = useFloor((s) => s.swarm);
   const debate = swarm.debate ?? IDLE_DEBATE;
   const grokNote = useFloor((s) => s.grokNote);
+  const mode = useFloor((s) => s.mode);
+  const liveArmed = useFloor((s) => s.liveArmed);
+  const liveBudget = useFloor((s) => s.liveBudget);
+  const brain = useFloor((s) => s.brain);
+  const setBrainOpen = useFloor((s) => s.setBrainOpen);
   const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
@@ -155,28 +160,31 @@ export function OrbitStage() {
               ? `${swarm.reported}/${SWARM_SIZE} in · ping`
               : `${SWARM_SIZE} agents · ${debate.sourcesLive}/${debate.sourcesTotal} sources${swarm.rttMs ? ` · ${swarm.rttMs}ms` : ""}`}
           </p>
-          <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-5">
-            {debate.rounds.map((r) => (
-              <li key={r.role} className="min-w-0">
-                <div className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
-                  {r.role}
-                </div>
-                <div
-                  className={cn(
-                    "stat-num truncate text-2xs",
-                    r.role === "challenge" || r.kind === "sell"
-                      ? "text-danger"
-                      : r.kind === "buy"
-                        ? "text-good"
-                        : "text-muted",
-                  )}
-                  title={r.note}
-                >
-                  {r.kind.toUpperCase()}
-                  {r.role === "challenge" && debate.dissent ? ` · ${debate.dissent.bots}` : ""}
-                </div>
-              </li>
-            ))}
+          <ol className="mt-2 grid grid-cols-3 gap-2">
+            {(["setup", "challenge", "risk"] as const).map((role) => {
+              const r = debate.rounds.find((x) => x.role === role);
+              return (
+                <li key={role} className="min-w-0 rounded-sm bg-bg/40 px-2 py-1.5">
+                  <div className="font-display text-micro tracking-[0.14em] text-subtle uppercase">
+                    {role}
+                  </div>
+                  <div
+                    className={cn(
+                      "stat-num truncate text-xs",
+                      r?.kind === "sell" || role === "challenge"
+                        ? "text-danger"
+                        : r?.kind === "buy"
+                          ? "text-good"
+                          : "text-muted",
+                    )}
+                    title={r?.note}
+                  >
+                    {(r?.kind ?? "hold").toUpperCase()}
+                  </div>
+                  <p className="truncate text-micro text-subtle">{r?.note ?? "idle"}</p>
+                </li>
+              );
+            })}
           </ol>
           <ul className="mt-2 flex flex-wrap gap-1">
             {GUILDS.map((g) => {
@@ -235,7 +243,7 @@ export function OrbitStage() {
             onClick={() => useFloor.getState().setDeskOpen(true)}
           >
             <div className="font-display text-2xs tracking-[0.14em] text-muted uppercase">
-              Paper book
+              {mode === "live" && liveArmed ? "Kraken USD" : "Paper book"}
             </div>
             <div
               className={cn(
@@ -251,6 +259,7 @@ export function OrbitStage() {
             </div>
             <div className="stat-num mt-1 text-micro text-subtle">
               {desk.openPositions} open · {desk.fills} fills
+              {mode === "live" && liveArmed ? ` · budget ${moneyFull(liveBudget)}` : ""}
             </div>
           </button>
         </div>
@@ -290,7 +299,7 @@ export function OrbitStage() {
                 <AgentGlyph shape={shape} color={g.color} size={22} />
               </span>
               <span
-                className="font-display mt-0.5 hidden text-micro font-semibold tracking-[0.14em] uppercase sm:block"
+                className="font-display mt-0.5 text-micro font-semibold tracking-[0.14em] uppercase"
                 style={{ color: g.color }}
               >
                 {g.name}
@@ -300,8 +309,8 @@ export function OrbitStage() {
         })}
       </div>
 
-      <div className="absolute right-3 bottom-2 left-3 flex items-end justify-between">
-        <div className="max-w-[60%]">
+      <div className="absolute right-3 bottom-2 left-3 flex items-end justify-between gap-3">
+        <div className="min-w-0 max-w-[70%]">
           {selected ? (
             <p className="text-2xs text-muted">
               <span style={{ color: AGENT_BY_ID[selected]?.color ?? "#8b93a7" }}>
@@ -313,14 +322,27 @@ export function OrbitStage() {
               {agents[selected]?.lastAction ?? "on desk"}
             </p>
           ) : (
-            <p className="text-2xs text-subtle">
-              {grokNote ?? swarm.grok}
-            </p>
+            <p className="text-2xs text-subtle">{grokNote ?? swarm.grok}</p>
           )}
+          <button
+            type="button"
+            className="mt-1 min-h-11 text-left"
+            onClick={() => setBrainOpen(true)}
+          >
+            <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
+              Brain
+            </span>
+            <span className="stat-num ml-2 text-2xs text-good">
+              {brain.samples
+                ? `${Math.round((brain.wins / Math.max(brain.samples, 1)) * 100)}% on ${brain.samples}`
+                : "on · waiting on a close"}
+            </span>
+            {brain.lessons[0] ? (
+              <span className="ml-2 truncate text-micro text-muted">{brain.lessons[0].note}</span>
+            ) : null}
+          </button>
         </div>
-        <div className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
-          GROK
-        </div>
+        <div className="font-display text-micro tracking-[0.16em] text-subtle uppercase">GROK</div>
       </div>
     </section>
   );

@@ -86,7 +86,9 @@ export function HeaderBar() {
               <span className="text-accent">Ops Floor</span>
             </div>
             <p className="truncate text-micro tracking-wide text-subtle">
-              300 agents · coordinate, don't trust the first hit
+              {liveArmed
+                ? `Live Kraken · budget ${moneyFull(liveBudget)} · paper off`
+                : "300 agents · 3 desks: setup · challenge · risk"}
             </p>
           </div>
         </div>
@@ -153,7 +155,7 @@ export function HeaderBar() {
           <div className="flex items-center gap-1.5">
             <Button
               size="sm"
-              variant={floorOpen ? "good" : "outline"}
+              variant={liveArmed ? "live" : floorOpen ? "good" : "outline"}
               onClick={() => {
                 if (!launched) {
                   if (ensurePaperDesk()) toast.success("Paper desk is on — $10k play money.");
@@ -162,7 +164,7 @@ export function HeaderBar() {
                 setFloorOpen(!floorOpen);
               }}
             >
-              {!launched ? "Start paper" : floorOpen ? "Floor open" : "Floor closed"}
+              {!launched ? "Start paper" : liveArmed ? "Live Kraken" : floorOpen ? "Floor open" : "Floor closed"}
             </Button>
             <Button
               size="sm"

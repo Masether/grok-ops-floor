@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { toast, Toaster } from "sonner";
-import { scanLiveTape, startEngine, stopEngine } from "@/lib/engine";
+import { scanLiveTape, startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { ensurePaperDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
@@ -9,6 +9,7 @@ import { ChartsBubble } from "./charts-bubble";
 import { BrainBubble } from "./brain-bubble";
 import { DeskBubble } from "./desk-bubble";
 import { FundingRail } from "./funding-rail";
+import { LiveStatusBar } from "./live-status";
 import { HeaderBar } from "./header-bar";
 import { LaunchSetup } from "./launch-setup";
 import { OrbitStage } from "./orbit-stage";
@@ -45,12 +46,19 @@ export function OpsShell() {
       }
       if (!alive) return;
       const started = openPaperNow();
-      if (started) toast.success("Paper desk is on — $10k play money. 24/7.");
+      const st = useFloor.getState();
+      if (started && st.mode !== "live") {
+        toast.success("Paper desk is on — $10k play money. 24/7.");
+      }
       if (!useFloor.getState().launched) {
         setShowLaunch(true);
         return;
       }
       try {
+        const s = useFloor.getState();
+        if (s.keys.apiKey && s.keys.apiSecret) {
+          await refreshTreasury();
+        }
         const res = await scanLiveTape();
         if (res.acted) toast.message(res.note);
       } catch {
@@ -107,6 +115,7 @@ export function OpsShell() {
       <div className="flex min-h-dvh flex-col overflow-x-hidden bg-bg text-fg">
         <HeaderBar />
         <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3">
+          <LiveStatusBar />
           <FundingRail />
           <div className="min-h-[260px] lg:min-h-0 lg:flex-1">
             <OrbitStage />

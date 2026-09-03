@@ -819,9 +819,11 @@ export const useFloor = create<FloorState>()(
           mode: s.mode,
           opsMode: s.opsMode,
           autoTrade: s.autoTrade,
-          liveArmed: false,
+          liveArmed: s.liveArmed,
           liveBudget: s.liveBudget,
           keys: s.keys,
+          keysOk: s.keysOk,
+          liveBalance: s.liveBalance,
           pairs: s.pairs,
           risk: s.risk,
           startingCash: s.startingCash,
@@ -904,7 +906,21 @@ export const useFloor = create<FloorState>()(
           floorOpen: launched,
           autoTrade,
           agents: freshAgents(),
-          liveArmed: false,
+          mode:
+            Boolean(
+              p.liveArmed &&
+                typeof (p.keys ?? current.keys)?.apiKey === "string" &&
+                ((p.keys ?? current.keys)?.apiKey?.length ?? 0) > 8,
+            ) || p.mode === "live"
+              ? "live"
+              : p.mode === "paper"
+                ? "paper"
+                : current.mode,
+          liveArmed: Boolean(
+            p.liveArmed &&
+              typeof (p.keys ?? current.keys)?.apiKey === "string" &&
+              ((p.keys ?? current.keys)?.apiKey?.length ?? 0) > 8,
+          ),
           liveBudget: clampLiveBudget(
             typeof p.liveBudget === "number" ? p.liveBudget : current.liveBudget,
           ),
