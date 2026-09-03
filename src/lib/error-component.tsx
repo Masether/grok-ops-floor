@@ -1,20 +1,12 @@
 import { useEffect } from "react";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
+import { reloadOnce } from "./crash-reload";
 
-const CRASH_KEY = "ops-floor-crash-at";
-
-export function AppErrorComponent({ error }: ErrorComponentProps) {
+export function AppErrorComponent({ error }: Partial<ErrorComponentProps> & { error?: Error }) {
   useEffect(() => {
-    try {
-      const last = Number(sessionStorage.getItem(CRASH_KEY) || 0);
-      if (Date.now() - last < 20_000) return;
-      sessionStorage.setItem(CRASH_KEY, String(Date.now()));
-      const t = window.setTimeout(() => window.location.reload(), 900);
-      return () => window.clearTimeout(t);
-    } catch {
-      /* private mode */
-    }
+    const t = window.setTimeout(() => reloadOnce(), 800);
+    return () => window.clearTimeout(t);
   }, []);
 
   return (
@@ -25,7 +17,7 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
         </span>
         <h1 className="mt-3 text-lg font-semibold">Floor hitch — reloading</h1>
         <p className="mt-2 max-w-md text-sm break-words text-muted">
-          {error.message || "Import failed. Auto-refresh in a second."}
+          {error?.message || "Something broke. Auto-refresh in a second."}
         </p>
         <button
           type="button"

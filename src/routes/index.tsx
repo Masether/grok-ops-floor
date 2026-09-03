@@ -1,10 +1,31 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { Component, useEffect, useState, type ComponentType, type ErrorInfo, type ReactNode } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { AppErrorComponent } from "@/lib/error-component";
+import { armCrashReload, reloadOnce } from "@/lib/crash-reload";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+  component: Home,
+  errorComponent: AppErrorComponent,
+});
+
+class FloorBound extends Component<{ children: ReactNode }, { err: Error | null }> {
+  state = { err: null as Error | null };
+  static getDerivedStateFromError(err: Error) {
+    return { err };
+  }
+  componentDidCatch(err: Error, _info: ErrorInfo) {
+    void err;
+    window.setTimeout(() => reloadOnce(), 600);
+  }
+  render() {
+    if (this.state.err) return <AppErrorComponent error={this.state.err} />;
+    return this.props.children;
+  }
+}
 
 function Home() {
   const [Shell, setShell] = useState<ComponentType | null>(null);
+  useEffect(() => armCrashReload(), []);
   useEffect(() => {
     let alive = true;
     void import("@/components/floor/ops-shell")
@@ -12,16 +33,7 @@ function Home() {
         if (alive) setShell(() => m.OpsShell);
       })
       .catch(() => {
-        try {
-          const k = "ops-floor-mod-fail";
-          const last = Number(sessionStorage.getItem(k) || 0);
-          if (Date.now() - last > 15_000) {
-            sessionStorage.setItem(k, String(Date.now()));
-            window.location.reload();
-          }
-        } catch {
-          window.location.reload();
-        }
+        window.setTimeout(() => reloadOnce(), 400);
       });
     return () => {
       alive = false;
@@ -34,5 +46,9 @@ function Home() {
       </div>
     );
   }
-  return <Shell />;
+  return (
+    <FloorBound>
+      <Shell />
+    </FloorBound>
+  );
 }
