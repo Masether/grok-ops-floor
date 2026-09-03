@@ -72,7 +72,6 @@ let timers: number[] = [];
 let stopWs: (() => void) | null = null;
 let lastEquitySample = 0;
 let restFails = 0;
-let pipelineLock: Promise<void> = Promise.resolve();
 const evaluating = new Set<PairId>();
 let evalBusy = 0;
 const lastEvalAt = new Map<PairId, number>();
@@ -99,6 +98,21 @@ function patch(partial: Partial<FloorState>) {
     patchRaf = 0;
     if (Object.keys(next).length) useFloor.setState(next);
   });
+}
+
+function flushPatch() {
+  if (patchRaf) {
+    window.cancelAnimationFrame(patchRaf);
+    patchRaf = 0;
+  }
+  const next = patchQ;
+  patchQ = {};
+  if (Object.keys(next).length) useFloor.setState(next);
+}
+
+function hardSet(partial: Partial<FloorState>) {
+  flushPatch();
+  useFloor.setState(partial);
 }
 
 const lastBumpAt = new Map<AgentId, number>();
@@ -412,7 +426,7 @@ async function runScout() {
   }
 }
 
-async function refreshOhlcAll() {
+async function refreshOhlcAll(force = false) {
   const s = useFloor.getState();
   if (s.pairs.length === 0) return;
   const useSim = s.feedSource === "sim";
@@ -441,7 +455,7 @@ async function refreshOhlcAll() {
     const def = getPair(top.pair) ?? PAIR_BY_ID[top.pair];
     bumpAgent(
       "hunter",
-      `hunt ${def.label} · ${def.sleeve} · ${top.score.toFixed(1)}`,
+      `hunt ${def?.label ?? top.pair} · ${def?.sleeve ?? "book"} · ${top.score.toFixed(1)}`,
       0.9,
     );
   }
@@ -454,7 +468,7 @@ async function refreshOhlcAll() {
           : await fetchOhlc({ data: { pair: row.pair, interval } });
         if (candles.length < 30) return;
         patch({ candles: { ...useFloor.getState().candles, [row.pair]: candles } });
-        enqueueEval(row.pair, candles);
+        await enqueueEval(row.pair, candles, force);
       } catch (err) {
         if (!useSim) {
           bumpAgent("sentinel", `ohlc miss ${row.pair}`, 0.5);
@@ -470,16 +484,22 @@ async function refreshOhlcAll() {
       }
     }),
   );
-  await pipelineLock;
 }
 
-function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
-  if (!running || evaluating.has(pair) || evalBusy >= 2) return;
-  const last = lastEvalAt.get(pair) ?? 0;
-  if (Date.now() - last < 4_000) return;
+function enqueueEval(
+  pair: PairId,
+  candles: { close: number; volume: number }[],
+  force = false,
+): Promise<void> {
+  if (!force && (!running || evaluating.has(pair) || evalBusy >= 2)) return Promise.resolve();
+  if (!force) {
+    const last = lastEvalAt.get(pair) ?? 0;
+    if (Date.now() - last < 4_000) return Promise.resolve();
+  }
+  if (evaluating.has(pair)) return Promise.resolve();
   evalBusy += 1;
   lastEvalAt.set(pair, Date.now());
-  void evaluatePair(pair, candles)
+  return evaluatePair(pair, candles)
     .catch(() => {})
     .finally(() => {
       evalBusy = Math.max(0, evalBusy - 1);
@@ -1768,15 +1788,19 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
   if (demoLock) return { ok: true, acted: false, note: "scan already on the desk" };
   demoLock = true;
   try {
-    const s = useFloor.getState();
-    if (!s.launched && !krakenKeysOn(s.keys)) {
-      return { ok: true, acted: false, note: "Connect Kraken to scan." };
-    }
-    if (!s.floorOpen) {
-      patch({ floorOpen: true, launched: true, autoTrade: true });
-    }
-    bumpAgent("scanner", `${s.chartInterval}m Kraken scan`, 1);
-    await refreshOhlcAll();
+    if (!running) startEngine();
+    hardSet({
+      launched: true,
+      floorOpen: true,
+      autoTrade: true,
+      mode: "live",
+      venueId: "kraken",
+    });
+    bumpAgent("scanner", "Scan tape", 1);
+    await refreshTreasury();
+    flushPatch();
+    await refreshOhlcAll(true);
+    flushPatch();
     const sigs = useFloor.getState().signals;
     const latestByPair = new Map<string, (typeof sigs)[number]>();
     for (const sig of sigs) {
@@ -1786,11 +1810,14 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
     live.sort((a, b) => b.confidence - a.confidence);
     const best = live[0];
     if (best) {
-    const def = getPair(best.pair) ?? PAIR_BY_ID[best.pair];
+      const def = getPair(best.pair) ?? PAIR_BY_ID[best.pair];
+      const keyed = krakenKeysOn(useFloor.getState().keys);
       return {
         ok: true,
         acted: true,
-        note: `${best.kind.toUpperCase()} ${def?.label ?? best.pair} · ${best.reason} · ${(best.confidence * 100).toFixed(0)}%`,
+        note: keyed
+          ? `${best.kind.toUpperCase()} ${def?.label ?? best.pair} · ${best.reason} · ${(best.confidence * 100).toFixed(0)}%`
+          : `Saw ${best.kind.toUpperCase()} ${def?.label ?? best.pair} — paste Kraken keys to fire`,
       };
     }
     const hold = [...latestByPair.values()][0];
@@ -1802,6 +1829,10 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
         ? `HOLD ${holdDef?.label ?? hold.pair} · RSI ${hold.rsi.toFixed(0)} · ${hold.reason}`
         : "tape scanned — no print yet",
     };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "scan failed";
+    bumpAgent("scanner", msg, 0.8);
+    return { ok: true, acted: false, note: msg };
   } finally {
     demoLock = false;
   }

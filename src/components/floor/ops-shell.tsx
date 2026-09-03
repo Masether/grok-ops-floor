@@ -190,7 +190,9 @@ function FloorDock() {
         type="button"
         className="min-h-11 flex-1"
         onClick={() => {
-          void scanLiveTape().then((r) => toast.message(r.note));
+          void scanLiveTape()
+            .then((r) => toast.message(r.note))
+            .catch((err) => toast.message(err instanceof Error ? err.message : "scan failed"));
         }}
       >
         Scan

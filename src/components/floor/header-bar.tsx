@@ -350,9 +350,9 @@ const HeaderActions = memo(function HeaderActions() {
         size="sm"
         variant="outline"
         onClick={() => {
-          void scanLiveTape().then((r) => {
-            toast.message(r.note);
-          });
+          void scanLiveTape()
+            .then((r) => toast.message(r.note))
+            .catch((err) => toast.message(err instanceof Error ? err.message : "scan failed"));
         }}
       >
         Scan tape
