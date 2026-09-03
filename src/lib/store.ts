@@ -304,7 +304,7 @@ export function computeDesk(s: FloorState): DeskSnapshot {
     cash,
     exposure: posValue,
     unrealized,
-    realized: live ? unrealized : s.realized,
+    realized: s.realized,
     dayPnl: bookDayPnl(equity, dayBase),
     fills: fills.length,
     wins,

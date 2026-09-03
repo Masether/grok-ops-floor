@@ -2,7 +2,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, YAxis } from
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
 import { px, money, moneyFull, pct, qty, ago } from "@/lib/format";
-import { PAIR_BY_ID } from "@/lib/kraken";
+import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
 import { usdOnBook } from "@/lib/specialists";
 import { useDesk, useFloor } from "@/lib/store";
@@ -203,14 +203,17 @@ export function TheDesk() {
   const brain = useFloor((s) => s.brain);
   const selfLearn = useFloor((s) => s.selfLearn);
   const mode = useFloor((s) => s.mode);
+  const liveArmed = useFloor((s) => s.liveArmed);
   const liveBalance = useFloor((s) => s.liveBalance);
   const startingCash = useFloor((s) => s.startingCash);
+  const liveBudget = useFloor((s) => s.liveBudget);
   const history = useFloor((s) => s.equityHistory);
   const orders = useFloor((s) => s.orders);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
+  const live = mode === "live" || liveArmed;
   const krakenUsd = usdOnBook(liveBalance);
-  const cap = startingCash > 0 ? startingCash : desk.equity;
+  const cap = live ? liveBudget : startingCash > 0 ? startingCash : desk.equity;
   const eqPct = pctOfCapital(desk.equity - cap, cap);
   const unrlPct = pctOfCapital(desk.unrealized, cap);
   const realPct = pctOfCapital(desk.realized, cap);
@@ -222,7 +225,7 @@ export function TheDesk() {
   const sparkMax = spark.length ? Math.max(...spark.map((p) => p.equity), cap) : cap;
   const sparkSpan = Math.max(sparkMax - sparkMin, 1);
   return (
-    <section className="panel flex min-h-[220px] flex-col overflow-hidden">
+    <section className="panel flex min-h-[280px] flex-col overflow-hidden">
       <div className="panel-head">
         <button
           type="button"
@@ -231,7 +234,9 @@ export function TheDesk() {
         >
           <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            Trading book — same dollars as the header. Tap for in/out history.
+            {live
+              ? "Kraken book — IN buy, OUT sell. Tap for the full blotter."
+              : "Paper book — tap for in/out history."}
           </p>
         </button>
         <span
@@ -282,7 +287,7 @@ export function TheDesk() {
         />
         <BookStat k="Fills" v={String(desk.fills)} />
         <BookStat k="TP / SL" v={`${desk.wins} / ${desk.losses}`} />
-        {mode === "live" ? (
+        {live ? (
           <BookStat
             k="Kraken USD"
             v={liveBalance ? money(krakenUsd) : "unread"}
@@ -290,7 +295,73 @@ export function TheDesk() {
           />
         ) : null}
       </div>
-      <div className="border-b border-border px-3 py-2">
+      <div className="min-h-[132px] flex-1 overflow-y-auto border-b border-border px-3 py-2">
+        <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">In and out</p>
+        <ul className="mt-1.5 space-y-1">
+          {(() => {
+            const bookPos = live ? positions.filter((p) => p.mode === "live") : positions;
+            const tape = orders
+              .filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"))
+              .slice(0, 10);
+            const label = (id: string) => getPair(id)?.label ?? id;
+            if (bookPos.length === 0 && tape.length === 0) {
+              return (
+                <li className="text-micro text-subtle">
+                  Flat. IN is a buy. OUT is a sell (take or stop).
+                </li>
+              );
+            }
+            return (
+              <>
+                {bookPos.map((p) => {
+                  const mark = tickers[p.pair]?.last ?? p.mark;
+                  const pnl = (mark - p.entry) * p.qty;
+                  const pnlPct = p.entry ? ((mark - p.entry) / p.entry) * 100 : 0;
+                  return (
+                    <li key={p.id} className="flex items-center justify-between gap-2 text-2xs">
+                      <span className="font-display tracking-[0.08em] text-good uppercase">IN</span>
+                      <span className="min-w-0 truncate text-fg">{label(p.pair)}</span>
+                      <span className="stat-num text-muted">{qty(p.qty, 4)}</span>
+                      <span className={cn("stat-num", pnl >= 0 ? "text-good" : "text-danger")}>
+                        {money(pnl)} {pct(pnlPct, 2)}
+                      </span>
+                    </li>
+                  );
+                })}
+                {tape.map((o) => {
+                  const out = fillLeg(o) === "out";
+                  const notion = (o.fillPrice ?? o.price) * o.qty;
+                  const shown = out ? o.pnl : -notion;
+                  return (
+                    <li key={o.id} className="flex items-center justify-between gap-2 text-2xs">
+                      <span
+                        className={cn(
+                          "font-display tracking-[0.08em] uppercase",
+                          out ? "text-danger" : "text-good",
+                        )}
+                      >
+                        {out ? "OUT" : "IN"}
+                      </span>
+                      <span className="min-w-0 truncate text-fg">{label(o.pair)}</span>
+                      <span className="stat-num text-muted">{fillWhy(o.reason)}</span>
+                      <span
+                        className={cn(
+                          "stat-num",
+                          shown == null ? "text-muted" : shown >= 0 ? "text-good" : "text-danger",
+                        )}
+                      >
+                        {shown == null ? "—" : money(shown)}
+                      </span>
+                      <span className="stat-num text-subtle">{ago(o.ts)}</span>
+                    </li>
+                  );
+                })}
+              </>
+            );
+          })()}
+        </ul>
+      </div>
+      <div className="px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="font-display text-micro tracking-[0.14em] text-archivist uppercase">
             Brain {selfLearn ? "on" : "off"}
@@ -299,108 +370,8 @@ export function TheDesk() {
             {brain.samples === 0 ? "cold" : `${(wr * 100).toFixed(0)}% · ${brain.samples}`}
           </span>
         </div>
-        <p className="mt-1 truncate text-micro text-muted">{brain.lastNote}</p>
-        <div className="mt-1.5 flex gap-px">
-          {brain.lessons.length === 0
-            ? Array.from({ length: 12 }, (_, i) => (
-                <span key={i} className="h-2 flex-1 rounded-xs bg-surface-3" />
-              ))
-            : brain.lessons
-                .slice(0, 16)
-                .reverse()
-                .map((l, i) => (
-                  <span
-                    key={`${l.ts}-${i}`}
-                    className="h-2 flex-1 rounded-xs"
-                    title={l.note}
-                    style={{ background: l.win ? "var(--color-good)" : "var(--color-danger)" }}
-                  />
-                ))}
-        </div>
-        {brain.lessons.length > 0 ? (
-          <ul className="mt-1.5 space-y-0.5">
-            {brain.lessons.slice(0, 8).map((l, i) => (
-              <li key={`${l.ts}-${i}`} className="flex items-baseline gap-2">
-                <span className="font-display shrink-0 text-micro tracking-[0.1em] uppercase">
-                  {PAIR_BY_ID[l.pair]?.label ?? l.pair}
-                </span>
-                <span
-                  className={cn(
-                    "stat-num w-12 shrink-0 text-right text-micro",
-                    l.win ? "text-good" : "text-danger",
-                  )}
-                >
-                  {money(l.pnl)}
-                </span>
-                <span className="min-w-0 truncate text-micro text-muted">{l.note}</span>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="mt-1.5 flex justify-between text-micro text-subtle">
-          <span>
-            RSI {brain.rsiBuy.toFixed(0)}/{brain.rsiSell.toFixed(0)}
-          </span>
-          <span>conf {(brain.minConf * 100).toFixed(0)}%</span>
-          <span>size {brain.sizeTilt.toFixed(2)}x</span>
-        </div>
+        <p className="mt-1 truncate text-micro text-muted">{brain.lastNote || grokNote}</p>
       </div>
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-2">
-        {positions.length === 0 ? (
-          <li className="text-micro text-subtle">No inventory. Runner is flat.</li>
-        ) : (
-          positions.map((p) => {
-            const mark = tickers[p.pair]?.last ?? p.mark;
-            const pnl = (mark - p.entry) * p.qty;
-            const pnlPct = ((mark - p.entry) / p.entry) * 100;
-            return (
-              <li key={p.id} className="flex items-center justify-between gap-2 text-2xs">
-                <span className="font-display tracking-[0.08em] text-good uppercase">IN</span>
-                <span className="text-fg">{PAIR_BY_ID[p.pair].label}</span>
-                <span className="stat-num text-muted">{qty(p.qty, 4)}</span>
-                <span className={cn("stat-num", pnl >= 0 ? "text-good" : "text-danger")}>
-                  {money(pnl)} {pct(pnlPct, 2)}
-                </span>
-              </li>
-            );
-          })
-        )}
-        {orders
-          .filter((o) => o.status === "filled")
-          .slice(0, 8)
-          .map((o) => {
-            const leg = fillLeg(o);
-            const out = leg === "out";
-            return (
-              <li key={o.id} className="flex items-center justify-between gap-2 text-2xs">
-                <span
-                  className={cn(
-                    "font-display tracking-[0.08em] uppercase",
-                    out ? "text-danger" : "text-good",
-                  )}
-                >
-                  {out ? "OUT" : "IN"}
-                </span>
-                <span className="min-w-0 truncate text-fg">{PAIR_BY_ID[o.pair]?.label}</span>
-                <span className="stat-num text-muted">{fillWhy(o.reason)}</span>
-                <span
-                  className={cn(
-                    "stat-num",
-                    o.pnl == null ? "text-muted" : o.pnl >= 0 ? "text-good" : "text-danger",
-                  )}
-                >
-                  {o.pnl == null ? "—" : money(o.pnl)}
-                </span>
-                <span className="stat-num text-subtle">{ago(o.ts)}</span>
-              </li>
-            );
-          })}
-      </ul>
-      {grokNote ? (
-        <p className="border-t border-border px-3 py-2 text-micro whitespace-pre-wrap text-muted">
-          {grokNote}
-        </p>
-      ) : null}
     </section>
   );
 }
