@@ -5,7 +5,7 @@ import { reloadOnce } from "./crash-reload.ts";
 
 export function AppErrorComponent({ error }: Partial<ErrorComponentProps> & { error?: Error }) {
   useEffect(() => {
-    const t = window.setTimeout(() => reloadOnce(), 800);
+    const t = window.setTimeout(() => reloadOnce(), 1200);
     return () => window.clearTimeout(t);
   }, []);
 
