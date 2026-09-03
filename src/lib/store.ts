@@ -121,6 +121,7 @@ export type FloorState = {
   autoTrade: boolean;
   liveArmed: boolean;
   liveBudget: number;
+  liveTakerPct: number;
   venueId: VenueId;
   humanVerified: boolean;
   keys: Keys;
@@ -424,6 +425,7 @@ export const useFloor = create<FloorState>()(
       autoTrade: false,
       liveArmed: false,
       liveBudget: DEFAULT_LIVE_BUDGET,
+      liveTakerPct: 0,
       venueId: "kraken",
       humanVerified: false,
       keys: { apiKey: "", apiSecret: "" },
@@ -538,7 +540,7 @@ export const useFloor = create<FloorState>()(
             autoTrade: true,
             floorOpen: true,
             autoSweep: true,
-            pairs: [...new Set([...BTC_BOOK, ...s.pairs.filter((id) => id !== "XBTUSD")])].slice(0, 14) as typeof s.pairs,
+            pairs: [...new Set([...BTC_BOOK, ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs.filter((id) => id !== "XBTUSD")])].slice(0, 16) as typeof s.pairs,
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
           return;
@@ -849,6 +851,7 @@ export const useFloor = create<FloorState>()(
           autoTrade: s.autoTrade,
           liveArmed: s.liveArmed,
           liveBudget: s.liveBudget,
+          liveTakerPct: s.liveTakerPct,
           keys: s.keys,
           keysOk: s.keysOk,
           liveBalance: s.liveBalance,
@@ -946,6 +949,7 @@ export const useFloor = create<FloorState>()(
           mode: liveOn ? "live" : p.mode === "paper" ? "paper" : current.mode,
           liveArmed: liveOn,
           liveBudget: restoreLiveBudget(p.liveBudget ?? current.liveBudget),
+          liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : current.liveTakerPct,
           humanVerified: keyed,
           pendingLive: null,
           queue: [],

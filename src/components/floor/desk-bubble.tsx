@@ -298,6 +298,7 @@ function FillRow({ order }: { order: Order }) {
         </span>
         <span className="ml-1.5 text-2xs text-muted">
           {qty(order.qty, 4)} @ {px(pxn)} · {why}
+          {order.fee ? ` · fee ${money(order.fee)}` : ""}
         </span>
       </span>
       <span

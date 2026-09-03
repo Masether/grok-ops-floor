@@ -125,6 +125,7 @@ export type Position = {
   note?: string;
   adds?: number;
   book?: "scalp" | "grid" | "dca";
+  fee?: number;
 };
 
 export type Order = {

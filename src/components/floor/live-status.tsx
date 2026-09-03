@@ -42,7 +42,7 @@ export function LiveStatusBar() {
         </p>
         <p className={cn("stat-num text-sm", live ? "text-danger" : "text-fg")}>
           {live
-            ? `Spending BTC first · ${sleeve.btc?.toFixed(5) ?? "0"} BTC ($${moneyFull(sleeve.btcUsd ?? 0)}) + USD ${moneyFull(sleeve.usd)} · budget ${moneyFull(sleeve.budget)} · paper OFF`
+            ? `USD + BTC · fees in the ticket (take only after Kraken cut) · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
             : connected
               ? `Kraken sees USD ${moneyFull(sleeve.usd)} · USDT ${moneyFull(sleeve.usdt)} · tickets still use play money until you arm`
               : "Play money only. Keys + Arm live to spend Kraken USD."}

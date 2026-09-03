@@ -197,6 +197,26 @@ export const placeMarketOrder = createServerFn({ method: "POST" })
     };
   });
 
+export const fetchOrderFill = createServerFn({ method: "POST" })
+  .validator((input: { apiKey: string; apiSecret: string; txid: string }) => input)
+  .handler(async ({ data }) => {
+    const result = await privatePost<
+      Record<string, { fee?: string; cost?: string; vol_exec?: string; price?: string }>
+    >(
+      "/0/private/QueryOrders",
+      { txid: data.txid, trades: "true" },
+      data.apiKey.trim(),
+      data.apiSecret.trim(),
+    );
+    const row = result[data.txid] ?? Object.values(result)[0];
+    return {
+      fee: Number(row?.fee ?? 0),
+      cost: Number(row?.cost ?? 0),
+      vol: Number(row?.vol_exec ?? 0),
+      price: Number(row?.price ?? 0),
+    };
+  });
+
 export const cancelAllOrders = createServerFn({ method: "POST" })
   .validator((input: { apiKey: string; apiSecret: string }) => input)
   .handler(async ({ data }) => {

@@ -2,9 +2,10 @@ import { AGENT_BY_ID, AGENTS } from "./agents";
 import { emitPulse } from "./bus";
 import { uid, px, money } from "./format";
 import { macdHist, readScalp } from "./indicators";
-import { fetchOhlc, fetchTickers, fetchUsdUniverse } from "./kraken-api";
+import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api";
 import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken";
 import { budgetStake } from "./budget-size";
+import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct } from "./fees";
 import { fairValue, mispricing, pricerQuiet } from "./pricer";
 import { rankScout } from "./scout";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up";
@@ -559,8 +560,13 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
   if (liveBook) {
     const btcPx = s0.tickers.XBTUSD?.last ?? 0;
     const btcUsd = btcOnBook(s0.liveBalance) * btcPx;
-    if (btcUsd >= MIN_LIVE_TICKET && !isBtcQuote(pair)) {
-      bumpAgent("hunter", "BTC book — skip USD hop", 0.45);
+    const usd = Number(s0.liveBalance?.ZUSD ?? s0.liveBalance?.USD ?? 0);
+    if (isBtcQuote(pair) && btcUsd < MIN_LIVE_TICKET) {
+      bumpAgent("hunter", "BTC dust — USD book", 0.4);
+      return;
+    }
+    if (!isBtcQuote(pair) && usd < MIN_LIVE_TICKET && btcUsd >= MIN_LIVE_TICKET) {
+      bumpAgent("hunter", "USD thin — BTC book", 0.4);
       return;
     }
   }
@@ -1203,6 +1209,7 @@ async function executeOrderNow(order: Order) {
       };
       applyFill(filled);
       void refreshTreasury();
+      if (res.txid) void settleLiveFee(res.txid, filled.id, keys.apiKey, keys.apiSecret);
       pushEvent({
         agent: "runner",
         next: "archivist",
@@ -1403,6 +1410,33 @@ export async function studyBook(): Promise<{ ok: true; note: string }> {
   }
 }
 
+async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiSecret: string) {
+  try {
+    await new Promise((r) => setTimeout(r, 600));
+    const q = await fetchOrderFill({ data: { apiKey, apiSecret, txid } });
+    if (!(q.fee > 0)) return;
+    const notion = q.cost > 0 ? q.cost : 0;
+    const sample = learnTaker(notion || 1, q.fee);
+    useFloor.setState((s) => {
+      const orders = s.orders.map((o) => (o.id === orderId ? { ...o, fee: q.fee } : o));
+      const order = orders.find((o) => o.id === orderId);
+      const positions = s.positions.map((p) =>
+        order && p.pair === order.pair && order.side === "buy"
+          ? { ...p, fee: q.fee }
+          : p,
+      );
+      return {
+        orders,
+        positions,
+        liveTakerPct: blendTaker(s.liveTakerPct, sample),
+      };
+    });
+    bumpAgent("treasury", `Kraken fee ${q.fee.toFixed(2)}`, 0.7);
+  } catch {
+    /* estimate stands */
+  }
+}
+
 function applyFill(order: Order) {
   if (!running) return;
   let closePnl: number | undefined;
@@ -1414,7 +1448,9 @@ function applyFill(order: Order) {
         orders: [{ ...order, status: "rejected" as const, reason: "bad fill" }, ...s.orders].slice(0, 80),
       };
     }
-    const fee = order.fee ?? fill * order.qty * 0.0026;
+    const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
+    const taker = takerPct(def?.quote ?? "USD", s.liveTakerPct);
+    const fee = order.fee ?? feeOn(fill * order.qty, taker);
     const existing = s.positions.find((p) => p.pair === order.pair);
     let positions = s.positions.slice();
     const liveFill = order.mode === "live";
@@ -1432,7 +1468,14 @@ function applyFill(order: Order) {
         };
       }
       const sellQty = Math.min(order.qty, existing.qty);
-      const pnl = (fill - existing.entry) * sellQty - fee;
+      const pnl = netPnl({
+        entry: existing.entry,
+        exit: fill,
+        qty: sellQty,
+        taker,
+        entryFee: existing.fee,
+        exitFee: fee,
+      });
       closePnl = pnl;
       realized += pnl;
       if (!liveFill) cash += fill * sellQty - fee;
@@ -1452,8 +1495,8 @@ function applyFill(order: Order) {
       const totalQty = existing.qty + order.qty;
       const entry = (existing.entry * existing.qty + fill * order.qty) / totalQty;
       const pb = asPlaybook(order.book ?? existing.book ?? "scalp");
-      const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
-      const band = bookStops(pb, entry, heat);
+      const heat = (getPair(order.pair) ?? PAIR_BY_ID[order.pair])?.sleeve === "heat";
+      const band = liveFill ? feeAwareStops(entry, heat, taker) : bookStops(pb, entry, heat);
       positions = positions.map((p) =>
         p.pair === order.pair
           ? {
@@ -1465,15 +1508,16 @@ function applyFill(order: Order) {
               take: band.take,
               adds: (existing.adds ?? 1) + 1,
               book: pb,
+              fee: (existing.fee ?? 0) + fee,
             }
           : p,
       );
       if (!liveFill) cash -= fill * order.qty + fee;
     } else {
       if (!liveFill) cash -= fill * order.qty + fee;
-      const heat = PAIR_BY_ID[order.pair].sleeve === "heat";
+      const heat = (getPair(order.pair) ?? PAIR_BY_ID[order.pair])?.sleeve === "heat";
       const pb = asPlaybook(order.book ?? "scalp");
-      const band = bookStops(pb, fill, heat);
+      const band = liveFill ? feeAwareStops(fill, heat, taker) : bookStops(pb, fill, heat);
       positions = [
         ...positions,
         {
@@ -1491,6 +1535,7 @@ function applyFill(order: Order) {
           note: order.reason,
           adds: 1,
           book: pb,
+          fee,
         },
       ];
     }
@@ -1608,11 +1653,24 @@ function maybeCheckStops() {
 
 function manageOpenLot(
   playbook: PlaybookId,
-  p: { openedAt: number; entry: number; mark: number; stop: number; take: number; qty: number },
+  p: { openedAt: number; entry: number; mark: number; stop: number; take: number; qty: number; fee?: number; pair?: PairId },
+  liveTaker = 0,
 ): { action: BookAction; stop: number; sellFrac: number } {
   if (playbook === "grid") return gridManage(p);
   if (playbook === "dca") return dcaManage(p);
   const m = scalpManage(p);
+  if (m.action === "time" && p.mark >= p.entry) {
+    const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
+    const taker = takerPct(quote, liveTaker);
+    const net = netPnl({
+      entry: p.entry,
+      exit: p.mark,
+      qty: p.qty,
+      taker,
+      entryFee: p.fee,
+    });
+    if (net <= 0) return { action: "hold", stop: m.stop, sellFrac: 0 };
+  }
   return { action: m.action, stop: m.stop, sellFrac: m.action === "hold" ? 0 : 1 };
 }
 
@@ -1626,7 +1684,7 @@ function checkStops() {
     if (book.every((b) => b.id !== p.id)) return p;
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     const pb = asPlaybook(p.book);
-    const managed = manageOpenLot(pb, { ...p, mark });
+    const managed = manageOpenLot(pb, { ...p, mark }, s.liveTakerPct);
     if (managed.stop !== p.stop) trailed = true;
     return { ...p, mark, stop: managed.stop };
   });
@@ -1640,7 +1698,7 @@ function checkStops() {
       continue;
     }
     const pb = asPlaybook(p.book);
-    const managed = manageOpenLot(pb, p);
+    const managed = manageOpenLot(pb, p, s.liveTakerPct);
     if (managed.action === "hold") continue;
     if (flattening.has(p.id)) continue;
     flattening.add(p.id);
