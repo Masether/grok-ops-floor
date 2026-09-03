@@ -1,7 +1,7 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, YAxis } from "recharts";
 import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
-import { px, money, moneyFull, pct, qty, ago } from "@/lib/format";
+import { px, money, moneyFull, pct, qty, ago, clockHms } from "@/lib/format";
 import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
 import { deskIsLive } from "@/lib/live-budget";
@@ -68,12 +68,19 @@ export function ReworkQueue() {
 
 export function RunnerDeck() {
   const agents = useFloor((s) => s.agents);
+  const lastEngineAt = useFloor((s) => s.lastEngineAt);
+  const shiftStartedAt = useFloor((s) => s.shiftStartedAt);
+  const now = Date.now();
+  const tickAgo = lastEngineAt ? clockHms(Math.max(0, now - lastEngineAt)) : "—";
+  const running = clockHms(now - (shiftStartedAt || now));
   return (
     <section className="panel min-h-[160px]">
       <div className="panel-head">
         <div>
           <h2 className="panel-kicker">Runner deck</h2>
-          <p className="panel-sub">heat on each desk</p>
+          <p className="panel-sub">
+            running {running} · last tick {tickAgo} ago
+          </p>
         </div>
       </div>
       <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-2">

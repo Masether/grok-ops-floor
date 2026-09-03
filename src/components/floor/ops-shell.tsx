@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect } from "react";
 import { Toaster } from "sonner";
-import { scanLiveTape, startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
+import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
@@ -32,8 +32,6 @@ export function OpsShell() {
   const { user } = useCurrentUserState();
 
   useLayoutEffect(() => {
-    openLiveNow();
-    startEngine();
     return () => stopEngine();
   }, []);
 
@@ -66,21 +64,10 @@ export function OpsShell() {
       const keyed = Boolean(useFloor.getState().keys.apiKey && useFloor.getState().keys.apiSecret);
       if (!keyed) {
         useFloor.getState().setSettingsOpen(true);
-      } else {
-        useFloor.setState({
-          launched: true,
-          floorOpen: true,
-          autoTrade: true,
-          opsMode: "auto",
-          mode: "live",
-          liveArmed: true,
-        });
       }
+      startEngine();
       try {
-        if (keyed) {
-          await refreshTreasury();
-          await scanLiveTape();
-        }
+        if (keyed) await refreshTreasury();
       } catch {
         /* tape warms on its own */
       }

@@ -381,3 +381,9 @@ export function ensureBtcQuotePairs(): PairId[] {
 }
 
 export const BTC_BOOK: PairId[] = ensureBtcQuotePairs();
+
+/** Live watchlist: BTC-quoted alts first so the book spends BTC, not USD fees. */
+export function liveWatchPairs(existing: PairId[] = []): PairId[] {
+  const rest = existing.filter((id) => id !== "XBTUSD" && !BTC_BOOK.includes(id));
+  return [...new Set([...BTC_BOOK, ...rest])].slice(0, 16) as PairId[];
+}

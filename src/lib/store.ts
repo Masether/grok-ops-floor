@@ -3,7 +3,7 @@ import { persist, createJSONStorage, type StateStorage } from "zustand/middlewar
 import { useShallow } from "zustand/react/shallow";
 import { AGENTS } from "./agents";
 import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn";
-import { BTC_BOOK, DEFAULT_PAIRS } from "./kraken";
+import { BTC_BOOK, DEFAULT_PAIRS, liveWatchPairs } from "./kraken";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import { bookDayPnl } from "./desk-pnl";
@@ -543,7 +543,7 @@ export const useFloor = create<FloorState>()(
             autoTrade: true,
             floorOpen: true,
             autoSweep: true,
-            pairs: [...new Set([...BTC_BOOK, ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs.filter((id) => id !== "XBTUSD")])].slice(0, 16) as typeof s.pairs,
+            pairs: liveWatchPairs([...BTC_BOOK, ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs]),
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
           return;
@@ -938,7 +938,7 @@ export const useFloor = create<FloorState>()(
         return {
           ...current,
           ...p,
-          pairs,
+          pairs: liveOn ? liveWatchPairs(pairs) : pairs,
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",
@@ -1010,6 +1010,7 @@ export function ensureLiveDesk(): boolean {
     mode: "live",
     venueId: "kraken",
     liveArmed: keyed ? true : s.liveArmed,
+    pairs: liveWatchPairs(s.pairs),
   });
   return keyed;
 }

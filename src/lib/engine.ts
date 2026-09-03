@@ -501,12 +501,16 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const btcPx = s0.tickers.XBTUSD?.last ?? 0;
     const btcUsd = btcOnBook(s0.liveBalance) * btcPx;
     const usd = Number(s0.liveBalance?.ZUSD ?? s0.liveBalance?.USD ?? 0);
-    if (isBtcQuote(pair) && btcUsd < MIN_LIVE_TICKET) {
-      bumpAgent("hunter", "BTC dust — USD book", 0.4);
+    if (btcUsd >= MIN_LIVE_TICKET && !isBtcQuote(pair)) {
+      bumpAgent("hunter", "BTC book — skip USD hop", 0.35);
       return;
     }
-    if (!isBtcQuote(pair) && usd < MIN_LIVE_TICKET && btcUsd >= MIN_LIVE_TICKET) {
-      bumpAgent("hunter", "USD thin — BTC book", 0.4);
+    if (btcUsd < MIN_LIVE_TICKET && isBtcQuote(pair)) {
+      bumpAgent("hunter", "BTC dust — USD book", 0.35);
+      return;
+    }
+    if (usd < MIN_LIVE_TICKET && btcUsd < MIN_LIVE_TICKET) {
+      bumpAgent("hunter", "sleeve under min ticket", 0.4);
       return;
     }
   }
@@ -1991,7 +1995,7 @@ export function startEngine(): () => void {
 
   const heartbeat = window.setInterval(() => {
     patch({ lastEngineAt: Date.now() });
-  }, 15_000);
+  }, 5_000);
   const persistPulse = window.setInterval(() => {
     flushFloorPersist();
   }, 8_000);
@@ -2077,7 +2081,6 @@ export function startEngine(): () => void {
     if (document.visibilityState !== "visible") return;
     patch({ lastEngineAt: Date.now() });
     void catchUpAway();
-    void scanLiveTape();
     void refreshTickersRest();
   };
   document.addEventListener("visibilitychange", onVis);
