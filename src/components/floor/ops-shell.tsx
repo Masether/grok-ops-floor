@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect } from "react";
 import { Toaster, toast } from "sonner";
-import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
+import { CandlestickChart, Flower2, Power, Settings2, Wallet } from "lucide-react";
 import { haltLive, startEngine, stopEngine, refreshTreasury, scanLiveTape } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
+import { useLily } from "@/lib/lily-store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
 import { Button } from "@/components/ui/button";
 import { ChartsBubble } from "./charts-bubble.tsx";
 import { BrainBubble } from "./brain-bubble.tsx";
+import { LilyRoseBubble } from "./lilyrose-bubble.tsx";
 import { DeskBubble } from "./desk-bubble.tsx";
 import { FundingRail } from "./funding-rail.tsx";
 import { LiveStatusBar } from "./live-status.tsx";
@@ -148,6 +150,7 @@ export function OpsShell() {
         <ChartsBubble />
         <DeskBubble />
         <BrainBubble />
+        <LilyRoseBubble />
         <Toaster
           theme="dark"
           position="bottom-right"
@@ -182,6 +185,8 @@ function FloorDock() {
   const setDeskTab = useFloor((s) => s.setDeskTab);
   const setChartsOpen = useFloor((s) => s.setChartsOpen);
   const setSettingsOpen = useFloor((s) => s.setSettingsOpen);
+  const lilyOpen = useLily((s) => s.lilyOpen);
+  const setLilyOpen = useLily((s) => s.setLilyOpen);
   return (
     <nav
       className="relative z-[300] flex shrink-0 gap-1.5 border-t border-border bg-bg p-2 pointer-events-auto"
@@ -219,6 +224,15 @@ function FloorDock() {
         <CandlestickChart className="size-3.5" />
         Charts
       </Button>
+      <Button
+        type="button"
+        variant={lilyOpen ? "default" : "outline"}
+        className="min-h-11"
+        aria-label="LilyRose"
+        onClick={() => setLilyOpen(true)}
+      >
+        <Flower2 className="size-3.5" />
+      </Button>
       <Button type="button" variant="outline" className="min-h-11" onClick={() => setSettingsOpen(true)}>
         <Settings2 className="size-3.5" />
       </Button>
@@ -229,4 +243,3 @@ function FloorDock() {
     </nav>
   );
 }
-
