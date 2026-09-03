@@ -11,13 +11,13 @@ import {
   SheetContent,
 } from "@/components/ui/overlay";
 import { HumanGate } from "@/components/floor/human-gate";
-import { executeOrder, refreshTreasury, scanLiveTape } from "@/lib/engine";
+import { executeOrder, refreshTreasury } from "@/lib/engine";
 import { secondRead } from "@/lib/grok-brief";
 import { testVenueKeys } from "@/lib/human-gate-api";
 import { PAIRS, PAIR_BY_ID, SLEEVE_META } from "@/lib/kraken";
 import { readHumanToken } from "@/lib/human-gate.mjs";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
-import { useDesk, useFloor, ensurePaperDesk } from "@/lib/store";
+import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
 import { persistDeskBook } from "@/lib/profile";
 import type { BookSleeve, PairId } from "@/lib/types";
 import { ALL_LANE_IDS, pickHotBook } from "@/lib/universe";
@@ -215,24 +215,20 @@ export function SettingsPanel() {
               <Label>How the floor works your money</Label>
               <ol className="space-y-2 text-2xs text-muted">
                 <li>
-                  <span className="text-treasury">1.</span> Paper starts with play money. No
-                  wallet. No deposit. Test the twelve desks first.
+                  <span className="text-treasury">1.</span> Connect Kraken Query + Orders keys.
+                  Withdrawal stays off.
                 </li>
                 <li>
-                  <span className="text-treasury">2.</span> Live is optional: verify you're human,
-                  then attach an exchange account with Query + Orders keys. Withdrawal stays off.
+                  <span className="text-treasury">2.</span> Live budget is $200. Auto-trade runs
+                  every 8s on the tape — no paper book.
                 </li>
                 <li>
-                  <span className="text-treasury">3.</span> Test the connection, switch to Live,
-                  then Arm. Live still needs test + arm. No withdrawal.
-                </li>
-                <li>
-                  <span className="text-treasury">4.</span> Auto-trade on. Stops and the daily-loss
-                  halt stay on. On-chain wallets are not in this build.
+                  <span className="text-treasury">3.</span> Halt stops new tickets. Open lots still
+                  have stops. On-chain wallets are not in this build.
                 </li>
               </ol>
               <p className="text-2xs text-subtle">
-                Paper is the rehearsal. Live spends real venue cash. This desk can lose money. Not
+                Live spends real Kraken cash inside the budget. This desk can lose money. Not
                 financial advice.
               </p>
               {launched ? (
@@ -251,13 +247,13 @@ export function SettingsPanel() {
                   size="sm"
                   variant="good"
                   onClick={() => {
-                    if (ensurePaperDesk()) {
+                    if (ensureLiveDesk()) {
                       toast.success("Paper desk is on — $10k play money. No wallet needed.");
                       setOpen(false);
                     }
                   }}
                 >
-                  Start paper desk
+                  Start live desk
                 </Button>
               )}
               <InstallAppButton />
@@ -290,29 +286,8 @@ export function SettingsPanel() {
 
             <section className="space-y-3">
               <Label>Book</Label>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant={mode === "paper" ? "default" : "outline"}
-                  onClick={() => setMode("paper")}
-                >
-                  Paper
-                </Button>
-                <Button
-                  size="sm"
-                  variant={mode === "live" ? "live" : "outline"}
-                  onClick={() => setMode("live")}
-                >
-                  Live
-                </Button>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <Label htmlFor="auto">Auto-trade</Label>
-                <Switch id="auto" checked={autoTrade} onCheckedChange={setAutoTrade} />
-              </div>
               <p className="text-2xs text-subtle">
-                Paper is demo on live Kraken candles. Live spends only the budget. Scalp, Grid, and
-                DCA all sit inside that cap.
+                Live only. Auto-trade is on. Scalp, Grid, and DCA split the $200 cap.
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {PLAYBOOKS.map((b) => (
@@ -334,23 +309,7 @@ export function SettingsPanel() {
                 All three run together, split across the $200 cap (40% scalp / 35% grid / 25% DCA).
                 MACD routes: up → scalp, chop → grid, reset → DCA. Tap a book to pause it.
               </p>
-              {mode === "paper" ? (
-                <Button
-                  size="sm"
-                  variant="good"
-                  onClick={() => {
-                    void (async () => {
-                      const res = await scanLiveTape();
-                      if (res.acted) toast.success(res.note);
-                      else toast.message(res.note);
-                      setOpen(false);
-                    })();
-                  }}
-                >
-                  Scan live tape
-                </Button>
-              ) : (
-                <div className="space-y-2">
+              <div className="space-y-2">
                   <Label htmlFor="live-budget">Live budget (USD)</Label>
                   <div className="flex flex-wrap gap-1.5">
                     {LIVE_BUDGET_PRESETS.map((n) => (
@@ -378,40 +337,30 @@ export function SettingsPanel() {
                   />
                   <p className="text-2xs text-subtle">
                     The bot only spends this slice — even if Kraken holds more. Default $200 USD.
-                    Deposit USD on Kraken, then arm. Leave Withdraw off the API key.
+                    Deposit USD on Kraken. Leave Withdraw off the API key.
                   </p>
                 </div>
-              )}
             </section>
 
             <section className="space-y-3">
               <Label>Venue</Label>
-              {mode === "paper" ? (
-                <p className="text-2xs text-subtle">
-                  Paper needs no venue. Attach an exchange when you switch to Live.
-                </p>
-              ) : (
-                <>
-                  <p className="text-2xs text-muted">
-                    Attach an exchange account with Query + Orders keys. Withdrawal stays off.
-                    On-chain wallets are not in this build.
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
-                      size="micro"
-                      variant={venueId === "kraken" ? "default" : "outline"}
-                      onClick={() => setVenueId("kraken")}
-                    >
-                      Kraken
-                    </Button>
-                    {COMING_SOON_VENUES.map((v) => (
-                      <Button key={v.id} size="micro" variant="outline" disabled>
-                        {v.label} · next
-                      </Button>
-                    ))}
-                  </div>
-                </>
-              )}
+              <p className="text-2xs text-muted">
+                Kraken Query + Orders. Withdrawal stays off.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  size="micro"
+                  variant={venueId === "kraken" ? "default" : "outline"}
+                  onClick={() => setVenueId("kraken")}
+                >
+                  Kraken
+                </Button>
+                {COMING_SOON_VENUES.map((v) => (
+                  <Button key={v.id} size="micro" variant="outline" disabled>
+                    {v.label} · next
+                  </Button>
+                ))}
+              </div>
             </section>
 
             <section className="space-y-3">
@@ -584,7 +533,7 @@ export function SettingsPanel() {
                 onChange={(e) => setStartingCash(Math.max(100, Number(e.target.value) || 10_000))}
               />
               <Button size="sm" variant="outline" onClick={resetPaper}>
-                Reset paper book
+                Reset live book
               </Button>
             </section>
 

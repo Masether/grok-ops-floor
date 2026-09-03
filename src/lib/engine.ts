@@ -427,7 +427,7 @@ async function refreshOhlcAll() {
     }))
     .sort((a, b) => b.score - a.score);
 
-  const take = s.mode === "paper" ? 8 : 6;
+  const take = 8;
   const picked: typeof ranked = [];
   for (const row of ranked) {
     if (open.has(row.pair) || picked.length < take) picked.push(row);
@@ -477,7 +477,7 @@ async function refreshOhlcAll() {
 }
 
 function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
-  if (!running || evaluating.has(pair) || evalBusy >= 2) return;
+  if (!running || evaluating.has(pair) || evalBusy >= 4) return;
   const last = lastEvalAt.get(pair) ?? 0;
   if (Date.now() - last < 6_000) return;
   evalBusy += 1;
@@ -586,33 +586,12 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     patch({ signals: [signal, ...useFloor.getState().signals].slice(0, 40) });
     await sleep(160);
 
-    const ops = s0.opsMode ?? (s0.autoTrade ? "auto" : "paper");
-    const autoDesk = ops === "auto" || s0.autoTrade || s0.liveArmed || s0.mode === "live";
-    if (ops === "learn") {
-      bumpAgent("hunter", `study ${label}`, 0.95);
-      bumpAgent("signal", grokKind.toUpperCase(), 0.9);
-      bumpAgent("regime", "pattern walk", 0.8);
-      bumpAgent("flow", "tape memory", 0.75);
-      const candlesFull = useFloor.getState().candles[pair];
-      if (candlesFull && candlesFull.length >= 24) {
-        const mem = studyFromCandles(pair, candlesFull);
-        patch({ brain: mergeAssetMemory(useFloor.getState().brain, mem) });
-      }
-      pushEvent({
-        agent: "archivist",
-        stage: "handout",
-        pair,
-        title: `STUDY ${label}`,
-        detail: `${read.reason} · stored · no ticket`,
-        tone: "info",
-      });
-      bumpAgent("archivist", "pattern stored", 0.85);
-      return;
-    }
+    const autoDesk = true;
 
     const stNow = useFloor.getState();
-    const paper = stNow.mode === "paper";
-    const liveNow = stNow.mode === "live";
+    const keysOn = krakenKeysOn(stNow.keys);
+    const paper = false;
+    const liveNow = Boolean(keysOn);
     const liveNowSleeve = liveNow
       ? liveSleeve({
           liveBudget: stNow.liveBudget,
@@ -954,8 +933,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     emitPulse({ from: "sentinel", to: "runner" });
     patch({ handoff: { from: "sentinel", to: "runner" } });
 
-    const keysOn = krakenKeysOn(st.keys);
-    const liveDesk = Boolean(keysOn && (st.liveArmed || st.mode === "live"));
+    const liveDesk = Boolean(keysOn);
     const order: Order = {
       id: uid("ord"),
       pair,
@@ -970,33 +948,15 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     };
 
     if (liveDesk) {
-      if (!st.autoTrade) {
-        patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true });
+      if (!st.liveArmed || !st.autoTrade) {
+        patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true, launched: true });
       }
       await executeOrder(order);
       return;
     }
 
-    if ((st.liveArmed || st.mode === "live") && !keysOn) {
-      patch({ pendingLive: order, mode: "live" });
-      bumpAgent("runner", "waiting on Kraken keys", 0.7);
-      return;
-    }
-
-    if (!st.autoTrade && st.mode === "paper" && !st.liveArmed) {
-      patch({ pendingLive: order });
-      pushEvent({
-        agent: "runner",
-        stage: "signed",
-        pair,
-        title: "ticket on the blotter",
-        detail: "Auto-trade off — confirm to fill",
-        tone: "warn",
-      });
-      return;
-    }
-
-    await executeOrder(order);
+    bumpAgent("runner", "Kraken keys missing — no ticket", 0.7);
+    return;
   } finally {
     evaluating.delete(pair);
   }
@@ -1808,11 +1768,11 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
   demoLock = true;
   try {
     const s = useFloor.getState();
-    if (!s.launched) {
-      return { ok: true, acted: false, note: "Desk not started — finish launch setup first" };
+    if (!s.launched && !krakenKeysOn(s.keys)) {
+      return { ok: true, acted: false, note: "Connect Kraken to scan." };
     }
     if (!s.floorOpen) {
-      return { ok: true, acted: false, note: "Floor closed — open the desk to scan" };
+      patch({ floorOpen: true, launched: true, autoTrade: true });
     }
     bumpAgent("scanner", `${s.chartInterval}m Kraken scan`, 1);
     await refreshOhlcAll();
@@ -2055,11 +2015,11 @@ export function startEngine(): () => void {
     void refreshTickersRest().then(() => checkStops());
   }, 5000);
   const ohlc = window.setInterval(() => {
-    if (!tabShouldRun()) return;
     const st = useFloor.getState();
-    if (!st.launched || !st.floorOpen) return;
+    if (!running) return;
+    if (!st.launched && !krakenKeysOn(st.keys)) return;
     void refreshOhlcAll();
-  }, useFloor.getState().mode === "paper" ? 8_000 : 15_000);
+  }, 8_000);
   const stageSpin = window.setInterval(() => {
     if (!tabShouldRun()) return;
     const s = useFloor.getState();
@@ -2107,9 +2067,7 @@ export function startEngine(): () => void {
 
   void (async () => {
     await refreshTickersRest();
-    if (useFloor.getState().launched && useFloor.getState().floorOpen) {
-      await refreshOhlcAll();
-    }
+    await refreshOhlcAll();
     await refreshTreasury();
     await refreshWire();
     sampleEquity(true);

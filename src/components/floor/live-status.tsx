@@ -1,5 +1,6 @@
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { haltLive } from "@/lib/engine";
 import { moneyFull } from "@/lib/format";
 import { liveSleeve } from "@/lib/live-budget";
 import { useFloor } from "@/lib/store";
@@ -38,53 +39,38 @@ export function LiveStatusBar() {
     >
       <div className="min-w-0">
         <p className="font-display text-micro tracking-[0.16em] uppercase">
-          {live ? "Live · Kraken" : connected ? "Kraken linked · paper still on" : "Paper desk"}
+          {connected ? "Live · Kraken" : "Connect Kraken"}
         </p>
         <p className={cn("stat-num text-sm", live ? "text-danger" : "text-fg")}>
-          {live
-            ? `USD + BTC · fees in the ticket (take only after Kraken cut) · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
-            : connected
-              ? `Kraken sees USD ${moneyFull(sleeve.usd)} · USDT ${moneyFull(sleeve.usdt)} · tickets still use play money until you arm`
-              : "Play money only. Keys + Arm live to spend Kraken USD."}
+          {connected
+            ? `USD + BTC · fees in the ticket · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
+            : "Query + Orders keys in Settings. No paper book."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Overnight: this tab must stay awake. Lid closed or laptop sleep = no trades. Arm live
-          below if the bar says paper. Budget $200. Scout {scoutScanned || "—"} books · dropped{" "}
-          {scoutDropped} under $10k liq · hot {scoutHot?.length ?? 0}.
+          Overnight: this tab must stay awake. Lid closed = no trades. Auto scans every 8s.
+          Budget $200. Scout {scoutScanned || "—"} books · dropped {scoutDropped} under $10k liq ·
+          hot {scoutHot?.length ?? 0}.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {live ? (
+        {connected ? (
           <Button
             type="button"
             size="sm"
-            variant="danger"
+            variant={live ? "danger" : "live"}
             onClick={() => {
-              setLiveArmed(false);
-              setMode("paper");
-              toast.message("Paper on — Kraken not spending.");
-            }}
-          >
-            Disarm · paper
-          </Button>
-        ) : connected ? (
-          <>
-            <Button
-              type="button"
-              size="sm"
-              variant="live"
-              onClick={() => {
+              if (live) {
+                haltLive();
+                toast.message("Halt — new tickets stopped. Open lots still protected.");
+              } else {
                 setMode("live");
                 setLiveArmed(true);
-                toast.message(`Live on Kraken — budget ${moneyFull(liveBudget)}. Paper off.`);
-              }}
-            >
-              Arm live · use Kraken
-            </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>
-              Keys
-            </Button>
-          </>
+                toast.message(`Live on Kraken — budget ${moneyFull(liveBudget)}.`);
+              }
+            }}
+          >
+            {live ? "Halt" : "Arm live"}
+          </Button>
         ) : (
           <Button type="button" size="sm" variant="live" onClick={() => setSettingsOpen(true)}>
             Connect Kraken

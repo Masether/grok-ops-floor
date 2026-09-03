@@ -12,7 +12,7 @@ import { btcOnBook, deskIsLive } from "@/lib/live-budget";
 import { pnlRange } from "@/lib/live-pnl";
 import { useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
-import type { OpsMode, PairId } from "@/lib/types";
+import type { PairId } from "@/lib/types";
 import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -21,20 +21,12 @@ import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { InstallAppButton } from "./install-app";
 
-const OPS: { id: OpsMode; label: string; hint: string }[] = [
-  { id: "paper", label: "Paper", hint: "You size tickets" },
-  { id: "auto", label: "Auto", hint: "Runs the selected book" },
-  { id: "learn", label: "Learn", hint: "Brain walks history" },
-];
-
 export function HeaderBar() {
   const desk = useDesk();
   const floorOpen = useFloor((s) => s.floorOpen);
   const setFloorOpen = useFloor((s) => s.setFloorOpen);
   const launched = useFloor((s) => s.launched);
   const mode = useFloor((s) => s.mode);
-  const opsMode = useFloor((s) => s.opsMode);
-  const setOpsMode = useFloor((s) => s.setOpsMode);
   const playbooks = useFloor((s) => s.playbooks);
   const setPlaybook = useFloor((s) => s.setPlaybook);
   const liveArmed = useFloor((s) => s.liveArmed);
@@ -147,7 +139,7 @@ export function HeaderBar() {
             </div>
             <p className="truncate text-micro tracking-wide text-subtle">
               {liveArmed
-                ? `Live Kraken · budget ${moneyFull(liveBudget)} · paper off`
+                ? `Live Kraken · budget ${moneyFull(liveBudget)}`
                 : "300 agents · 3 desks: setup · challenge · risk"}
             </p>
           </div>
@@ -298,34 +290,6 @@ export function HeaderBar() {
           </span>
         ) : null}
         <div className="flex shrink-0 flex-col gap-1 sm:flex-row sm:items-center">
-          <div className="flex gap-1">
-            {OPS.map((m) => (
-              <Button
-                key={m.id}
-                type="button"
-                size="sm"
-                className="min-h-11"
-                variant={opsMode === m.id ? "default" : "outline"}
-                aria-pressed={opsMode === m.id}
-                title={m.hint}
-                disabled={!launched}
-                onClick={() => {
-                  setOpsMode(m.id);
-                  if (m.id === "learn") {
-                    setBrainOpen(true);
-                    void studyBook().then((r) => toast.message(r.note));
-                  }
-                  if (m.id === "paper") setDeskOpen(true);
-                }}
-              >
-                {m.label}
-              </Button>
-            ))}
-          </div>
-          <span className="hidden text-micro text-subtle sm:inline">
-            {OPS.find((m) => m.id === opsMode)?.hint}
-          </span>
-          <span className="hidden text-subtle sm:inline">·</span>
           <div className="flex gap-1">
             {PLAYBOOKS.map((b) => (
               <Button

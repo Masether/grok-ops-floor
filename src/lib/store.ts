@@ -422,10 +422,10 @@ export const useFloor = create<FloorState>()(
     (set, get) => ({
       launched: false,
       floorOpen: false,
-      mode: "paper",
-      opsMode: "paper",
+      mode: "live",
+      opsMode: "auto",
       playbooks: [...ALL_PLAYBOOKS],
-      autoTrade: false,
+      autoTrade: true,
       liveArmed: false,
       liveBudget: DEFAULT_LIVE_BUDGET,
       liveTakerPct: 0,
@@ -929,27 +929,24 @@ export const useFloor = create<FloorState>()(
         );
         const launched = launchedThisSession || inferLaunched(p);
         const venueId: VenueId = p.liveArmed || p.mode === "live" ? "kraken" : p.venueId === "paper" ? "paper" : "kraken";
-        const opsMode: OpsMode =
-          p.opsMode === "learn" ? "learn" : launched ? "auto" : "paper";
-        const autoTrade = launched && opsMode === "auto";
         const keyed =
           typeof (p.keys ?? current.keys)?.apiKey === "string" &&
           ((p.keys ?? current.keys)?.apiKey?.trim().length ?? 0) > 8 &&
           typeof (p.keys ?? current.keys)?.apiSecret === "string" &&
           ((p.keys ?? current.keys)?.apiSecret?.trim().length ?? 0) > 8;
-        const liveOn = Boolean((p.liveArmed || p.mode === "live") && keyed);
+        const liveOn = keyed;
         return {
           ...current,
           ...p,
           pairs,
-          launched,
-          venueId: liveOn ? "kraken" : venueId,
-          opsMode: launched ? opsMode : "paper",
+          launched: launched || keyed,
+          venueId: "kraken",
+          opsMode: "auto",
           playbooks: normalizePlaybooks(p.playbooks ?? ALL_PLAYBOOKS),
-          floorOpen: launched,
-          autoTrade: launched ? true : autoTrade,
+          floorOpen: launched || keyed,
+          autoTrade: true,
           agents: current.agents,
-          mode: liveOn ? "live" : p.mode === "paper" ? "paper" : current.mode,
+          mode: "live",
           liveArmed: liveOn,
           liveBudget: restoreLiveBudget(p.liveBudget ?? current.liveBudget),
           liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : current.liveTakerPct,
@@ -1001,10 +998,23 @@ export const useFloor = create<FloorState>()(
   ),
 );
 
-/** Start a paper book with play money. No-op if the desk is already launched. */
-export function ensurePaperDesk(): boolean {
+/** Open the live Kraken desk. No paper book. */
+export function ensureLiveDesk(): boolean {
   const s = useFloor.getState();
-  if (s.launched) return false;
-  s.launchDesk({});
-  return true;
+  const keyed = Boolean(krakenKeysOn(s.keys));
+  useFloor.setState({
+    launched: true,
+    floorOpen: true,
+    autoTrade: true,
+    opsMode: "auto",
+    mode: "live",
+    venueId: "kraken",
+    liveArmed: keyed ? true : s.liveArmed,
+  });
+  return keyed;
+}
+
+/** @deprecated live-only desk */
+export function ensurePaperDesk(): boolean {
+  return ensureLiveDesk();
 }

@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useState } from "react";
-import { toast, Toaster } from "sonner";
-import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
+import { useEffect, useLayoutEffect } from "react";
+import { Toaster } from "sonner";
+import { scanLiveTape, startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
-import { ensurePaperDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
+import { ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { TooltipProvider } from "@/components/ui/overlay";
@@ -13,18 +13,16 @@ import { FundingRail } from "./funding-rail";
 import { LiveStatusBar } from "./live-status";
 import { SessionBoard } from "./session-board";
 import { HeaderBar } from "./header-bar";
-import { LaunchSetup } from "./launch-setup";
 import { OrbitStage } from "./orbit-stage";
 import { SettingsPanel } from "./settings-panel";
 import { PairStrip, ReworkQueue, RunnerDeck, TheDesk, TokenFlow } from "./side-panels";
 import { TheTape } from "./the-tape";
 import { TheWire } from "./the-wire";
 
-function openPaperNow() {
-  const started = ensurePaperDesk();
+function openLiveNow() {
+  ensureLiveDesk();
   const s = useFloor.getState();
   if (s.launched && !s.floorOpen) s.setFloorOpen(true);
-  return started;
 }
 
 export function OpsShell() {
@@ -32,10 +30,9 @@ export function OpsShell() {
   const floorOpen = useFloor((s) => s.floorOpen);
   const liveArmed = useFloor((s) => s.liveArmed);
   const { user } = useCurrentUserState();
-  const [showLaunch, setShowLaunch] = useState(false);
 
   useLayoutEffect(() => {
-    openPaperNow();
+    openLiveNow();
     startEngine();
     return () => stopEngine();
   }, []);
@@ -65,21 +62,24 @@ export function OpsShell() {
         /* first visit */
       }
       if (!alive) return;
-      const started = openPaperNow();
-      const st = useFloor.getState();
-      if (started && st.mode !== "live") {
-        toast.success("Paper desk is on — $10k play money. 24/7.");
+      openLiveNow();
+      const keyed = Boolean(useFloor.getState().keys.apiKey && useFloor.getState().keys.apiSecret);
+      if (!keyed) {
+        useFloor.getState().setSettingsOpen(true);
+      } else {
+        useFloor.setState({
+          launched: true,
+          floorOpen: true,
+          autoTrade: true,
+          opsMode: "auto",
+          mode: "live",
+          liveArmed: true,
+        });
       }
-      if (!useFloor.getState().launched) {
-        setShowLaunch(true);
-        return;
-      }
-      setShowLaunch(false);
-      if (st.launched && !st.floorOpen) st.setFloorOpen(true);
       try {
-        const now = useFloor.getState();
-        if (now.keys.apiKey && now.keys.apiSecret && (now.liveArmed || now.mode === "live")) {
+        if (keyed) {
           await refreshTreasury();
+          await scanLiveTape();
         }
       } catch {
         /* tape warms on its own */
@@ -105,7 +105,7 @@ export function OpsShell() {
           const book = parseBook(p.bookJson);
           if (book) applyRemoteBook(book);
         }
-        openPaperNow();
+        openLiveNow();
       })
       .catch(() => {
         /* guest */
@@ -157,7 +157,6 @@ export function OpsShell() {
         <ChartsBubble />
         <DeskBubble />
         <BrainBubble />
-        {showLaunch && !launched ? <LaunchSetup /> : null}
         <Toaster
           theme="dark"
           position="bottom-right"
