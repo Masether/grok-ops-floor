@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, spotQty, usdStable } from "./live-budget.ts";
+import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, liveDayBase, restoreLiveBudget, spotQty, usdStable } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
@@ -22,6 +22,10 @@ describe("clampLiveBudget", () => {
     assert.equal(clampLiveBudget(10), 20);
     assert.equal(clampLiveBudget(200), 200);
     assert.equal(clampLiveBudget(99_999), 50_000);
+    assert.equal(restoreLiveBudget(100), 200);
+    assert.equal(restoreLiveBudget(200), 200);
+    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 100, openLots: 0 }), 100);
+    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 180, openLots: 1 }), 200);
   });
 });
 

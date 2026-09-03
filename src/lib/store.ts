@@ -39,7 +39,7 @@ import {
   type ChartInterval,
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
-import { clampLiveBudget, DEFAULT_LIVE_BUDGET, livePositions, liveSleeve } from "./live-budget";
+import { clampLiveBudget, DEFAULT_LIVE_BUDGET, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget";
 import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook";
 import { idleSwarm, type SwarmSnap } from "./swarm";
 import type { VenueId } from "./venues/types";
@@ -266,7 +266,7 @@ export type FloorState = {
 };
 
 export function computeDesk(s: FloorState): DeskSnapshot {
-  const live = s.mode === "live";
+  const live = s.mode === "live" || s.liveArmed;
   const book = live ? livePositions(s.positions) : s.positions;
   let posValue = 0;
   let unrealized = 0;
@@ -291,9 +291,12 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   const wins = fills.filter((o) => o.reason.includes("TP")).length;
   const losses = fills.filter((o) => o.reason.includes("SL")).length;
   const dayBase = live
-    ? s.dayStartEquity > 0 && s.dayStartEquity <= (sleeve?.budget ?? s.liveBudget) * 1.25
-      ? s.dayStartEquity
-      : sleeve?.equity || s.liveBudget
+    ? liveDayBase({
+        dayStart: s.dayStartEquity,
+        budget: sleeve?.budget ?? s.liveBudget,
+        equity,
+        openLots: book.length,
+      })
     : s.dayStartEquity > 0
       ? s.dayStartEquity
       : s.startingCash > 0
@@ -592,9 +595,11 @@ export const useFloor = create<FloorState>()(
       },
       stopDesk: () => set({ floorOpen: false, autoTrade: false, sessionEndsAt: null }),
       setKeys: (keys) => {
-        if (!get().humanVerified) return;
+        const have = krakenKeysOn(get().keys);
+        if (!get().humanVerified && !have) return;
         if (rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret)) return;
-        set({ keys, keysOk: null });
+        set({ keys, keysOk: null, humanVerified: true });
+        queueMicrotask(flushFloorPersist);
       },
       setKeysOk: (v) => set({ keysOk: v }),
       setPairs: (pairs) => set({ pairs: pairs.length ? pairs : DEFAULT_PAIRS }),
@@ -942,10 +947,8 @@ export const useFloor = create<FloorState>()(
           agents: freshAgents(),
           mode: liveOn ? "live" : p.mode === "paper" ? "paper" : current.mode,
           liveArmed: liveOn,
-          liveBudget: clampLiveBudget(
-            typeof p.liveBudget === "number" ? p.liveBudget : current.liveBudget,
-          ),
-          humanVerified: false,
+          liveBudget: restoreLiveBudget(p.liveBudget ?? current.liveBudget),
+          humanVerified: keyed,
           pendingLive: null,
           queue: [],
           swarm: idleSwarm(),

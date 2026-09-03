@@ -13,7 +13,7 @@ import {
 import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
 import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine";
 import { PAIR_BY_ID } from "@/lib/kraken";
-import { MIN_LIVE_HALT_USD } from "@/lib/live-budget";
+import { liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
 import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -125,9 +125,12 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
   const liveBudget = useFloor((s) => s.liveBudget);
   const live = liveArmed || mode === "live";
   const haltBase = live
-    ? dayStartEquity > 0 && dayStartEquity <= liveBudget * 1.25
-      ? dayStartEquity
-      : liveBudget
+    ? liveDayBase({
+        dayStart: dayStartEquity,
+        budget: liveBudget,
+        equity: desk.equity,
+        openLots: desk.openPositions,
+      })
     : dayStartEquity > 0
       ? dayStartEquity
       : startingCash;
@@ -137,8 +140,9 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
     maxDailyLossPct: risk.maxDailyLossPct,
     minHaltUsd: live ? MIN_LIVE_HALT_USD : 0,
   });
-  const fills = orders.filter((o) => o.status === "filled");
+  const fills = orders.filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"));
   const wr = fillWinRatePct(desk.wins, desk.losses);
+  const lots = live ? positions.filter((p) => p.mode === "live") : positions;
 
   return (
     <>
@@ -184,13 +188,13 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
             {opsMode === "auto" ? "bot is trading" : opsMode === "learn" ? "study only" : "you size tickets"}
           </span>
         </div>
-        {positions.length === 0 ? (
+        {lots.length === 0 ? (
           <p className="mt-2 text-2xs text-subtle">
             Flat. Nothing in the book. When the bot buys, the lot lands here until it sells.
           </p>
         ) : (
           <ul className="mt-2 space-y-1.5">
-            {positions.map((p) => {
+            {lots.map((p) => {
               const mark = tickers[p.pair]?.last ?? p.mark;
               const m = lotMetrics({
                 entry: p.entry,

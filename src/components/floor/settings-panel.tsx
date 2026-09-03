@@ -24,7 +24,7 @@ import { ALL_LANE_IDS, pickHotBook } from "@/lib/universe";
 import { COMING_SOON_VENUES } from "@/lib/venues";
 import { DurationPills } from "./duration-pills";
 import { InstallAppButton } from "./install-app";
-import { LIVE_BUDGET_PRESETS, clampLiveBudget, liveSleeve } from "@/lib/live-budget";
+import { LIVE_BUDGET_PRESETS, clampLiveBudget, krakenKeysOn, liveSleeve } from "@/lib/live-budget";
 import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
 import { moneyFull } from "@/lib/format";
 
@@ -76,6 +76,19 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
 
   async function testKeys() {
+    const saved = krakenKeysOn(keys);
+    if (saved && !humanVerified) {
+      setBusy(true);
+      try {
+        await refreshTreasury();
+        const ok = useFloor.getState().keysOk;
+        if (ok) toast.success("Saved Kraken keys still work.");
+        else toast.error("Saved keys failed — paste them again.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const token = readHumanToken();
     if (!humanVerified || !token) {
       toast.error("Verify you're human before linking an account.");
@@ -407,16 +420,16 @@ export function SettingsPanel() {
               <Input
                 type="text"
                 autoComplete="off"
-                placeholder="API key"
-                disabled={!humanVerified}
+                placeholder={krakenKeysOn(keys) ? "API key saved on this device" : "API key"}
+                disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiKey}
                 onChange={(e) => setKeys({ ...keys, apiKey: e.target.value })}
               />
               <Input
                 type="password"
                 autoComplete="off"
-                placeholder="API secret (base64) — not a wallet key"
-                disabled={!humanVerified}
+                placeholder={krakenKeysOn(keys) ? "Secret saved on this device" : "API secret (base64) — not a wallet key"}
+                disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiSecret}
                 onChange={(e) => setKeys({ ...keys, apiSecret: e.target.value })}
               />
@@ -424,7 +437,7 @@ export function SettingsPanel() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy || !keys.apiKey || !humanVerified}
+                  disabled={busy || !keys.apiKey || (!humanVerified && !krakenKeysOn(keys))}
                   onClick={() => void testKeys()}
                 >
                   {busy ? "Testing…" : "Test connection"}
@@ -432,13 +445,17 @@ export function SettingsPanel() {
                 <Button
                   size="sm"
                   variant={liveArmed ? "danger" : "live"}
-                  disabled={mode !== "live" || keysOk !== true}
+                  disabled={mode !== "live" || (keysOk !== true && !krakenKeysOn(keys))}
                   onClick={() => (liveArmed ? setLiveArmed(false) : setArmAsk(true))}
                 >
                   {liveArmed ? "Disarm" : "Arm live"}
                 </Button>
               </div>
-              {keysOk === true ? (
+              {krakenKeysOn(keys) ? (
+                <p className="text-2xs text-good">
+                  Keys stay in this browser. You do not paste them again on this device.
+                </p>
+              ) : keysOk === true ? (
                 <p className="text-2xs text-good">Keys accepted. Keys stay in this browser.</p>
               ) : keysOk === false ? (
                 <p className="text-2xs text-danger">Kraken rejected the keys.</p>

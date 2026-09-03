@@ -10,9 +10,26 @@ export const MIN_LIVE_TICKET = 12;
 export const MIN_LIVE_HALT_USD = 40;
 
 export function clampLiveBudget(n: number): number {
-  const x = Math.round(Number(n) * 100) / 100;
-  if (!Number.isFinite(x)) return DEFAULT_LIVE_BUDGET;
+  const x = Number.isFinite(n) ? n : DEFAULT_LIVE_BUDGET;
   return Math.min(MAX_LIVE_BUDGET, Math.max(MIN_LIVE_BUDGET, x));
+}
+
+export function restoreLiveBudget(n: unknown): number {
+  const x = clampLiveBudget(typeof n === "number" ? n : DEFAULT_LIVE_BUDGET);
+  if (x === 100) return DEFAULT_LIVE_BUDGET;
+  return x;
+}
+
+export function liveDayBase(input: {
+  dayStart: number;
+  budget: number;
+  equity: number;
+  openLots: number;
+}): number {
+  if (!(input.openLots > 0)) return input.equity;
+  const start = input.dayStart;
+  if (start > 0 && start <= input.budget * 1.25 && start >= input.budget * 0.4) return start;
+  return input.equity;
 }
 
 export function usdStable(bal: Record<string, string> | null | undefined): number {
