@@ -1,7 +1,7 @@
-/** Ticket notional from min up to remaining working cash (max $100 in lots). */
+/** Ticket from min up to $100 each. The rest of the $200 keeps trading. */
 
 import { kellyFraction } from "./kelly.ts";
-import { MIN_LIVE_TICKET } from "./live-budget.ts";
+import { MAX_LIVE_TICKET, MIN_LIVE_TICKET } from "./live-budget.ts";
 
 export function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
@@ -14,11 +14,13 @@ export function budgetStake(input: {
   payoff: number;
   heat?: boolean;
   minTicket?: number;
+  maxTicket?: number;
 }): number {
   const minN = input.minTicket ?? MIN_LIVE_TICKET;
   const remaining = Math.max(0, input.remaining);
   if (remaining < minN) return 0;
-  const maxN = remaining * 0.98;
+  const cap = input.maxTicket ?? MAX_LIVE_TICKET;
+  const maxN = Math.min(remaining * 0.98, cap);
   const f = kellyFraction(input.pWin, input.payoff);
   const edge = f <= 0 ? 0.18 : clamp(f / 0.06, 0.18, 1);
   const conf = clamp((input.confidence - 0.32) / 0.55, 0.12, 1);

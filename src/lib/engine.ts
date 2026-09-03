@@ -1035,7 +1035,7 @@ function sizeTicket(
   const wr =
     s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
   const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
-  const remaining = live ? cash : Math.min(cash, 100);
+  const remaining = live ? cash : Math.min(cash, s.liveBudget || 200);
   const usd = budgetStake({
     remaining,
     confidence,

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, LIVE_WORKING_CAP } from "./live-budget.ts";
+import { clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
@@ -32,8 +32,8 @@ describe("liveSleeve", () => {
       liveBalance: { USDT: "5000" },
       positions: [],
     });
-    assert.equal(s.cash, LIVE_WORKING_CAP);
-    assert.equal(s.equity, LIVE_WORKING_CAP);
+    assert.equal(s.cash, 200);
+    assert.equal(s.equity, 200);
     assert.equal(s.usdt, 5000);
   });
 
@@ -55,7 +55,7 @@ describe("liveSleeve", () => {
     });
     assert.equal(s.cost, 40);
     assert.equal(s.deployed, 20);
-    assert.equal(s.cash, 60);
-    assert.equal(s.equity, 80);
+    assert.equal(s.cash, 160);
+    assert.equal(s.equity, 180);
   });
 });

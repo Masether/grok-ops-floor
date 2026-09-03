@@ -9,10 +9,16 @@ describe("budgetStake", () => {
     assert.ok(usd < 50);
   });
 
-  it("can spend most of the $200 when confidence and edge are high", () => {
+  it("caps one ticket at $100 even if $200 is free", () => {
     const usd = budgetStake({ remaining: 200, confidence: 0.9, pWin: 0.7, payoff: 3 });
-    assert.ok(usd > 100);
-    assert.ok(usd <= 200 * 0.98 + 1e-9);
+    assert.ok(usd > 40);
+    assert.ok(usd <= 100);
+  });
+
+  it("uses the leftover $100 for the next ticket", () => {
+    const next = budgetStake({ remaining: 100, confidence: 0.9, pWin: 0.7, payoff: 3 });
+    assert.ok(next > 40);
+    assert.ok(next <= 100);
   });
 
   it("never exceeds remaining cash", () => {
