@@ -8,6 +8,7 @@ import { PAIR_BY_ID } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";
 import { usdOnBook } from "@/lib/specialists";
 import { profitBarPct, sessionProfit } from "@/lib/desk-pnl";
+import { pnlRange } from "@/lib/live-pnl";
 import { ensurePaperDesk, useDesk, useFloor } from "@/lib/store";
 import { vaultMark } from "@/lib/wallet";
 import type { OpsMode, PairId } from "@/lib/types";
@@ -63,6 +64,7 @@ export function HeaderBar() {
   const setBrainOpen = useFloor((s) => s.setBrainOpen);
   const brainOpen = useFloor((s) => s.brainOpen);
   const swarm = useFloor((s) => s.swarm);
+  const equityHistory = useFloor((s) => s.equityHistory);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -79,12 +81,20 @@ export function HeaderBar() {
   const krakenUsd = usdOnBook(liveBalance);
   const barBase = live ? liveBudget : startingCash;
   const barPct = profitBarPct(profit, barBase);
+  const spark = equityHistory.slice(-40);
+  const sparkVals = spark.map((p) => sessionProfit(desk.realized, p.unrealized));
+  const range = pnlRange(sparkVals, profit);
+  const sparkMin = Math.min(range.low, 0);
+  const sparkMax = Math.max(range.high, 0);
+  const sparkSpan = Math.max(sparkMax - sparkMin, 0.01);
 
   return (
     <header className="shrink-0">
       <div className="border-b border-border px-3 py-1.5 lg:px-4">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">Profit</span>
+          <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
+            Live PnL
+          </span>
           <span
             className={cn(
               "stat-num text-sm",
@@ -94,11 +104,29 @@ export function HeaderBar() {
             {profit >= 0 ? "+" : ""}
             {moneyFull(profit)}
             <span className="ml-2 text-micro text-subtle">
-              {clock(now - (shiftStartedAt || now))} running · closed {money(desk.realized)} · open{" "}
-              {money(desk.unrealized)}
+              {clock(now - (shiftStartedAt || now))} · closed {money(desk.realized)} · open{" "}
+              {money(desk.unrealized)} · H {money(range.high)} · L {money(range.low)}
             </span>
           </span>
         </div>
+        {spark.length >= 2 ? (
+          <div className="mt-1 flex h-5 items-end gap-px" aria-hidden>
+            {spark.map((p, i) => {
+              const v = sparkVals[i] ?? 0;
+              return (
+                <span
+                  key={`${p.t}-${i}`}
+                  className="min-w-px flex-1 rounded-xs"
+                  style={{
+                    height: `${8 + ((v - sparkMin) / sparkSpan) * 12}px`,
+                    background: v >= 0 ? "var(--color-good)" : "var(--color-danger)",
+                    opacity: 0.4 + (i / spark.length) * 0.6,
+                  }}
+                />
+              );
+            })}
+          </div>
+        ) : null}
         <div className="mt-1 h-1.5 overflow-hidden rounded-xs bg-surface-3" aria-hidden>
           <div
             className={cn("h-full", profit >= 0 ? "bg-good" : "bg-danger")}

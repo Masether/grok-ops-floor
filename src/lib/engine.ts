@@ -29,6 +29,7 @@ import { makeSimCandles, stepSim } from "./sim-feed";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl";
 import { hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget";
+import { lotsMark } from "./live-pnl";
 import { GUILDS, SWARM_SIZE, finishRoll, landGuild, pingSwarm, startRoll, tallySwarm } from "./swarm";
 import { fetchWire } from "./wire-api";
 import { sessionEnded } from "./session";
@@ -311,21 +312,34 @@ function flushTickers() {
     ticks: s.ticks + 1,
   });
   maybeCheckStops();
+  sampleEquity(positions.length > 0);
 }
 
 function sampleEquity(force = false) {
   const now = Date.now();
-  if (!force && now - lastEquitySample < 2500) return;
+  const s0 = useFloor.getState();
+  const open = s0.positions.length > 0;
+  const gap = open ? 400 : 2500;
+  if (!force && now - lastEquitySample < gap) return;
   lastEquitySample = now;
   const s = useFloor.getState();
+  const live = s.mode === "live" || s.liveArmed;
+  const book = live ? livePositions(s.positions) : s.positions;
   const equity = markEquity(s);
-  const cost = s.positions.reduce((a, p) => a + p.entry * p.qty, 0);
-  const posValue = equity - s.cash;
+  const cash = live
+    ? liveSleeve({
+        liveBudget: s.liveBudget,
+        liveBalance: s.liveBalance,
+        positions: s.positions,
+        tickers: s.tickers,
+      }).cash
+    : s.cash;
+  const marked = lotsMark(book, s.tickers);
   const point = {
     t: now,
     equity,
-    cash: s.cash,
-    unrealized: posValue - cost,
+    cash,
+    unrealized: marked.unrealized,
     scanner: s.agents.scanner?.heat ?? 0.2,
     signal: s.agents.signal?.heat ?? 0.2,
     risk: s.agents.risk?.heat ?? 0.2,
@@ -333,7 +347,7 @@ function sampleEquity(force = false) {
   };
   const hist = s.equityHistory;
   const last = hist[hist.length - 1];
-  if (last && now - last.t < 2000 && !force) return;
+  if (last && now - last.t < (open ? 350 : 2000) && !force) return;
   patch({ equityHistory: [...hist, point].slice(-90) });
 }
 

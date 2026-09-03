@@ -40,6 +40,7 @@ import {
 } from "./session";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet";
 import { clampLiveBudget, DEFAULT_LIVE_BUDGET, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget";
+import { lotsMark } from "./live-pnl";
 import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook";
 import { idleSwarm, type SwarmSnap } from "./swarm";
 import type { VenueId } from "./venues/types";
@@ -268,13 +269,9 @@ export type FloorState = {
 export function computeDesk(s: FloorState): DeskSnapshot {
   const live = s.mode === "live" || s.liveArmed;
   const book = live ? livePositions(s.positions) : s.positions;
-  let posValue = 0;
-  let unrealized = 0;
-  for (const p of book) {
-    const mark = s.tickers[p.pair]?.last ?? p.mark;
-    posValue += mark * p.qty;
-    unrealized += (mark - p.entry) * p.qty;
-  }
+  const marked = lotsMark(book, s.tickers);
+  const posValue = marked.lots;
+  const unrealized = marked.unrealized;
   const sleeve = live
     ? liveSleeve({
         liveBudget: s.liveBudget,
@@ -318,7 +315,7 @@ export function computeDesk(s: FloorState): DeskSnapshot {
 }
 
 export function markEquity(s: FloorState): number {
-  if (s.mode === "live") {
+  if (s.mode === "live" || s.liveArmed) {
     return liveSleeve({
       liveBudget: s.liveBudget,
       liveBalance: s.liveBalance,
