@@ -2,7 +2,7 @@
 
 export const DESK_MOD_KEY = "ops-desk-mods";
 export const DESK_MOD_VER_KEY = "ops-desk-mods-ver";
-export const DESK_MOD_VER = "6";
+export const DESK_MOD_VER = "7";
 
 export const DESK_MODS = [
   { id: "live", label: "Kraken live tape", hint: "prices, candles, fills", group: "must", on: true },

@@ -3,7 +3,7 @@ import { emitPulse } from "./bus.ts";
 import { uid, px, money } from "./format.ts";
 import { macdHist, readScalp } from "./indicators.ts";
 import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api.ts";
-import { PAIR_BY_ID, BTC_BOOK, HEAT_PAIRS, btcBookArmed, getPair, heatUniverse, isBtcQuote, isBtcUsd, pairBase, pairLabel, registerPair } from "./kraken.ts";
+import { PAIR_BY_ID, BTC_BOOK, DEFAULT_PAIRS, HEAT_PAIRS, btcBookArmed, getPair, heatUniverse, isBtcQuote, isBtcUsd, liveWatchPairs, pairBase, pairLabel, registerPair } from "./kraken.ts";
 import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
 import { industryCall } from "./industry-call.ts";
@@ -405,7 +405,11 @@ async function runScout() {
     const hot = kept
       .map((h) => (getPair(h.pair) ? (h.pair as PairId) : null))
       .filter((id): id is PairId => Boolean(id) && getPair(id!)?.sleeve === "heat");
-    const nextPairs = !modOn("core") ? heatUniverse([...s.pairs, ...hot]) : s.pairs;
+    const btcPx = s.tickers.XBTUSD?.last ?? 0;
+    const btcUsd = btcOnBook(s.liveBalance) * btcPx;
+    const nextPairs = !modOn("core")
+      ? heatUniverse([...s.pairs, ...hot])
+      : liveWatchPairs([...DEFAULT_PAIRS, ...s.pairs, ...hot], btcUsd, false);
     const bookChanged = nextPairs.length !== s.pairs.length || nextPairs.some((id, i) => id !== s.pairs[i]);
     patch({
       scoutHot: hot,
@@ -414,17 +418,20 @@ async function runScout() {
       lastScoutAt: Date.now(),
       pairs: nextPairs,
     });
-    bumpAgent("hunter", `scout kept ${hot.length} memes / dropped ${dropped}`, 0.9);
+    const bookNote = modOn("core")
+      ? `core + ${hot.length} heat · dropped ${dropped}`
+      : `heat-only ${hot.length} · dropped ${dropped}`;
+    bumpAgent("hunter", `scout ${bookNote}`, 0.9);
     pushEvent({
       agent: "hunter",
       stage: "brief",
       title: `SCOUT ${scanned}`,
-      detail: `Kraken memes on the book: ${hot.length} · dropped ${dropped} (stables/majors/thin)`,
+      detail: `Book: ${bookNote} (stables/thin filtered)`,
       tone: "info",
     });
     pushQueue({
       title: `SCOUT ${scanned}`,
-      detail: `${hot.length} memes on the book · dropped ${dropped}`,
+      detail: bookNote,
       severity: "playbook",
     });
     if (bookChanged) restartFeed();

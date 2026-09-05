@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { AGENTS } from "./agents.ts";
 import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn.ts";
 import { DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
+import { modOn } from "./desk-mods.ts";
 import { btcOnBook, clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, pairsFromWallet, restoreLiveBudget } from "./live-budget.ts";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
@@ -548,7 +549,7 @@ export const useFloor = create<FloorState>()(
             pairs: liveWatchPairs(
               [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
               sleeve.btcUsd,
-              true,
+              !modOn("core"),
             ),
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
@@ -796,9 +797,9 @@ export const useFloor = create<FloorState>()(
         set((s) => ({
           liveBalance: b,
           pairs: liveWatchPairs(
-            [...pairsFromWallet(b), ...s.pairs],
+            [...pairsFromWallet(b), ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
             btcOnBook(b) * (s.tickers.XBTUSD?.last ?? 0),
-            true,
+            !modOn("core"),
           ),
         })),
       setSettingsOpen: (v) => set({ settingsOpen: v }),
@@ -953,7 +954,7 @@ export const useFloor = create<FloorState>()(
         return {
           ...current,
           ...p,
-          pairs: liveOn ? liveWatchPairs(pairs, 0, true) : pairs,
+          pairs: liveWatchPairs(pairs.length ? pairs : DEFAULT_PAIRS, 0, !modOn("core")),
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",

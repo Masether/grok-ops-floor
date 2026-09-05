@@ -27,4 +27,13 @@ describe("liveWatchPairs", () => {
     assert.ok(both.some((id) => isBtcQuote(id)));
     assert.ok(both.includes("ETHUSD"));
   });
+
+  it("core majors lead the full book ahead of heat", () => {
+    const book = liveWatchPairs(["ETHUSD", "BONKUSD"] as PairId[], 400, false);
+    const eth = book.indexOf("ETHUSD");
+    const bonk = book.indexOf("BONKUSD");
+    assert.ok(eth >= 0 && bonk >= 0);
+    assert.ok(eth < bonk);
+    assert.ok(book.includes("SOLUSD"));
+  });
 });

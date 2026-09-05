@@ -411,7 +411,7 @@ export function btcBookArmed(btcUsd: number): boolean {
   return Number.isFinite(btcUsd) && btcUsd >= BTC_BOOK_MIN_USD;
 }
 
-/** Live watchlist. Heat-only when core is off. */
+/** Live watchlist. Core majors first; heat-only only when core sleeve is off. */
 export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = false): PairId[] {
   if (heatOnly) {
     return heatUniverse(existing);
@@ -423,7 +423,8 @@ export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = f
     return true;
   });
   const btc = btcBookArmed(btcUsd) ? BTC_BOOK : [];
-  return [...new Set([...HEAT_PAIRS, ...usdCore, ...rest, ...btc])]
+  // Core first so majors are never sliced off by the meme list.
+  return [...new Set([...usdCore, ...HEAT_PAIRS, ...rest, ...btc])]
     .filter((id) => Boolean(getPair(id)))
-    .slice(0, 16) as PairId[];
+    .slice(0, 24) as PairId[];
 }
