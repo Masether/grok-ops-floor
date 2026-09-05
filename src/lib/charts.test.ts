@@ -31,6 +31,7 @@ describe("normalizeChartIndicators", () => {
     assert.equal(on.ema, true);
     assert.equal(on.rsi, true);
     assert.equal(on.volume, true);
+    assert.equal(on.vwap, true);
     assert.equal(on.sma, false);
     assert.equal(on.macd, false);
     assert.equal(on.bb, false);
@@ -51,7 +52,7 @@ describe("normalizeChartIndicators", () => {
     assert.equal(list.find((x) => x.id === "sma")?.period, 200);
     assert.equal(list.find((x) => x.id === "ema")?.on, false);
     assert.equal(list.find((x) => x.id === "ema")?.fast, 9);
-    assert.equal(list.length, 7);
+    assert.equal(list.length, 8);
   });
 });
 

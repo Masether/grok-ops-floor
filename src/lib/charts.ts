@@ -3,7 +3,7 @@ import type { PairId } from "./types.ts";
 
 export type ChartType = "candles" | "bars" | "line";
 export type ChartTool = "crosshair" | "hline" | "trend";
-export type IndicatorId = "sma" | "ema" | "bb" | "volume" | "rsi" | "macd" | "stoch";
+export type IndicatorId = "sma" | "ema" | "bb" | "volume" | "rsi" | "macd" | "stoch" | "vwap";
 
 export type ChartIndicatorState = {
   id: IndicatorId;
@@ -42,6 +42,7 @@ export const INDICATOR_IDS: IndicatorId[] = [
   "sma",
   "ema",
   "bb",
+  "vwap",
   "volume",
   "rsi",
   "macd",
@@ -55,6 +56,7 @@ export const INDICATOR_META: Record<
   sma: { label: "SMA", overlay: true, params: "period" },
   ema: { label: "EMA", overlay: true, params: "ema" },
   bb: { label: "BB", overlay: true, params: "bb" },
+  vwap: { label: "VWAP", overlay: true, params: "none" },
   volume: { label: "Volume", overlay: false, params: "none" },
   rsi: { label: "RSI", overlay: false, params: "period" },
   macd: { label: "MACD", overlay: false, params: "none" },
@@ -81,6 +83,7 @@ export const DEFAULT_CHART_INDICATORS: ChartIndicatorState[] = [
   blank("sma", false, { period: 20 }),
   blank("ema", true, { fast: 12, slow: 26 }),
   blank("bb", false, { period: 20, k: 2 }),
+  blank("vwap", true),
   blank("volume", true),
   blank("rsi", true, { period: 14 }),
   blank("macd", false),

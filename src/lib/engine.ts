@@ -3,12 +3,14 @@ import { emitPulse } from "./bus.ts";
 import { uid, px, money } from "./format.ts";
 import { macdHist, readScalp } from "./indicators.ts";
 import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kraken-api.ts";
-import { PAIR_BY_ID, BTC_BOOK, getPair, isBtcQuote, isBtcUsd, registerPair } from "./kraken.ts";
+import { PAIR_BY_ID, BTC_BOOK, HEAT_PAIRS, btcBookArmed, getPair, heatUniverse, isBtcQuote, isBtcUsd, pairBase, pairLabel, registerPair } from "./kraken.ts";
 import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
-import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct } from "./fees.ts";
+import { hugeSpike, volumeRatio } from "./spike-alert.ts";
+import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
-import { rankScout } from "./scout.ts";
+import { autoBotReady } from "./auto-bot.ts";
+import { rankMemeScout, rankScout } from "./scout.ts";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up.ts";
 import { getLiveVenue } from "./venues/index.ts";
 import { connectTickerFeed } from "./kraken-ws.ts";
@@ -29,13 +31,15 @@ import {
 } from "./playbook.ts";
 import { makeSimCandles, stepSim } from "./sim-feed.ts";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
+import { pairSleeve } from "./book-balance.ts";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
 import { fetchWire } from "./wire-api.ts";
 import { sessionEnded } from "./session.ts";
-import { markEquity, useFloor, flushFloorPersist, type FloorState } from "./store.ts";
+import { modOn } from "./desk-mods.ts";
+import { ensureLiveDesk, markEquity, useFloor, flushFloorPersist, type FloorState } from "./store.ts";
 import {
   toastDailyLossHalt,
   toastKillSwitch,
@@ -181,13 +185,20 @@ function pushEvent(e: Omit<TapeEvent, "id" | "ts">) {
 }
 
 function pushQueue(item: Omit<QueueItem, "id" | "ts">) {
+  const cur = useFloor.getState().queue;
+  const dup = cur.find((x) => x.title === item.title && x.pair === item.pair);
+  if (dup && Date.now() - dup.ts < 12_000) return;
   const q: QueueItem = { ...item, id: uid("q"), ts: Date.now() };
-  patch({ queue: [q, ...useFloor.getState().queue].slice(0, 24) });
+  patch({ queue: [q, ...cur].slice(0, 24) });
 }
 
 function applySessionEnd() {
   const s = useFloor.getState();
   if (!sessionEnded(s.sessionEndsAt)) return;
+  if (krakenKeysOn(s.keys) && (s.liveArmed || s.mode === "live")) {
+    patch({ sessionEndsAt: null, floorOpen: true, autoTrade: true });
+    return;
+  }
   const already = !s.floorOpen && !s.autoTrade;
   patch({ floorOpen: false, autoTrade: false, sessionEndsAt: null });
   if (already) return;
@@ -261,7 +272,7 @@ function sampleEquity(force = false) {
   const now = Date.now();
   const s0 = useFloor.getState();
   const open = s0.positions.length > 0;
-  const gap = open ? 400 : 2500;
+  const gap = open ? 400 : 800;
   if (!force && now - lastEquitySample < gap) return;
   lastEquitySample = now;
   const s = useFloor.getState();
@@ -289,7 +300,7 @@ function sampleEquity(force = false) {
   };
   const hist = s.equityHistory;
   const last = hist[hist.length - 1];
-  if (last && now - last.t < (open ? 350 : 2000) && !force) return;
+  if (last && now - last.t < (open ? 350 : 700) && !force) return;
   patch({ equityHistory: [...hist, point].slice(-90) });
 }
 
@@ -382,29 +393,39 @@ function runSimTick() {
 async function runScout() {
   const s = useFloor.getState();
   if (!s.launched || !s.floorOpen) return;
-  if (s.lastScoutAt && Date.now() - s.lastScoutAt < 10 * 60_000) return;
-  bumpAgent("hunter", "scout 800+ books", 1);
+  if (s.lastScoutAt && Date.now() - s.lastScoutAt < (!modOn("core") ? 3 * 60_000 : 10 * 60_000)) return;
+  bumpAgent("hunter", "scout Kraken memes", 1);
   try {
     const res = await fetchUsdUniverse();
     for (const def of res.defs) registerPair(def);
-    const { kept, dropped, scanned } = rankScout(res.hits);
+    const ranked = !modOn("core") ? rankMemeScout(res.hits) : rankScout(res.hits);
+    const { kept, dropped, scanned } = ranked;
     const hot = kept
       .map((h) => (getPair(h.pair) ? (h.pair as PairId) : null))
-      .filter((id): id is PairId => Boolean(id));
+      .filter((id): id is PairId => Boolean(id) && getPair(id!)?.sleeve === "heat");
+    const nextPairs = !modOn("core") ? heatUniverse([...s.pairs, ...hot]) : s.pairs;
+    const bookChanged = nextPairs.length !== s.pairs.length || nextPairs.some((id, i) => id !== s.pairs[i]);
     patch({
       scoutHot: hot,
       scoutScanned: scanned,
       scoutDropped: dropped,
       lastScoutAt: Date.now(),
+      pairs: nextPairs,
     });
-    bumpAgent("hunter", `scout kept ${hot.length} / dropped ${dropped}`, 0.9);
+    bumpAgent("hunter", `scout kept ${hot.length} memes / dropped ${dropped}`, 0.9);
     pushEvent({
       agent: "hunter",
       stage: "brief",
       title: `SCOUT ${scanned}`,
-      detail: `Kept ${hot.length} ≥$10k liq · dropped ${dropped}`,
+      detail: `Kraken memes on the book: ${hot.length} · dropped ${dropped} (stables/majors/thin)`,
       tone: "info",
     });
+    pushQueue({
+      title: `SCOUT ${scanned}`,
+      detail: `${hot.length} memes on the book · dropped ${dropped}`,
+      severity: "playbook",
+    });
+    if (bookChanged) restartFeed();
   } catch (err) {
     bumpAgent("hunter", "scout miss", 0.5);
     patch({ lastScoutAt: Date.now() });
@@ -418,7 +439,11 @@ async function refreshOhlcAll() {
   const useSim = s.feedSource === "sim";
   const interval = 1;
   const open = new Set(s.positions.map((p) => p.pair));
-  const universe = [...new Set([...s.pairs, ...(s.scoutHot ?? []), ...open])];
+  const universe = [...new Set([
+    ...(!modOn("core") ? heatUniverse(s.pairs) : s.pairs),
+    ...((modOn("scout") || !modOn("core")) ? (s.scoutHot ?? []) : []),
+    ...[...open].filter((id) => modOn("core") || pairSleeve(id) === "heat"),
+  ])];
   const ranked = universe
     .map((pair) => ({
       pair,
@@ -426,7 +451,7 @@ async function refreshOhlcAll() {
     }))
     .sort((a, b) => b.score - a.score);
 
-  const take = 8;
+  const take = modOn("core") ? 8 : Math.min(24, Math.max(8, universe.length));
   const picked: typeof ranked = [];
   for (const row of ranked) {
     if (open.has(row.pair) || picked.length < take) picked.push(row);
@@ -452,7 +477,7 @@ async function refreshOhlcAll() {
         const candles = useSim
           ? makeSimCandles(row.pair, 120, interval * 60_000)
           : await fetchOhlc({ data: { pair: row.pair, interval } });
-        if (candles.length < 30) return;
+        if (candles.length < (pairSleeve(row.pair) === "heat" ? 12 : 30)) return;
         patch({ candles: { ...useFloor.getState().candles, [row.pair]: candles } });
         enqueueEval(row.pair, candles);
       } catch (err) {
@@ -474,9 +499,9 @@ async function refreshOhlcAll() {
 }
 
 function enqueueEval(pair: PairId, candles: { close: number; volume: number }[]) {
-  if (!running || evaluating.has(pair) || evalBusy >= 2) return;
+  if (!running || evaluating.has(pair) || evalBusy >= 4) return;
   const last = lastEvalAt.get(pair) ?? 0;
-  if (Date.now() - last < 4_000) return;
+  if (Date.now() - last < (pairSleeve(pair) === "heat" ? 2_000 : 4_000)) return;
   evalBusy += 1;
   lastEvalAt.set(pair, Date.now());
   void evaluatePair(pair, candles)
@@ -488,28 +513,28 @@ function enqueueEval(pair: PairId, candles: { close: number; volume: number }[])
 
 async function evaluatePair(pair: PairId, candles: { close: number; volume: number }[]) {
   const s0 = useFloor.getState();
-  if (!running || !s0.launched || !s0.floorOpen) return;
+  if (!running || !s0.launched || (!s0.floorOpen && !s0.liveArmed && !s0.autoTrade)) return;
+  const bot = autoBotReady(s0);
+  if (!bot.ok && krakenKeysOn(s0.keys) && s0.keysOk !== false) {
+    /* wallet still loading — watch only */
+  } else if (!bot.ok) {
+    bumpAgent("runner", bot.why, 0.4);
+  }
   const liveBook = s0.liveArmed || s0.mode === "live";
   if (liveBook && isBtcUsd(pair)) {
     bumpAgent("treasury", "BTC is the reserve — not a scalp", 0.4);
     return;
   }
+  if (!modOn("core") && pairSleeve(pair) !== "heat") return;
   if (liveBook) {
     const btcPx = s0.tickers.XBTUSD?.last ?? 0;
     const btcUsd = btcOnBook(s0.liveBalance) * btcPx;
     const usd = Number(s0.liveBalance?.ZUSD ?? s0.liveBalance?.USD ?? 0);
-    if (btcUsd >= MIN_LIVE_TICKET && !isBtcQuote(pair)) {
-      const btcTape = s0.pairs.some((id) => isBtcQuote(id) && (s0.tickers[id]?.last ?? 0) > 0);
-      if (btcTape) {
-        bumpAgent("hunter", "BTC book — skip USD hop", 0.35);
-        return;
-      }
-    }
-    if (btcUsd < MIN_LIVE_TICKET && isBtcQuote(pair)) {
-      bumpAgent("hunter", "BTC dust — USD book", 0.35);
+    if (isBtcQuote(pair) && !btcBookArmed(btcUsd)) {
+      bumpAgent("hunter", "BTC book sleeps until $1000 BTC", 0.35);
       return;
     }
-    if (usd < MIN_LIVE_TICKET && btcUsd < MIN_LIVE_TICKET) {
+    if (!isBtcQuote(pair) && usd < MIN_LIVE_TICKET && btcUsd < MIN_LIVE_TICKET) {
       bumpAgent("hunter", "sleeve under min ticket", 0.4);
       return;
     }
@@ -525,9 +550,11 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const label = getPair(pair)?.label ?? PAIR_BY_ID[pair]?.label ?? pair;
     const sleeve = (getPair(pair) ?? PAIR_BY_ID[pair])?.sleeve ?? "heat";
     const minConf =
-      s0.mode === "paper"
-        ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
-        : Math.max(0.38, Math.min(pairMinConf(brain, pair), 0.5));
+      sleeve === "heat"
+        ? 0.28
+        : s0.mode === "paper"
+          ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
+          : Math.max(0.38, Math.min(pairMinConf(brain, pair), 0.5));
     const swarmSleeve =
       s0.liveArmed || s0.mode === "live"
         ? liveSleeve({
@@ -548,30 +575,33 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const swarmHalt = swarmSleeve
       ? haltCapUsd(swarmSleeve.budget, s0.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
       : (s0.dayStartEquity || s0.startingCash) * s0.risk.maxDailyLossPct;
-    const vote = await rollInSwarm(
-      tallySwarm({
-        pair,
-        signal: { kind: read.kind, confidence: read.confidence, rsi: read.rsi },
-        ticker,
-        volumes,
-        positions: swarmSleeve ? livePositions(s0.positions) : s0.positions,
-        cash: swarmCash,
-        equity,
-        dayPnl: swarmDayPnl,
-        maxDailyLoss: swarmHalt,
-        maxPositions: s0.risk.maxPositions,
-        brain,
-        wire: s0.wire,
-        fearGreed: s0.fearGreed,
-      }),
+    let grokKind: "buy" | "sell" | "hold" = read.kind;
+    let grokConf = read.confidence;
+    let grokReason = read.reason;
+    const voteSnap = tallySwarm({
       pair,
-      label,
-    );
-    const grokKind = vote.kind;
-    const grokConf =
-      grokKind === read.kind ? read.confidence : grokKind === "hold" ? 0.22 : Math.max(read.confidence, 0.52);
-    const grokReason = vote.grok;
-    walkDebate(vote, pair, label);
+      signal: { kind: read.kind, confidence: read.confidence, rsi: read.rsi },
+      ticker,
+      volumes,
+      positions: swarmSleeve ? livePositions(s0.positions) : s0.positions,
+      cash: swarmCash,
+      equity,
+      dayPnl: swarmDayPnl,
+      maxDailyLoss: swarmHalt,
+      maxPositions: s0.risk.maxPositions,
+      brain,
+      wire: s0.wire,
+      fearGreed: s0.fearGreed,
+    });
+    patch({ swarm: finishRoll(voteSnap, pingSwarm(() => 0.42)) });
+    if (modOn("grok")) {
+      const vote = await rollInSwarm(voteSnap, pair, label);
+      grokKind = vote.kind;
+      grokConf =
+        grokKind === read.kind ? read.confidence : grokKind === "hold" ? 0.22 : Math.max(read.confidence, 0.52);
+      grokReason = vote.grok;
+      walkDebate(vote, pair, label);
+    }
 
     const signal = {
       id: uid("sig"),
@@ -623,7 +653,27 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     let ticketKind: "buy" | "sell" | "hold" =
       grokKind !== "hold" ? grokKind : read.kind !== "hold" ? read.kind : "hold";
     if (ticketKind === "sell" && !hasPos) ticketKind = "hold";
-    if (ticketKind === "hold" && autoDesk && lane === "up") ticketKind = "buy";
+    const lastClose = closes[closes.length - 1] ?? price;
+    const prevClose = closes[closes.length - 2] ?? lastClose;
+    const oneMinPct = prevClose > 0 ? ((lastClose - prevClose) / prevClose) * 100 : 0;
+    const threeAgo = closes[closes.length - 4] ?? prevClose;
+    const threePct = threeAgo > 0 ? ((lastClose - threeAgo) / threeAgo) * 100 : 0;
+    const volRatio = volumeRatio(volumes);
+    const wireHit = (stNow.wire ?? []).find((w) => w.pairs?.includes(pair));
+    const spike = hugeSpike({
+      oneMinPct,
+      threePct,
+      volRatio,
+      lane,
+      wireKind: wireHit?.kind,
+      wireAgeMs: wireHit ? Date.now() - wireHit.ts : undefined,
+    });
+    const heatHot = false;
+    const heatRip = false;
+    if (spike.ok && ticketKind !== "sell") ticketKind = "buy";
+    if (ticketKind === "hold" && autoDesk && lane === "up" && !spike.ok) {
+      /* grid/dca decide — do not force a scalp */
+    }
     const ticketConf = Math.max(read.confidence, grokKind === read.kind ? grokConf : 0.42);
     const existingLot = bookNow.find((p) => p.pair === pair);
     const lastBuy = stNow.orders.find(
@@ -634,7 +684,12 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         ? Math.max(0, (existingLot.entry - (ticker?.last ?? existingLot.mark)) / existingLot.entry)
         : 0;
     let playbook = pickPlaybook({
-      enabled: normalizePlaybooks(stNow.playbooks),
+      enabled: normalizePlaybooks(stNow.playbooks).filter((id) => {
+        if (id === "scalp") return spike.ok && modOn("scalp");
+        if (id === "grid") return modOn("grid");
+        if (id === "dca") return modOn("dca");
+        return true;
+      }),
       sleeve,
       lane,
       kind: ticketKind,
@@ -646,14 +701,35 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       adds: existingLot?.adds ?? 1,
       msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
     });
-    if (!playbook && autoDesk && ticketKind === "buy" && lane !== "down") {
+    if (spike.ok && modOn("scalp") && ticketKind !== "sell") {
       playbook = "scalp";
+      ticketKind = "buy";
     }
     if (!playbook) {
       ticketKind = "hold";
     } else if (playbook !== "scalp") {
       ticketKind = "buy";
     }
+
+    bumpAgent("scanner", `tape ${label}`, 0.85);
+    bumpAgent("hunter", `rank ${label}`, 0.8);
+    bumpAgent("signal", `${read.setup} ${label}`, 0.8);
+    pushEvent({
+      agent: "scanner",
+      next: "hunter",
+      stage: "brief",
+      pair,
+      title: `WATCH ${label}`,
+      detail: spike.ok
+        ? `SPIKE ${spike.source} · 1m ${oneMinPct.toFixed(2)}% · vol ${volRatio.toFixed(1)}x`
+        : `1m ${oneMinPct.toFixed(2)}% · 3m ${threePct.toFixed(2)}% · ${lane} · grid/dca`,
+      tone: "info",
+    });
+    patch({ grokNote: `${label} · 1m ${oneMinPct >= 0 ? "+" : ""}${oneMinPct.toFixed(2)}% · ${lane}` });
+    emitPulse({ from: "scanner", to: "hunter" });
+
+    if (sleeve === "heat" && !modOn("heat") && ticketKind === "buy") ticketKind = "hold";
+    if (sleeve === "core" && !modOn("core") && ticketKind === "buy") ticketKind = "hold";
 
     if (!paper && ticketKind === "buy") {
       const recentPnl = stNow.orders
@@ -667,9 +743,10 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         playbook,
         conf: ticketConf,
         heat: sleeve === "heat",
-        changePct: ticker?.changePct ?? 0,
+        hot: spike.ok,
+        changePct: sleeve === "heat" ? Math.max(oneMinPct, threePct) : ticker?.changePct ?? 0,
         recentPnl,
-        sessionPnl: stNow.realized,
+        sessionPnl: dayNow,
         budget: stNow.liveBudget || 200,
       });
       if (!gate.ok) {
@@ -681,6 +758,12 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
           title: `SKIP ${label}`,
           detail: gate.why,
           tone: "info",
+        });
+        pushQueue({
+          title: `SKIP ${label}`,
+          detail: gate.why,
+          severity: "playbook",
+          pair,
         });
         return;
       }
@@ -707,16 +790,13 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (sleeve === "heat" && ticketKind === "buy" && (ticker?.changePct ?? 0) < 0) {
-      bumpAgent("hunter", "heat flat", 0.55);
-      pushEvent({
-        agent: "hunter",
-        next: "archivist",
-        stage: "handout",
+    if (sleeve === "heat" && ticketKind === "buy" && !spike.ok) {
+      bumpAgent("hunter", "heat waits on a huge spike", 0.45);
+      pushQueue({
+        title: `WAIT SPIKE ${label}`,
+        detail: spike.why,
+        severity: "playbook",
         pair,
-        title: `HEAT FLAT ${label}`,
-        detail: `${px(price)} · 24h ${ticker?.changePct?.toFixed(2) ?? "?"}%. Need a tick up`,
-        tone: "info",
       });
       return;
     }
@@ -741,8 +821,14 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
-    if (halted || ticketKind === "hold" || ticketConf < minConf) {
+    const heatReady = sleeve === "heat" && spike.ok;
+    if (heatReady && ticketKind !== "sell") {
+      ticketKind = "buy";
+      playbook = playbook ?? "scalp";
+    }
+    if (!heatReady && (halted || ticketKind === "hold" || (playbook === "scalp" && ticketConf < minConf))) {
       setStage("tool");
+      bumpAgent("dispatcher", halted ? "daily halt" : `hold ${label}`, 0.45);
       bumpAgent("risk", halted ? "daily halt" : "no ticket", 0.35);
       pushEvent({
         agent: "dispatcher",
@@ -755,7 +841,17 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       });
       bumpAgent("archivist", "journal hold", 0.4);
       emitPulse({ from: "signal", to: "archivist" });
+      pushQueue({
+        title: halted ? `HALT ${label}` : `HOLD ${label}`,
+        detail: halted ? "daily halt — no new tickets" : grokReason,
+        severity: halted ? "stall" : "playbook",
+        pair,
+      });
       return;
+    }
+    if (heatReady && ticketKind !== "sell") {
+      ticketKind = "buy";
+      playbook = playbook ?? "scalp";
     }
 
     pushEvent({
@@ -797,7 +893,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     bumpAgent("flow", flow.ok ? "book clean" : "thin book", flow.ok ? 0.7 : 1);
     emitPulse({ from: "regime", to: "flow" });
     if (!flow.ok && ticketKind === "buy") {
-      const hard = !paper && (s0.mode === "live" || flow.spreadPct > 0.004);
+      const heatWide = sleeve === "heat" && flow.spreadPct <= 0.025;
+      const hard = !paper && !heatWide && (s0.mode === "live" || flow.spreadPct > 0.004);
       if (hard) {
         pushQueue({
           title: "FLOW BLOCK",
@@ -912,7 +1009,8 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     }
 
     const lastAt = lastSignalAt.get(pair) ?? 0;
-    const cooldown = st.mode === "paper" ? SCALP.cooldownMs : Math.min(st.risk.cooldownMs, 45_000);
+    const cooldown =
+      sleeve === "heat" ? SCALP.cooldownMs : Math.min(st.risk.cooldownMs, 45_000);
     if (Date.now() - lastAt < cooldown) {
       bumpAgent("sentinel", "cooldown", 0.6);
       pushQueue({
@@ -945,14 +1043,47 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     };
 
     if (liveDesk) {
+      const ready = autoBotReady(useFloor.getState());
+      if (!ready.ok) {
+        bumpAgent("runner", ready.why, 0.7);
+        pushQueue({
+          title: "AUTO WAIT",
+          detail: ready.why,
+          severity: "empty",
+          pair,
+        });
+        return;
+      }
       if (!st.liveArmed || !st.autoTrade) {
         patch({ liveArmed: true, mode: "live", venueId: "kraken", autoTrade: true, floorOpen: true, launched: true });
       }
+      bumpAgent("runner", `SEND ${order.side.toUpperCase()} ${label}`, 1);
+      pushEvent({
+        agent: "runner",
+        next: "archivist",
+        stage: "signed",
+        pair,
+        title: `SEND ${order.side.toUpperCase()} ${label}`,
+        detail: `${order.qty} @ ${px(price)} · Kraken market → USD book`,
+        tone: "good",
+      });
+      pushQueue({
+        title: `SEND ${order.side.toUpperCase()} ${label}`,
+        detail: `market ${order.qty} on Kraken`,
+        severity: "playbook",
+        pair,
+      });
       await executeOrder(order);
       return;
     }
 
     bumpAgent("runner", "Kraken keys missing — no ticket", 0.7);
+    pushQueue({
+      title: "NO KRAKEN ORDER",
+      detail: "keys missing — watching the tape is not a fill",
+      severity: "empty",
+      pair,
+    });
     return;
   } finally {
     evaluating.delete(pair);
@@ -961,7 +1092,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
 
 function workingPurse(): { ok: true; cash: number } | { ok: false; why: string } {
   const s = useFloor.getState();
-  const live = s.liveArmed || s.mode === "live";
+  const live = Boolean(krakenKeysOn(s.keys)) || s.liveArmed || s.mode === "live";
   if (!live) return { ok: true, cash: s.cash };
   if (!krakenKeysOn(s.keys)) {
     return { ok: false, why: "no Kraken keys — paste them in settings" };
@@ -1002,7 +1133,7 @@ function sizeTicket(
   playbook: PlaybookId,
 ): { ok: true; qty: number; side: "buy" | "sell" } | { ok: false; why: string } {
   const s = useFloor.getState();
-  const live = s.liveArmed || s.mode === "live";
+  const live = Boolean(krakenKeysOn(s.keys)) || s.liveArmed || s.mode === "live";
   const sleeve = live
     ? liveSleeve({
         liveBudget: s.liveBudget,
@@ -1080,8 +1211,15 @@ function sizeTicket(
   }
   if (notional < 10) return { ok: false, why: "size below min ticket" };
   if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
-  const rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
-  if (rounded < def.ordermin) return { ok: false, why: "below Kraken ordermin" };
+  let rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
+  if (rounded < def.ordermin) {
+    const need = def.ordermin * price;
+    if (live && need <= cash * 0.98 && need <= 80) {
+      rounded = Number(def.ordermin.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
+    } else {
+      return { ok: false, why: `need $${need.toFixed(0)} USD for Kraken min ${def.base}` };
+    }
+  }
   return { ok: true, qty: rounded, side: "buy" };
 }
 
@@ -1126,7 +1264,8 @@ async function executeOrderNow(order: Order) {
       let qty = order.qty;
       if (order.side === "sell") {
         const held = spotQty(useFloor.getState().liveBalance, def.base);
-        qty = Math.min(qty, held * 0.999);
+        const flatten = pairSleeve(order.pair) === "heat" || /HEAT RECEIPT|SL|TIME/i.test(order.reason);
+        qty = flatten ? held : Math.min(qty, held * 0.999);
         qty = Number(qty.toFixed(Math.min(def.decimals, 8)));
         if (!(qty >= def.ordermin) || !(held > 0)) {
           dropPhantomLot(order.pair);
@@ -1150,6 +1289,7 @@ async function executeOrderNow(order: Order) {
         pair: order.pair,
         side: order.side,
         volume,
+        kraken: def.kraken,
       });
       const filled: Order = {
         ...order,
@@ -1170,6 +1310,12 @@ async function executeOrderNow(order: Order) {
         title: `LIVE FILL ${order.side.toUpperCase()} ${def.label}`,
         detail: res.descr || res.txid,
         tone: "good",
+      });
+      pushQueue({
+        title: `LIVE FILL ${order.side.toUpperCase()} ${def.label}`,
+        detail: res.descr || res.txid || "filled on Kraken",
+        severity: "playbook",
+        pair: order.pair,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Kraken reject";
@@ -1223,7 +1369,7 @@ async function executeOrderNow(order: Order) {
     next: "archivist",
     stage: "signed",
     pair: order.pair,
-    title: `PAPER FILL ${order.side.toUpperCase()} ${PAIR_BY_ID[order.pair].label}`,
+    title: `PAPER FILL ${order.side.toUpperCase()} ${pairLabel(order.pair)}`,
     detail: `${order.qty} @ ${px(fillPrice)} · fee ${fee.toFixed(2)}`,
     tone: "good",
   });
@@ -1342,7 +1488,7 @@ export async function studyBook(): Promise<{ ok: true; note: string }> {
         });
         n += 1;
         bumpAgent("archivist", mem.lastNote.slice(0, 42), 0.9);
-        bumpAgent("hunter", `studied ${PAIR_BY_ID[pair].base}`, 0.85);
+        bumpAgent("hunter", `studied ${pairBase(pair)}`, 0.85);
         bumpAgent("signal", mem.bestSetup, 0.8);
       } catch {
         bumpAgent("sentinel", `study miss ${pair}`, 0.6);
@@ -1432,10 +1578,27 @@ function applyFill(order: Order) {
       realized += pnl;
       if (!liveFill) cash += fill * sellQty - fee;
       if (sellQty + 1e-12 < existing.qty) {
+        const remain = existing.qty - sellQty;
+        const remainNet = netPnl({
+          entry: existing.entry,
+          exit: fill,
+          qty: remain,
+          taker,
+          entryFee: existing.fee,
+        });
+        const heatBank = /HEAT BANK/i.test(order.reason);
         positions = positions.map((p) =>
-          p.pair === order.pair ? { ...p, qty: existing.qty - sellQty, mark: fill } : p,
+          p.pair === order.pair
+            ? {
+                ...p,
+                qty: remain,
+                mark: fill,
+                banked: p.banked || heatBank,
+                peakPnlUsd: remainNet,
+              }
+            : p,
         );
-        reason = `${reason} · GRID OUT`;
+        if (!heatBank && !reason.includes("HEAT")) reason = `${reason} · GRID OUT`;
       } else {
         positions = positions.filter((p) => p.pair !== order.pair);
         if (!reason.includes("TP") && !reason.includes("SL")) {
@@ -1461,6 +1624,7 @@ function applyFill(order: Order) {
               adds: (existing.adds ?? 1) + 1,
               book: pb,
               fee: (existing.fee ?? 0) + fee,
+              costUsd: (existing.costUsd ?? existing.entry * existing.qty) + fill * order.qty,
             }
           : p,
       );
@@ -1488,6 +1652,8 @@ function applyFill(order: Order) {
           adds: 1,
           book: pb,
           fee,
+          costUsd: fill * order.qty,
+          peakPnlUsd: 0,
         },
       ];
     }
@@ -1515,6 +1681,18 @@ function applyFill(order: Order) {
       title: brain.enabled ? (closePnl >= 0 ? "brain kept the setup" : "brain cut the setup") : "journal close",
       detail: brain.lastNote,
       tone: closePnl >= 0 ? "good" : "bad",
+    });
+  }
+
+  if (closePnl != null && /HEAT RECEIPT/i.test(order.reason)) {
+    const def = getPair(order.pair) ?? PAIR_BY_ID[order.pair];
+    pushEvent({
+      agent: "archivist",
+      stage: "signed",
+      pair: order.pair,
+      title: `RECEIPT ${def?.base ?? order.pair}`,
+      detail: `sold to USD · net ${money(closePnl)} after fees · 15% off peak profit`,
+      tone: closePnl >= 0 ? "good" : "warn",
     });
   } else if (lessonReason?.includes("DEMO")) {
     bumpAgent("archivist", "demo close — brain skipped", 0.6);
@@ -1605,27 +1783,51 @@ function maybeCheckStops() {
 
 function manageOpenLot(
   playbook: PlaybookId,
-  p: { openedAt: number; entry: number; mark: number; stop: number; take: number; qty: number; fee?: number; pair?: PairId },
+  p: {
+    openedAt: number;
+    entry: number;
+    mark: number;
+    stop: number;
+    take: number;
+    qty: number;
+    fee?: number;
+    pair?: PairId;
+    banked?: boolean;
+    peakPnlUsd?: number;
+    costUsd?: number;
+  },
   liveTaker = 0,
 ): { action: BookAction; stop: number; sellFrac: number } {
   if (playbook === "grid") return gridManage(p);
   if (playbook === "dca") return dcaManage(p);
-  const m = scalpManage(p, Date.now(), takerPct(p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD", liveTaker));
-  if (m.action === "take" || (m.action === "time" && p.mark >= p.entry)) {
-    const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
-    const taker = takerPct(quote, liveTaker);
-    const net = netPnl({
-      entry: p.entry,
-      exit: p.mark,
-      qty: p.qty,
-      taker,
-      entryFee: p.fee,
-    });
-    if (net <= 0) {
-      if (m.action === "time") return { action: "stop", stop: m.stop, sellFrac: 1 };
-      return { action: "hold", stop: m.stop, sellFrac: 0 };
-    }
+  const heat = p.pair ? pairSleeve(p.pair) === "heat" : false;
+  const m = scalpManage(
+    { ...p, heat },
+    Date.now(),
+    takerPct(p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD", liveTaker),
+  );
+  const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
+  const taker = takerPct(quote, liveTaker);
+  const net = netPnl({
+    entry: p.entry,
+    exit: p.mark,
+    qty: p.qty,
+    taker,
+    entryFee: p.fee,
+  });
+  if (heat) {
+    if (m.action === "hold") return { action: "hold", stop: m.stop, sellFrac: 0 };
+    if (m.action === "stop") return { action: "stop", stop: m.stop, sellFrac: 1 };
     return { action: "take", stop: m.stop, sellFrac: 1 };
+  }
+  if (m.action === "take") {
+    if (net < MIN_NET_USD) return { action: "hold", stop: m.stop, sellFrac: 0 };
+    return { action: "take", stop: m.stop, sellFrac: 1 };
+  }
+  if (m.action === "time") {
+    if (p.mark > p.entry && net >= MIN_NET_USD) return { action: "take", stop: m.stop, sellFrac: 1 };
+    if (p.mark <= p.entry) return { action: "stop", stop: m.stop, sellFrac: 1 };
+    return { action: "hold", stop: m.stop, sellFrac: 0 };
   }
   return { action: m.action, stop: m.stop, sellFrac: m.action === "hold" ? 0 : 1 };
 }
@@ -1639,10 +1841,20 @@ function checkStops() {
   const nextPos = s.positions.map((p) => {
     if (book.every((b) => b.id !== p.id)) return p;
     const mark = s.tickers[p.pair]?.last ?? p.mark;
+    const def = getPair(p.pair) ?? PAIR_BY_ID[p.pair];
+    const taker = takerPct(def?.quote ?? "USD", s.liveTakerPct);
+    const net = netPnl({
+      entry: p.entry,
+      exit: mark,
+      qty: p.qty,
+      taker,
+      entryFee: p.fee,
+    });
+    const peakPnlUsd = Math.max(p.peakPnlUsd ?? net, net);
     const pb = asPlaybook(p.book);
-    const managed = manageOpenLot(pb, { ...p, mark }, s.liveTakerPct);
-    if (managed.stop !== p.stop) trailed = true;
-    return { ...p, mark, stop: managed.stop };
+    const managed = manageOpenLot(pb, { ...p, mark, peakPnlUsd }, s.liveTakerPct);
+    if (managed.stop !== p.stop || peakPnlUsd !== (p.peakPnlUsd ?? 0)) trailed = true;
+    return { ...p, mark, stop: managed.stop, peakPnlUsd };
   });
   if (trailed) patch({ positions: nextPos });
 
@@ -1663,22 +1875,25 @@ function checkStops() {
       flattening.delete(p.id);
       continue;
     }
-    const frac = managed.sellFrac <= 0 ? 1 : managed.sellFrac;
+    const heat = pairSleeve(p.pair) === "heat";
+    const frac = heat ? 1 : managed.sellFrac <= 0 ? 1 : managed.sellFrac;
     let qty = frac >= 0.999 ? p.qty : p.qty * frac;
     qty = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
     if (qty < def.ordermin) qty = p.qty;
     if (qty > p.qty) qty = p.qty;
     const side = p.side === "buy" ? "sell" : "buy";
     const reason =
-      managed.action === "stop"
-        ? "SL"
-        : managed.action === "take"
-          ? "TP"
-          : managed.action === "reduce"
-            ? "GRID OUT"
-            : p.mark >= p.entry
-              ? "TIME TP"
-              : "TIME SL";
+      heat && (managed.action === "take" || managed.action === "time")
+        ? "HEAT RECEIPT"
+        : managed.action === "stop"
+          ? "SL"
+          : managed.action === "take"
+            ? "TP"
+            : managed.action === "reduce"
+              ? "GRID OUT"
+              : p.mark >= p.entry
+                ? "TIME TP"
+                : "TIME SL";
     const order: Order = {
       id: uid("ord"),
       pair: p.pair,
@@ -1738,6 +1953,14 @@ function idleChatter() {
       : "reading the names",
   };
     bumpAgent(a.id, lines[a.id], live ? 0.7 + Math.random() * 0.3 : 0.35 + Math.random() * 0.25);
+    pushEvent({
+      agent: a.id,
+      stage: "brief",
+      pair: pair ?? undefined,
+      title: a.id.toUpperCase(),
+      detail: lines[a.id],
+      tone: "info",
+    });
   }
 }
 
@@ -1819,19 +2042,40 @@ export async function refreshTreasury() {
     const bal = await venue.fetchBalance(s.keys);
     useFloor.getState().setLiveBalance(bal);
     useFloor.getState().setKeysOk(true);
+    patch({ liveArmed: true, autoTrade: true, mode: "live", floorOpen: true, launched: true });
     const usd = usdOnBook(bal);
     bumpAgent("treasury", `Kraken USD ${usd.toFixed(2)}`, 0.7);
+    bumpAgent("runner", usd >= MIN_LIVE_TICKET ? "AUTO BOT ON" : "AUTO WAIT — need USD", 1);
+    pushEvent({
+      agent: "runner",
+      stage: "signed",
+      title: usd >= MIN_LIVE_TICKET ? "AUTO BOT ON" : "AUTO WAIT",
+      detail:
+        usd >= MIN_LIVE_TICKET
+          ? `Kraken USD ${usd.toFixed(2)} · heat scalp live`
+          : `USD ${usd.toFixed(2)} — deposit ≥$${MIN_LIVE_TICKET} to fire`,
+      tone: usd >= MIN_LIVE_TICKET ? "good" : "warn",
+    });
     const pending = useFloor.getState().pendingLive;
     if (pending && krakenKeysOn(useFloor.getState().keys)) {
       useFloor.getState().setPendingLive(null);
       void executeOrder(pending);
     }
   } catch (err) {
-    bumpAgent("treasury", "wallet read failed", 0.9);
+    const why = err instanceof Error ? err.message : "Balance call failed";
+    useFloor.getState().setKeysOk(false);
+    bumpAgent("treasury", "Kraken auth failed", 1);
     pushQueue({
-      title: "TREASURY MISS",
-      detail: err instanceof Error ? err.message : "Balance call failed",
+      title: "KRAKEN AUTH",
+      detail: why,
       severity: "stall",
+    });
+    pushEvent({
+      agent: "treasury",
+      stage: "signed",
+      title: "KRAKEN AUTH FAIL",
+      detail: why,
+      tone: "bad",
     });
   }
 }
@@ -1961,6 +2205,7 @@ function tabShouldRun(): boolean {
 export function startEngine(): () => void {
   if (running) return () => stopEngine();
   running = true;
+  ensureLiveDesk();
   restoreOrphanLots();
   if (!useFloor.getState().shiftStartedAt) {
     patch({ shiftStartedAt: Date.now() });
@@ -1986,11 +2231,13 @@ export function startEngine(): () => void {
   seedHistory();
   applySessionEnd();
   for (const a of AGENTS) bumpAgent(a.id, "on the desk", 0.72);
-  void catchUpAway().then((rep) => {
-    flushFloorPersist();
-    if (rep && rep.awayMs >= 90_000) toastAwayReplay(rep.awayMs, rep.fills, rep.pnl);
-  });
-  void runScout();
+  if (modOn("catchup")) {
+    void catchUpAway().then((rep) => {
+      flushFloorPersist();
+      if (rep && rep.awayMs >= 90_000) toastAwayReplay(rep.awayMs, rep.fills, rep.pnl);
+    });
+  }
+  if (modOn("scout") || !modOn("core")) void runScout();
 
   const heartbeat = window.setInterval(() => {
     patch({ lastEngineAt: Date.now() });
@@ -2042,12 +2289,13 @@ export function startEngine(): () => void {
   const session = window.setInterval(applySessionEnd, 1000);
   const treasury = window.setInterval(() => {
     void refreshTreasury();
-  }, 45_000);
+  }, 15_000);
   const wire = window.setInterval(() => {
+    if (!modOn("wire")) return;
     void refreshWire();
   }, 180_000);
   const scout = window.setInterval(() => {
-    void runScout();
+    if (modOn("scout") || !modOn("core")) void runScout();
   }, 60_000);
 
   timers = [tick, chatter, rest, ohlc, stageSpin, simPulse, session, treasury, wire, heartbeat, persistPulse, scout];
@@ -2072,14 +2320,14 @@ export function startEngine(): () => void {
     await refreshTreasury();
     await refreshTickersRest();
     await refreshOhlcAll();
-    await refreshWire();
+    if (modOn("wire")) await refreshWire();
     sampleEquity(true);
   })();
 
   const onVis = () => {
     if (document.visibilityState !== "visible") return;
     patch({ lastEngineAt: Date.now() });
-    void catchUpAway();
+    if (modOn("catchup")) void catchUpAway();
     void refreshTickersRest();
   };
   document.addEventListener("visibilitychange", onVis);

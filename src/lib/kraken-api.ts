@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { findPairResult, getPair, PAIR_BY_ID, PAIRS, type PairDef } from "./kraken.ts";
+import { cleanKrakenSecret, mapKrakenAuthError, signKraken } from "./kraken-sign.ts";
 import type { Candle, PairId, Ticker } from "./types.ts";
 
 const KRAKEN = "https://api.kraken.com";
@@ -15,12 +16,7 @@ function nextNonce(): string {
 }
 
 async function sign(path: string, nonce: string, body: string, secret: string): Promise<string> {
-  const { createHash, createHmac } = await import("node:crypto");
-  const sha256 = createHash("sha256").update(nonce + body).digest();
-  const hmac = createHmac("sha512", Buffer.from(secret, "base64"));
-  hmac.update(path);
-  hmac.update(sha256);
-  return hmac.digest("base64");
+  return signKraken(path, nonce, body, secret);
 }
 
 async function publicGet<T>(path: string, query: Record<string, string>): Promise<T> {
@@ -41,20 +37,22 @@ async function privatePost<T>(
   apiSecret: string,
 ): Promise<T> {
   const nonce = nextNonce();
+  const key = cleanKrakenSecret(apiKey);
+  const secret = cleanKrakenSecret(apiSecret);
   const body = new URLSearchParams({ nonce, ...params }).toString();
   const res = await fetch(KRAKEN + path, {
     method: "POST",
     headers: {
-      "API-Key": apiKey,
-      "API-Sign": await sign(path, nonce, body, apiSecret),
+      "API-Key": key,
+      "API-Sign": await sign(path, nonce, body, secret),
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
     body,
   });
-  if (!res.ok) throw new Error(`Kraken ${res.status}`);
+  if (!res.ok) throw new Error(mapKrakenAuthError(`Kraken ${res.status}`));
   const json = (await res.json()) as KrakenEnvelope<T>;
-  if (json.error?.length) throw new Error(json.error.join("; "));
+  if (json.error?.length) throw new Error(mapKrakenAuthError(json.error.join("; ")));
   if (!json.result) throw new Error("Kraken empty result");
   return json.result;
 }
@@ -175,19 +173,25 @@ export const placeMarketOrder = createServerFn({ method: "POST" })
       pair: PairId;
       side: "buy" | "sell";
       volume: string;
+      kraken?: string;
+      oflags?: string;
     }) => input,
   )
   .handler(async ({ data }) => {
     const def = getPair(data.pair);
-    if (!def) throw new Error("Unknown pair");
+    const pair = (data.kraken || def?.kraken || "").trim();
+    if (!pair) throw new Error("Unknown pair");
+    const oflags = data.oflags ?? (data.side === "sell" ? "fciq" : undefined);
+    const body: Record<string, string> = {
+      pair,
+      type: data.side,
+      ordertype: "market",
+      volume: data.volume,
+    };
+    if (oflags) body.oflags = oflags;
     const result = await privatePost<{ txid?: string[]; descr?: { order?: string } }>(
       "/0/private/AddOrder",
-      {
-        pair: def.kraken,
-        type: data.side,
-        ordertype: "market",
-        volume: data.volume,
-      },
+      body,
       data.apiKey.trim(),
       data.apiSecret.trim(),
     );

@@ -11,6 +11,7 @@ import {
   macdLane,
   pickPlaybook,
   playbookWantsBuy,
+  type PlaybookId,
 } from "./playbook.ts";
 
 describe("asPlaybook", () => {
@@ -27,7 +28,7 @@ describe("grid", () => {
     assert.ok(take > 102);
     const hold = gridManage({ entry: 100, mark: 100.2, stop, take, qty: 1 });
     assert.equal(hold.action, "hold");
-    const reduce = gridManage({ entry: 100, mark: 100.7, stop, take, qty: 1 });
+    const reduce = gridManage({ entry: 100, mark: 101.2, stop, take, qty: 10 });
     assert.equal(reduce.action, "reduce");
     assert.ok(reduce.sellFrac > 0 && reduce.sellFrac < 1);
     const dump = gridManage({ entry: 100, mark: stop - 0.01, stop, take, qty: 1 });
@@ -128,6 +129,22 @@ describe("macd lanes + all books together", () => {
     assert.equal(pickPlaybook({ ...base, lane: "down", kind: "hold", enabled: [...base.enabled] }), "dca");
   });
 
+  it("tilts off a book the brain has retired", () => {
+    const base = {
+      enabled: ["scalp", "grid", "dca"] as PlaybookId[],
+      sleeve: "core" as const,
+      kind: "hold" as const,
+      rsi: 42,
+      changePct: -0.3,
+      hasPos: false,
+      dipFromEntry: 0,
+      adds: 0,
+      msSinceAdd: 1e12,
+      lane: "chop" as const,
+    };
+    assert.equal(pickPlaybook({ ...base, bookScore: { grid: -6, dca: 2, scalp: 0 } }), "dca");
+  });
+
   it("keeps heat on scalp only", () => {
     assert.equal(
       pickPlaybook({
@@ -141,6 +158,31 @@ describe("macd lanes + all books together", () => {
         dipFromEntry: 0,
         adds: 0,
         msSinceAdd: 0,
+      }),
+      "scalp",
+    );
+  });
+
+  it("VWAP stretch tilts chop to grid; volume spike tilts up to scalp", () => {
+    const chop = {
+      enabled: ["scalp", "grid", "dca"] as PlaybookId[],
+      sleeve: "core" as const,
+      kind: "hold" as const,
+      rsi: 42,
+      changePct: -0.3,
+      hasPos: false,
+      dipFromEntry: 0,
+      adds: 0,
+      msSinceAdd: 1e12,
+      lane: "chop" as const,
+    };
+    assert.equal(pickPlaybook({ ...chop, lens: "grid" }), "grid");
+    assert.equal(
+      pickPlaybook({
+        ...chop,
+        lane: "up",
+        kind: "buy",
+        lens: "scalp",
       }),
       "scalp",
     );

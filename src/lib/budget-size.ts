@@ -3,6 +3,8 @@
 import { kellyFraction } from "./kelly.ts";
 import { MAX_LIVE_TICKET, MIN_LIVE_TICKET } from "./live-budget.ts";
 
+export const HEAT_TICKET_CAP = 40;
+
 export function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
 }
@@ -25,7 +27,7 @@ export function budgetStake(input: {
   const edge = f <= 0 ? 0.18 : clamp(f / 0.06, 0.18, 1);
   const conf = clamp((input.confidence - 0.32) / 0.55, 0.12, 1);
   let usd = minN + (maxN - minN) * edge * conf;
-  if (input.heat) usd = Math.min(usd, remaining * 0.45);
+  if (input.heat) usd = Math.min(usd, remaining * 0.2, HEAT_TICKET_CAP);
   usd = clamp(usd, minN, maxN);
   return Math.round(usd * 100) / 100;
 }

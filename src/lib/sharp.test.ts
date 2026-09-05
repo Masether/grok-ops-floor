@@ -22,6 +22,17 @@ describe("liveEntry", () => {
     assert.equal(liveEntry({ ...base, grokKind: "sell" }).ok, false);
     assert.equal(liveEntry({ ...base, lane: "down" }).ok, false);
     assert.equal(liveEntry({ ...base, recentPnl: [-1.1, -0.8] }).ok, false);
+    assert.equal(liveEntry({ ...base, recentPnl: [-0.3, -0.3] }).ok, false);
+    assert.equal(liveEntry({ ...base, grokKind: "hold", readKind: "hold" }).ok, false);
+    assert.equal(liveEntry({ ...base, grokKind: "hold", readKind: "hold", hot: true }).ok, true);
+    assert.equal(
+      liveEntry({ ...base, playbook: "grid", grokKind: "hold", readKind: "hold", lane: "chop" }).ok,
+      true,
+    );
     assert.equal(liveEntry({ ...base, sessionPnl: -30 }).ok, false);
+    assert.equal(liveEntry({ ...base, heat: true, changePct: 0.04, lane: "down" }).ok, false);
+    assert.equal(liveEntry({ ...base, heat: true, changePct: 0.08 }).ok, true);
+    assert.equal(liveEntry({ ...base, heat: true, hot: true, changePct: 3.2 }).ok, true);
+    assert.equal(liveEntry({ ...base, heat: true, hot: true, lane: "down", changePct: 0.5 }).ok, true);
   });
 });

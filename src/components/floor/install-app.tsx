@@ -53,15 +53,15 @@ export function InstallAppButton({ compact = false }: { compact?: boolean }) {
       </Button>
       {open ? (
         <div
-          className="fixed inset-0 z-[110] grid place-items-end bg-bg/70 p-3 backdrop-blur-[3px] sm:place-items-center"
+          className="fixed inset-0 z-[110] grid place-items-end p-3 sm:place-items-center"
           role="presentation"
-          onClick={() => setOpen(false)}
         >
+          <div className="absolute inset-0 bg-black/70" onClick={() => setOpen(false)} />
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="install-title"
-            className="w-full max-w-md rounded-lg bg-surface p-4 shadow-[0_0_0_1px_var(--color-border-strong)]"
+            className="relative z-10 w-full max-w-md rounded-lg bg-surface-3 p-4 shadow-[0_0_0_1px_var(--color-border-strong)]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-3">

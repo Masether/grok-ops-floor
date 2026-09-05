@@ -2,7 +2,7 @@ import { CandlestickChart, Power, Settings2, Wallet } from "lucide-react";
 import { memo } from "react";
 import { toast } from "sonner";
 import { PIPELINE } from "@/lib/agents";
-import { haltLive, scanLiveTape, studyBook } from "@/lib/engine";
+import { haltLive, scanLiveTape, studyBook } from "@/lib/engine-call";
 import { clock, clockHms, money, moneyFull, pct } from "@/lib/format";
 import { PAIR_BY_ID, getPair } from "@/lib/kraken";
 import { sessionRemainingMs } from "@/lib/session";

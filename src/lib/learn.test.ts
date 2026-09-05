@@ -2,7 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_BRAIN,
+  bookAllowed,
+  hourQuiet,
+  kindFromReason,
   learnFromClose,
+  learnFromMiss,
+  pairBlocked,
   pairMinConf,
   setupAllowed,
   type Brain,
@@ -14,6 +19,9 @@ function fresh(over: Partial<Brain> = {}): Brain {
     ...over,
     pairBias: { ...DEFAULT_BRAIN.pairBias, ...(over.pairBias ?? {}) },
     setupScore: { ...DEFAULT_BRAIN.setupScore, ...(over.setupScore ?? {}) },
+    bookScore: { ...DEFAULT_BRAIN.bookScore, ...(over.bookScore ?? {}) },
+    hourScore: over.hourScore ? over.hourScore.slice() : DEFAULT_BRAIN.hourScore.slice(),
+    rejectCount: { ...DEFAULT_BRAIN.rejectCount, ...(over.rejectCount ?? {}) },
     lessons: over.lessons ? over.lessons.slice() : [],
   };
 }
@@ -128,5 +136,55 @@ describe("pairMinConf", () => {
 
     const tight = fresh({ minConf: 0.36, pairBias: { XBTUSD: 0.5 } });
     assert.equal(pairMinConf(tight, "XBTUSD"), 0.32);
+  });
+});
+
+describe("brain books and hours", () => {
+  it("credits the playbook and hour on a win, ignores dust", () => {
+    const scalp = learnFromClose(fresh(), {
+      pair: "ETHUSD",
+      pnl: 0.4,
+      reason: "SCALP clip",
+      hour: 14,
+    });
+    assert.ok(scalp.bookScore.scalp > 0);
+    assert.ok((scalp.hourScore[14] ?? 0) > 0);
+    const dust = learnFromClose(fresh(), {
+      pair: "BONKUSD",
+      pnl: -0.2,
+      reason: "DUST USD",
+      hour: 3,
+    });
+    assert.equal(dust.samples, 0);
+    assert.equal(dust.bookScore.scalp, 0);
+  });
+
+  it("retires a book and a dead hour after enough cuts", () => {
+    let brain = fresh({ samples: 8 });
+    for (let i = 0; i < 5; i++) {
+      brain = learnFromClose(brain, {
+        pair: "SOLUSD",
+        pnl: -0.4,
+        reason: "GRID add",
+        hour: 3,
+      });
+    }
+    assert.equal(bookAllowed(brain, "grid"), false);
+    assert.equal(bookAllowed(brain, "scalp"), true);
+    assert.equal(hourQuiet(brain, 3), true);
+    assert.equal(hourQuiet(brain, 15), false);
+  });
+
+  it("journals rejects without counting them as fills, then retires the pair", () => {
+    assert.equal(kindFromReason("KRAKEN REJECT EAPI:Invalid nonce"), "reject");
+    assert.equal(kindFromReason("hard stop -$0.30"), "stop");
+    let brain = fresh();
+    for (let i = 0; i < 4; i++) {
+      brain = learnFromMiss(brain, { pair: "SOLUSD", reason: "REJECT EAPI" });
+    }
+    assert.equal(brain.samples, 0);
+    assert.equal(brain.rejectCount.SOLUSD, 4);
+    assert.equal(pairBlocked(brain, "SOLUSD"), true);
+    assert.equal(pairBlocked(brain, "ETHUSD"), false);
   });
 });

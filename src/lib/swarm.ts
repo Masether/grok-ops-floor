@@ -4,6 +4,8 @@ import type { AgentId, PairId, Position, Ticker, TradeSignal, WireItem } from ".
 import type { Brain } from "./learn.ts";
 
 export const SWARM_SIZE = 300;
+/** Same clock for canvas dust and the 12 orbs. */
+export const SWARM_SPIN = 0.00012;
 
 export type GuildId = "price" | "liquidity" | "arb" | "inventory" | "risk";
 

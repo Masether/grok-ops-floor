@@ -1,4 +1,5 @@
-/** Extra books next to scalp. All still sized inside the live $200 USD cap. */
+import type { TapeLens } from "./tape-lens.ts";
+import { coversFees, USD_TAKER } from "./fees.ts";
 
 export type PlaybookId = "scalp" | "grid" | "dca";
 
@@ -14,9 +15,9 @@ export const DEFAULT_PLAYBOOK: PlaybookId = "scalp";
 
 /** Split of the $200 (or paper equity) across books when they run together. */
 export const BOOK_SHARE: Record<PlaybookId, number> = {
-  scalp: 0.4,
-  grid: 0.35,
-  dca: 0.25,
+  scalp: 0.15,
+  grid: 0.5,
+  dca: 0.35,
 };
 
 export function asPlaybook(v: unknown): PlaybookId {
@@ -86,8 +87,8 @@ export function bookStops(
 ): { stop: number; take: number } {
   if (playbook === "grid") return gridStops(entry);
   if (playbook === "dca") return dcaStops(entry);
-  const stopPct = heat ? 0.007 : 0.0035;
-  const takePct = heat ? 0.02 : 0.0105;
+  const stopPct = heat ? 0.012 : 0.0035;
+  const takePct = heat ? 0.04 : 0.0105;
   return { stop: entry * (1 - stopPct), take: entry * (1 + takePct) };
 }
 
@@ -100,8 +101,9 @@ export function gridManage(p: {
 }): { action: BookAction; stop: number; sellFrac: number } {
   const pnl = p.entry > 0 ? (p.mark - p.entry) / p.entry : 0;
   if (p.mark <= p.stop) return { action: "stop", stop: p.stop, sellFrac: 1 };
-  if (p.mark >= p.take) return { action: "take", stop: p.stop, sellFrac: 1 };
-  if (pnl >= GRID.stepPct && p.qty > 0) {
+  const paid = coversFees({ entry: p.entry, mark: p.mark, qty: p.qty, taker: USD_TAKER });
+  if (p.mark >= p.take && paid) return { action: "take", stop: p.stop, sellFrac: 1 };
+  if (paid && pnl >= GRID.stepPct && p.qty > 0) {
     return { action: "reduce", stop: Math.max(p.stop, p.entry * 0.999), sellFrac: GRID.reduceFrac };
   }
   return { action: "hold", stop: p.stop, sellFrac: 0 };
@@ -112,9 +114,15 @@ export function dcaManage(
   now = Date.now(),
 ): { action: BookAction; stop: number; sellFrac: number } {
   if (p.mark <= p.stop) return { action: "stop", stop: p.stop, sellFrac: 1 };
-  if (p.mark >= p.take) return { action: "take", stop: p.stop, sellFrac: 1 };
+  if (
+    p.mark >= p.take &&
+    coversFees({ entry: p.entry, mark: p.mark, taker: USD_TAKER })
+  ) {
+    return { action: "take", stop: p.stop, sellFrac: 1 };
+  }
   if (now - p.openedAt >= DCA.maxHoldMs) {
-    return { action: p.mark >= p.entry ? "time" : "stop", stop: p.stop, sellFrac: 1 };
+    const paid = coversFees({ entry: p.entry, mark: p.mark, taker: USD_TAKER });
+    return { action: paid ? "time" : "stop", stop: p.stop, sellFrac: 1 };
   }
   return { action: "hold", stop: p.stop, sellFrac: 0 };
 }
@@ -135,9 +143,9 @@ export function playbookWantsBuy(input: {
   if (playbook === "scalp") return kind === "buy" && lane !== "down";
   if (kind === "sell") return false;
   if (playbook === "grid") {
-    if (lane === "up" && !hasPos) return false;
     if (hasPos) return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds && lane !== "up";
-    return lane === "chop" && (kind === "buy" || (rsi < 48 && changePct <= 0.15));
+    if (lane === "up" && changePct > 0.6) return false;
+    return Math.abs(changePct) <= 1.6 && rsi < 58;
   }
   if (hasPos) {
     return (
@@ -147,7 +155,7 @@ export function playbookWantsBuy(input: {
       lane !== "up"
     );
   }
-  return lane !== "up" && (kind === "buy" || rsi < 52);
+  return lane !== "up" && (kind === "buy" || rsi < 55 || changePct <= -0.35);
 }
 
 /** Assign a free pair to one of the enabled books using MACD. */
@@ -163,6 +171,8 @@ export function pickPlaybook(input: {
   dipFromEntry: number;
   adds: number;
   msSinceAdd: number;
+  bookScore?: Partial<Record<PlaybookId, number>>;
+  lens?: TapeLens;
 }): PlaybookId | null {
   const enabled = normalizePlaybooks(input.enabled);
   if (input.existingBook) {
@@ -177,14 +187,22 @@ export function pickPlaybook(input: {
       ? "scalp"
       : null;
   }
-  const order: PlaybookId[] =
+  const base: PlaybookId[] =
     input.lane === "chop"
       ? ["grid", "dca", "scalp"]
       : input.lane === "up"
         ? ["scalp", "grid", "dca"]
         : ["dca", "grid", "scalp"];
+  const order = base.slice().sort((a, b) => {
+    const boost = (id: PlaybookId) => (input.lens === id ? 1 : 0);
+    const sa = (input.bookScore?.[a] ?? 0) + boost(a);
+    const sb = (input.bookScore?.[b] ?? 0) + boost(b);
+    if (sb !== sa) return sb - sa;
+    return base.indexOf(a) - base.indexOf(b);
+  });
   for (const pb of order) {
     if (!enabled.includes(pb)) continue;
+    if ((input.bookScore?.[pb] ?? 0) <= -5) continue;
     if (playbookWantsBuy({ playbook: pb, ...input, macd: input.lane })) return pb;
   }
   return null;

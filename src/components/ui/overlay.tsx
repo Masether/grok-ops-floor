@@ -30,9 +30,10 @@ export function TooltipContent({
       <TooltipPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          "z-50 max-w-xs rounded-sm bg-surface-3 px-2.5 py-1.5 font-sans text-xs text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "z-50 max-w-xs rounded-sm px-2.5 py-1.5 font-sans text-xs text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
+        style={{ background: "#181b28" }}
         {...props}
       />
     </TooltipPrimitive.Portal>
@@ -50,12 +51,13 @@ export function DialogContent({
 }: ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-bg/70" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black" style={{ opacity: 0.72 }} />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-surface p-5 shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg p-5 text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
+        style={{ background: "#181b28", isolation: "isolate", opacity: 1 }}
         {...props}
       >
         {children}
@@ -94,12 +96,13 @@ export function SheetContent({
 }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-bg/60" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black" style={{ opacity: 0.72 }} />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-0 right-0 z-50 flex h-dvh w-[min(420px,100vw)] flex-col bg-surface shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed top-0 right-0 z-50 flex h-dvh w-[min(420px,100vw)] flex-col text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
+        style={{ background: "#181b28", isolation: "isolate", opacity: 1 }}
         {...props}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">

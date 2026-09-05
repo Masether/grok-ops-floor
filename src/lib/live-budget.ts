@@ -1,5 +1,5 @@
 import { usdOnBook } from "./specialists.ts";
-import { getPair, isBtcQuote } from "./kraken.ts";
+import { BTC_BOOK, getPair, isBtcQuote, isBtcUsd, PAIRS } from "./kraken.ts";
 import type { Position, Ticker, PairId } from "./types.ts";
 
 export const DEFAULT_LIVE_BUDGET = 200;
@@ -58,9 +58,9 @@ export function krakenKeysOn(keys: { apiKey?: string; apiSecret?: string } | nul
   apiKey: string;
   apiSecret: string;
 } | null {
-  const apiKey = keys?.apiKey?.trim() ?? "";
-  const apiSecret = keys?.apiSecret?.trim() ?? "";
-  if (apiKey.length < 8 || apiSecret.length < 8) return null;
+  const apiKey = (keys?.apiKey ?? "").replace(/\s+/g, "").trim();
+  const apiSecret = (keys?.apiSecret ?? "").replace(/\s+/g, "").trim();
+  if (apiKey.length < 8 || apiSecret.length < 16) return null;
   return { apiKey, apiSecret };
 }
 
@@ -109,6 +109,21 @@ export function lotUsd(
 
 export function livePositions(positions: Position[]): Position[] {
   return positions.filter((p) => p.mode === "live");
+}
+
+/** Pair ids for anything already sitting on Kraken (except BTC itself). */
+export function pairsFromWallet(bal: Record<string, string> | null | undefined): PairId[] {
+  if (!bal) return [];
+  const ids: PairId[] = [];
+  for (const def of PAIRS) {
+    if (isBtcUsd(def.id) || def.quote !== "USD") continue;
+    if (spotQty(bal, def.base) > 0) ids.push(def.id);
+  }
+  for (const id of BTC_BOOK) {
+    const d = getPair(id);
+    if (d && spotQty(bal, d.base) > 0) ids.push(id);
+  }
+  return ids;
 }
 
 export function liveSleeve(input: {

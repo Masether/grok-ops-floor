@@ -100,12 +100,14 @@ export function LaunchSetup() {
 
   return (
     <div
-      className="fixed inset-0 z-[100] grid place-items-end bg-bg/85 p-2 backdrop-blur-[2px] sm:place-items-center sm:p-4"
+      className="fixed inset-0 z-[100] grid place-items-end p-2 sm:place-items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="launch-title"
     >
-      <div className={cn("panel w-full max-w-lg", tune && "max-h-[94dvh]")}>
+      <div className="absolute inset-0 bg-black/70" />
+      <div className={cn("panel relative z-10 w-full max-w-lg bg-surface-3", tune && "max-h-[94dvh]")}
+      >
         <div className="panel-head shrink-0">
           <div className="flex items-start gap-2.5">
             <img src="/favicon.svg" alt="" className="size-8 shrink-0 rounded-sm" />

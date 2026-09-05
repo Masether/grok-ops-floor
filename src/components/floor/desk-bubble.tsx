@@ -11,14 +11,16 @@ import {
   lotMetrics,
 } from "@/lib/desk-pnl";
 import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
-import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine";
-import { PAIR_BY_ID } from "@/lib/kraken";
+import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine-call";
+import { PAIR_BY_ID, pairBase, pairLabel } from "@/lib/kraken";
 import { liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
+import { fatBook, GROW_READY_USD } from "@/lib/book-balance";
 import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { WalletTab } from "./wallet-tab.tsx";
 import { GoalDeskRow, GoalDialog } from "./goal-chip.tsx";
+import { FloorModal } from "@/components/ui/floor-modal";
 
 type Tab = DeskTab;
 
@@ -38,21 +40,8 @@ export function DeskBubble() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open, setOpen]);
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-[80] grid place-items-end bg-bg/45 p-2 backdrop-blur-[3px] sm:place-items-center sm:p-4"
-      role="presentation"
-      onClick={() => setOpen(false)}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="desk-title"
-        className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-surface/80 shadow-[0_0_0_1px_var(--color-border-strong),0_24px_80px_rgb(0_0_0/0.45)] backdrop-blur-md"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <FloorModal open={open} onClose={() => setOpen(false)} labelledBy="desk-title">
         <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-3 py-2">
           <div className="min-w-0">
             <p className="panel-kicker" id="desk-title">
@@ -103,9 +92,8 @@ export function DeskBubble() {
           {tab === "money" ? <WalletTab /> : null}
           {tab === "ticket" ? <TicketTab /> : null}
         </div>
-      </div>
       <GoalDialog open={goalOpen} onOpenChange={setGoalOpen} />
-    </div>
+    </FloorModal>
   );
 }
 
@@ -158,6 +146,12 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
         <Stat label="Free cash" value={moneyFull(desk.cash)} />
         <Stat label="In lots" value={moneyFull(desk.exposure)} extra={`${desk.openPositions} open`} />
       </div>
+      <p className="border-b border-border px-3 py-2 text-2xs text-muted">
+        Wallet {moneyFull(desk.equity)} / {moneyFull(GROW_READY_USD)}
+        {fatBook(desk.equity)
+          ? " — bag is fat. Poly sleeve when you say go."
+          : " in the Kraken wallet. Poly stays off until this hits $50k."}
+      </p>
 
       {grokNote ? (
         <p className="border-b border-border px-3 py-2 text-2xs text-muted">{grokNote}</p>
@@ -166,7 +160,7 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
       {pending ? (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-2 px-3 py-2">
           <p className="text-2xs text-muted">
-            Waiting: {pending.side === "buy" ? "IN" : "OUT"} {PAIR_BY_ID[pending.pair].base}
+            Waiting: {pending.side === "buy" ? "IN" : "OUT"} {pairBase(pending.pair)}
           </p>
           <div className="flex gap-2">
             <Button type="button" size="sm" variant="good" onClick={() => void executeOrder(pending)}>
@@ -216,7 +210,7 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                     <span className="font-display text-2xs tracking-[0.12em] uppercase">
-                      IN {PAIR_BY_ID[p.pair].label}
+                      IN {pairLabel(p.pair)}
                       {m.nearStop ? <span className="ml-1.5 text-danger">near stop</span> : null}
                     </span>
                     <span className={cn("stat-num text-sm", signedClass(m.pnl))}>{money(m.pnl)}</span>
@@ -233,7 +227,7 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
                     onClick={() => {
                       void closeLot(p.id).then((res) => {
                         if (!res.ok) toast.message(res.reason);
-                        else toast.success(`Closed ${PAIR_BY_ID[p.pair].base}`);
+                        else toast.success(`Closed ${pairBase(p.pair)}`);
                       });
                     }}
                   >
@@ -345,7 +339,7 @@ function TicketTab() {
         dollars: Number(dollars),
       });
       if (!res.ok) toast.message(res.reason);
-      else toast.success(`${side === "buy" ? "IN" : "OUT"} ${PAIR_BY_ID[pair].base} filled`);
+      else toast.success(`${side === "buy" ? "IN" : "OUT"} ${pairBase(pair)} filled`);
     } finally {
       setBusy(false);
     }
@@ -359,7 +353,7 @@ function TicketTab() {
       {pending ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm bg-surface-2 px-3 py-2">
           <p className="text-2xs text-muted">
-            Bot ticket {pending.side.toUpperCase()} {PAIR_BY_ID[pending.pair].base}
+            Bot ticket {pending.side.toUpperCase()} {pairBase(pending.pair)}
           </p>
           <div className="flex gap-2">
             <Button type="button" size="sm" variant="good" onClick={() => void executeOrder(pending)}>
@@ -382,7 +376,7 @@ function TicketTab() {
               aria-pressed={id === pair}
               onClick={() => setPair(id)}
             >
-              {PAIR_BY_ID[id].base}
+              {pairBase(id)}
             </Button>
           ))}
         </div>
@@ -412,11 +406,11 @@ function TicketTab() {
                 setBusy(true);
                 void closeLot(held.id).then((res) => {
                   if (!res.ok) toast.message(res.reason);
-                  else toast.success(`Closed ${PAIR_BY_ID[held.pair].base}`);
+                  else toast.success(`Closed ${pairBase(held.pair)}`);
                 }).finally(() => setBusy(false));
               }}
             >
-              Close {PAIR_BY_ID[held.pair].base}
+              Close {pairBase(held.pair)}
             </Button>
           ) : null}
         </div>

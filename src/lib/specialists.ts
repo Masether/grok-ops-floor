@@ -48,14 +48,14 @@ export function readFlow(ticker: Ticker | undefined, volumes: number[]): FlowRea
   if (!ticker) return { ok: true, spreadPct: 0, note: "ohlc tape — waiting on bid/ask" };
   const mid = ticker.last || (ticker.bid + ticker.ask) / 2;
   const spreadPct = mid > 0 ? (ticker.ask - ticker.bid) / mid : 0;
-  const sleeve = PAIR_BY_ID[ticker.pair]?.sleeve ?? "core";
+  const sleeve = getPair(ticker.pair)?.sleeve ?? PAIR_BY_ID[ticker.pair]?.sleeve ?? "core";
   const cap =
     ticker.pair === "XBTUSD"
       ? 0.0009
       : ticker.pair === "ETHUSD"
         ? 0.0014
         : sleeve === "heat"
-          ? 0.008
+          ? 0.02
           : sleeve === "stock"
             ? 0.002
             : 0.0024;

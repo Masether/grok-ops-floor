@@ -3,7 +3,8 @@ import { persist, createJSONStorage, type StateStorage } from "zustand/middlewar
 import { useShallow } from "zustand/react/shallow";
 import { AGENTS } from "./agents.ts";
 import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn.ts";
-import { BTC_BOOK, DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
+import { DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
+import { btcOnBook, clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, pairsFromWallet, restoreLiveBudget } from "./live-budget.ts";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import { bookDayPnl } from "./desk-pnl.ts";
@@ -39,7 +40,6 @@ import {
   type ChartInterval,
 } from "./session.ts";
 import { applyConvertCoin, applyConvertUsd, applySendCoin, applySendUsd, sweepableProfit, type ExternalDest, type VaultLot } from "./wallet.ts";
-import { clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, restoreLiveBudget } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import { asPlaybook, ALL_PLAYBOOKS, normalizePlaybooks, type PlaybookId } from "./playbook.ts";
 import { idleSwarm, type SwarmSnap } from "./swarm.ts";
@@ -138,6 +138,7 @@ export type FloorState = {
   vault: VaultLot[];
   autoSweep: boolean;
   sweptTotal: number;
+  lifetimePnl: number;
   transfers: TransferRow[];
   realized: number;
   dayStartEquity: number;
@@ -430,7 +431,7 @@ export const useFloor = create<FloorState>()(
       liveBudget: DEFAULT_LIVE_BUDGET,
       liveTakerPct: 0,
       venueId: "kraken",
-      humanVerified: false,
+      humanVerified: true,
       keys: { apiKey: "", apiSecret: "" },
       keysOk: null,
       pairs: DEFAULT_PAIRS,
@@ -445,6 +446,7 @@ export const useFloor = create<FloorState>()(
       vault: [],
       autoSweep: true,
       sweptTotal: 0,
+      lifetimePnl: 0,
       transfers: [],
       realized: 0,
       dayStartEquity: 10_000,
@@ -543,7 +545,11 @@ export const useFloor = create<FloorState>()(
             autoTrade: true,
             floorOpen: true,
             autoSweep: true,
-            pairs: liveWatchPairs([...BTC_BOOK, ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs]),
+            pairs: liveWatchPairs(
+              [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
+              sleeve.btcUsd,
+              true,
+            ),
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
           return;
@@ -598,10 +604,10 @@ export const useFloor = create<FloorState>()(
       },
       stopDesk: () => set({ floorOpen: false, autoTrade: false, sessionEndsAt: null }),
       setKeys: (keys) => {
-        const have = krakenKeysOn(get().keys);
-        if (!get().humanVerified && !have) return;
-        if (rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret)) return;
-        set({ keys, keysOk: null, humanVerified: true });
+        const apiKey = keys.apiKey.replace(/\s+/g, "").trim();
+        const apiSecret = keys.apiSecret.replace(/\s+/g, "").trim();
+        if (rejectWalletSecret(apiKey) || rejectWalletSecret(apiSecret)) return;
+        set({ keys: { apiKey, apiSecret }, keysOk: null, humanVerified: true });
         queueMicrotask(flushFloorPersist);
       },
       setKeysOk: (v) => set({ keysOk: v }),
@@ -786,7 +792,15 @@ export const useFloor = create<FloorState>()(
       setInspectPair: (pair) => set({ inspectPair: pair }),
       setGrokNote: (note) => set({ grokNote: note }),
       setGrokBusy: (v) => set({ grokBusy: v }),
-      setLiveBalance: (b) => set({ liveBalance: b }),
+      setLiveBalance: (b) =>
+        set((s) => ({
+          liveBalance: b,
+          pairs: liveWatchPairs(
+            [...pairsFromWallet(b), ...s.pairs],
+            btcOnBook(b) * (s.tickers.XBTUSD?.last ?? 0),
+            true,
+          ),
+        })),
       setSettingsOpen: (v) => set({ settingsOpen: v }),
       bumpTicks: () => set({ ticks: get().ticks + 1 }),
       setBrain: (brain) => set({ brain }),
@@ -868,6 +882,7 @@ export const useFloor = create<FloorState>()(
           vault: s.vault,
           autoSweep: s.autoSweep,
           sweptTotal: s.sweptTotal,
+          lifetimePnl: s.lifetimePnl,
           transfers: s.transfers.slice(0, 24),
           realized: s.realized,
           dayStartEquity: s.dayStartEquity,
@@ -938,11 +953,11 @@ export const useFloor = create<FloorState>()(
         return {
           ...current,
           ...p,
-          pairs: liveOn ? liveWatchPairs(pairs) : pairs,
+          pairs: liveOn ? liveWatchPairs(pairs, 0, true) : pairs,
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",
-          playbooks: normalizePlaybooks(p.playbooks ?? ALL_PLAYBOOKS),
+          playbooks: ["grid", "dca", "scalp"],
           floorOpen: launched || keyed,
           autoTrade: true,
           agents: current.agents,
@@ -982,12 +997,19 @@ export const useFloor = create<FloorState>()(
           vault: Array.isArray(p.vault) ? p.vault : [],
           autoSweep: p.autoSweep !== false,
           sweptTotal: typeof p.sweptTotal === "number" && p.sweptTotal >= 0 ? p.sweptTotal : 0,
+          lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : 0,
           transfers: Array.isArray(p.transfers) ? p.transfers.slice(0, 24) : [],
           brain: {
             ...DEFAULT_BRAIN,
             ...(p.brain ?? {}),
             pairBias: { ...DEFAULT_BRAIN.pairBias, ...(p.brain?.pairBias ?? {}) },
             setupScore: { ...DEFAULT_BRAIN.setupScore, ...(p.brain?.setupScore ?? {}) },
+            bookScore: { ...DEFAULT_BRAIN.bookScore, ...(p.brain?.bookScore ?? {}) },
+            hourScore:
+              Array.isArray(p.brain?.hourScore) && p.brain.hourScore.length === 24
+                ? p.brain.hourScore
+                : DEFAULT_BRAIN.hourScore.slice(),
+            rejectCount: { ...(p.brain?.rejectCount ?? {}) },
             lessons: p.brain?.lessons ?? [],
             assetMemory: { ...DEFAULT_BRAIN.assetMemory, ...(p.brain?.assetMemory ?? {}) },
           },
@@ -1010,7 +1032,8 @@ export function ensureLiveDesk(): boolean {
     mode: "live",
     venueId: "kraken",
     liveArmed: keyed ? true : s.liveArmed,
-    pairs: liveWatchPairs(s.pairs),
+    playbooks: ["grid", "dca", "scalp"],
+    pairs: liveWatchPairs(s.pairs, 0, false),
   });
   return keyed;
 }
@@ -1038,11 +1061,11 @@ export function bootFloorFromDisk() {
       venueId: "kraken",
       liveArmed: keyed,
       keys: p.keys ?? useFloor.getState().keys,
-      keysOk: keyed ? true : useFloor.getState().keysOk,
+      keysOk: keyed ? null : false,
       liveBudget: restoreLiveBudget(p.liveBudget),
       liveBalance: p.liveBalance ?? null,
       liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : 0,
-      pairs: liveWatchPairs(Array.isArray(p.pairs) ? p.pairs : []),
+      pairs: liveWatchPairs(Array.isArray(p.pairs) ? p.pairs : [], 0, false),
       lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : 0,
       shiftStartedAt:
         typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : useFloor.getState().shiftStartedAt,

@@ -11,11 +11,9 @@ import {
   SheetContent,
 } from "@/components/ui/overlay";
 import { HumanGate } from "@/components/floor/human-gate";
-import { executeOrder, refreshTreasury } from "@/lib/engine";
+import { executeOrder, refreshTreasury } from "@/lib/engine-call";
 import { secondRead } from "@/lib/grok-brief";
-import { testVenueKeys } from "@/lib/human-gate-api";
-import { PAIRS, PAIR_BY_ID, SLEEVE_META } from "@/lib/kraken";
-import { readHumanToken } from "@/lib/human-gate.mjs";
+import { PAIRS, PAIR_BY_ID, SLEEVE_META, pairBase } from "@/lib/kraken";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
 import { persistDeskBook } from "@/lib/profile";
@@ -73,22 +71,8 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
 
   async function testKeys() {
-    const saved = krakenKeysOn(keys);
-    if (saved && !humanVerified) {
-      setBusy(true);
-      try {
-        await refreshTreasury();
-        const ok = useFloor.getState().keysOk;
-        if (ok) toast.success("Saved Kraken keys still work.");
-        else toast.error("Saved keys failed — paste them again.");
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    const token = readHumanToken();
-    if (!humanVerified || !token) {
-      toast.error("Verify you're human before linking an account.");
+    if (!krakenKeysOn(keys)) {
+      toast.error("Paste Query + Orders keys first.");
       return;
     }
     const seedErr = rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret);
@@ -98,28 +82,25 @@ export function SettingsPanel() {
     }
     setBusy(true);
     try {
-      const res = await testVenueKeys({
-        data: {
-          venueId,
-          apiKey: keys.apiKey,
-          apiSecret: keys.apiSecret,
-          humanToken: token,
-        },
-      });
-      setLiveBalance(res.balance);
-      setKeysOk(true);
+      await refreshTreasury();
+      const s = useFloor.getState();
+      const ok = s.keysOk;
       const sleeve = liveSleeve({
         liveBudget,
-        liveBalance: res.balance,
-        positions: useFloor.getState().positions,
+        liveBalance: s.liveBalance,
+        positions: s.positions,
       });
-      toast.success(
-        sleeve.usd >= 15
-          ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
-          : sleeve.usdt >= 15
-            ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken, then test again`
-            : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Deposit $200 USD on Kraken.`,
-      );
+      if (ok) {
+        toast.success(
+          sleeve.usd >= 15
+            ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
+            : sleeve.usdt >= 15
+              ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken, then test again`
+              : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Deposit $200 USD on Kraken.`,
+        );
+      } else {
+        toast.error("Saved keys failed — paste them again.");
+      }
     } catch (err) {
       setKeysOk(false);
       toast.error(err instanceof Error ? err.message : "Venue auth failed");
@@ -367,7 +348,6 @@ export function SettingsPanel() {
                 type="text"
                 autoComplete="off"
                 placeholder={krakenKeysOn(keys) ? "API key saved on this device" : "API key"}
-                disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiKey}
                 onChange={(e) => setKeys({ ...keys, apiKey: e.target.value })}
               />
@@ -375,7 +355,6 @@ export function SettingsPanel() {
                 type="password"
                 autoComplete="off"
                 placeholder={krakenKeysOn(keys) ? "Secret saved on this device" : "API secret (base64) — not a wallet key"}
-                disabled={!humanVerified && !krakenKeysOn(keys)}
                 value={keys.apiSecret}
                 onChange={(e) => setKeys({ ...keys, apiSecret: e.target.value })}
               />
@@ -383,7 +362,7 @@ export function SettingsPanel() {
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy || !keys.apiKey || (!humanVerified && !krakenKeysOn(keys))}
+                  disabled={busy || !keys.apiKey}
                   onClick={() => void testKeys()}
                 >
                   {busy ? "Testing…" : "Test connection"}
@@ -437,7 +416,7 @@ export function SettingsPanel() {
                     const picked = pickHotBook(tickers, ALL_LANE_IDS);
                     setPairs(picked);
                     toast.message(
-                      `All three: ${picked.map((id) => PAIR_BY_ID[id].base).join(" · ")}`,
+                      `All three: ${picked.map((id) => pairBase(id)).join(" · ")}`,
                     );
                   }}
                 >

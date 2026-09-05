@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { GUILD_BY_ID, GUILDS, seedSwarm, type GuildId, type SwarmSnap } from "@/lib/swarm";
+import { GUILD_BY_ID, GUILDS, seedSwarm, SWARM_SPIN, type GuildId, type SwarmSnap } from "@/lib/swarm";
 
 const BOTS = seedSwarm();
 
@@ -67,7 +67,7 @@ export function SwarmCanvas({
         ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
-      const spin = reduced ? 0 : t * 0.00012;
+      const spin = reduced ? 0 : t * SWARM_SPIN;
       for (const b of BOTS) {
         const g = GUILD_BY_ID[b.guild];
         const snap = swarmNow.guilds[b.guild];

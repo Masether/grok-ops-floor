@@ -1,10 +1,13 @@
-import { useEffect, useLayoutEffect } from "react";
+import { Component, useEffect, useLayoutEffect, type ErrorInfo, type ReactNode } from "react";
 import { Toaster } from "sonner";
-import { startEngine, stopEngine, refreshTreasury } from "@/lib/engine";
 import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
+import { krakenKeysOn } from "@/lib/live-budget";
+import { loadDeskMods, modOn } from "@/lib/desk-mods";
+import { type PlaybookId } from "@/lib/playbook";
 import { dropWakeLock, holdWakeLock } from "@/lib/wake-lock";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
+import { AppErrorComponent } from "@/lib/error-component";
 import { TooltipProvider } from "@/components/ui/overlay";
 import { ChartsBubble } from "./charts-bubble.tsx";
 import { BrainBubble } from "./brain-bubble.tsx";
@@ -20,13 +23,36 @@ import { TheTape } from "./the-tape.tsx";
 import { TheWire } from "./the-wire.tsx";
 
 function openLiveNow() {
+  useFloor.getState().setHumanVerified(true);
+  const mods = loadDeskMods();
+  const books = (["scalp", "grid", "dca"] as PlaybookId[]).filter((id) => mods[id]);
+  useFloor.setState({
+    playbooks: books.length ? books : ["grid", "dca", "scalp"],
+    selfLearn: mods.brain,
+    autoSweep: mods.compound,
+    brain: { ...useFloor.getState().brain, enabled: mods.brain },
+  });
   ensureLiveDesk();
   const s = useFloor.getState();
   if (s.launched && !s.floorOpen) s.setFloorOpen(true);
+  if (krakenKeysOn(s.keys) && !s.liveArmed) s.setLiveArmed(true);
+}
+
+class FloorCatch extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("floor crash", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) return <AppErrorComponent error={this.state.error} />;
+    return this.props.children;
+  }
 }
 
 export function OpsShell() {
-  const launched = useFloor((s) => s.launched);
   const floorOpen = useFloor((s) => s.floorOpen);
   const liveArmed = useFloor((s) => s.liveArmed);
   const { user } = useCurrentUserState();
@@ -34,8 +60,19 @@ export function OpsShell() {
   useLayoutEffect(() => {
     bootFloorFromDisk();
     openLiveNow();
-    startEngine();
-    return () => stopEngine();
+  }, []);
+
+  useEffect(() => {
+    let stop = () => {};
+    const id = window.setTimeout(() => {
+      void import("@/lib/engine").then((m) => {
+        stop = m.startEngine();
+      });
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      stop();
+    };
   }, []);
 
   useEffect(() => {
@@ -64,9 +101,10 @@ export function OpsShell() {
       }
       if (!alive) return;
       openLiveNow();
-      const keyed = Boolean(useFloor.getState().keys.apiKey && useFloor.getState().keys.apiSecret);
+      if (!krakenKeysOn(useFloor.getState().keys)) return;
       try {
-        if (keyed) await refreshTreasury();
+        const m = await import("@/lib/engine");
+        await m.refreshTreasury();
       } catch {
         /* tape warms on its own */
       }
@@ -78,25 +116,23 @@ export function OpsShell() {
 
   useEffect(() => {
     if (!user) return;
-    void loadProfile()
-      .then((p) => {
-        if (!p) return;
-        const s = useFloor.getState();
-        if (p.fundingCash >= 0) {
-          useFloor.setState({ fundingCash: p.fundingCash });
-        }
-        if (s.liveArmed || (s.keys.apiKey && s.keys.apiSecret)) return;
-        if (p.pairs.length) s.setPairs(p.pairs as typeof s.pairs);
-        if (p.risk) s.setRisk(p.risk);
-        if (p.bookJson) {
+    const pull = () => {
+      const s = useFloor.getState();
+      if (s.liveArmed && krakenKeysOn(s.keys)) {
+        persistDeskBook();
+        return;
+      }
+      void loadProfile()
+        .then((p) => {
+          if (!p?.bookJson) return;
           const book = parseBook(p.bookJson);
           if (book) applyRemoteBook(book);
-        }
-        openLiveNow();
-      })
-      .catch(() => {
-        /* guest */
-      });
+        })
+        .catch(() => {});
+    };
+    pull();
+    const id = window.setInterval(pull, 12_000);
+    return () => window.clearInterval(id);
   }, [user]);
 
   useEffect(() => {
@@ -109,7 +145,7 @@ export function OpsShell() {
     };
     window.addEventListener("pagehide", save);
     document.addEventListener("visibilitychange", onVis);
-    const id = window.setInterval(save, 20_000);
+    const id = window.setInterval(save, 8_000);
     return () => {
       window.removeEventListener("pagehide", save);
       document.removeEventListener("visibilitychange", onVis);
@@ -119,54 +155,56 @@ export function OpsShell() {
 
   return (
     <TooltipProvider>
-      <div className="flex min-h-dvh flex-col overflow-x-hidden bg-bg text-fg">
-        <HeaderBar />
-        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3">
-          <LiveStatusBar />
-          <SessionBoard />
-          <FundingRail />
-          <div className="min-h-[260px] lg:min-h-0 lg:flex-1">
-            <OrbitStage />
-          </div>
-          <PairStrip />
-          <div className="grid min-h-[200px] gap-2 lg:grid-cols-3">
-            <TheTape />
-            <TheWire />
-            <ReworkQueue />
-          </div>
-          <div className="grid min-h-[240px] gap-2 lg:grid-cols-3">
-            <RunnerDeck />
-            <TokenFlow />
-            <TheDesk />
-          </div>
-        </main>
-        <SettingsPanel />
-        <ChartsBubble />
-        <DeskBubble />
-        <BrainBubble />
-        <Toaster
-          theme="dark"
-          position="bottom-right"
-          visibleToasts={3}
-          gap={8}
-          offset={16}
-          mobileOffset={{ bottom: 16, right: 12, left: 12 }}
-          style={{ zIndex: 90 }}
-          toastOptions={{
-            style: {
-              background: "#12141e",
-              border: "1px solid rgba(255,255,255,0.1)",
-              color: "#e8edf5",
-              fontSize: "0.875rem",
-            },
-            classNames: {
-              toast: "trade-toast",
-              title: "font-display tracking-wide text-sm",
-              description: "text-xs text-muted",
-            },
-          }}
-        />
-      </div>
+      <FloorCatch>
+        <div className="flex min-h-dvh flex-col overflow-x-hidden bg-bg text-fg">
+          <HeaderBar />
+          <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 lg:p-3">
+            <LiveStatusBar />
+            <SessionBoard />
+            <FundingRail />
+            <div className="min-h-[260px] lg:min-h-0 lg:flex-1">
+              <OrbitStage />
+            </div>
+            <PairStrip />
+            <div className="grid min-h-[200px] gap-2 lg:grid-cols-3">
+              <TheTape />
+              {modOn("wire") ? <TheWire /> : null}
+              <ReworkQueue />
+            </div>
+            <div className="grid min-h-[240px] gap-2 lg:grid-cols-3">
+              <RunnerDeck />
+              <TokenFlow />
+              <TheDesk />
+            </div>
+          </main>
+          <SettingsPanel />
+          {modOn("charts") ? <ChartsBubble /> : null}
+          {modOn("deskui") ? <DeskBubble /> : null}
+          {modOn("brain") ? <BrainBubble /> : null}
+          <Toaster
+            theme="dark"
+            position="bottom-right"
+            visibleToasts={3}
+            gap={8}
+            offset={16}
+            mobileOffset={{ bottom: 16, right: 12, left: 12 }}
+            style={{ zIndex: 90 }}
+            toastOptions={{
+              style: {
+                background: "#12141e",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "#e8edf5",
+                fontSize: "0.875rem",
+              },
+              classNames: {
+                toast: "trade-toast",
+                title: "font-display tracking-wide text-sm",
+                description: "text-xs text-muted",
+              },
+            }}
+          />
+        </div>
+      </FloorCatch>
     </TooltipProvider>
   );
 }

@@ -31,6 +31,7 @@ export type ProfileBook = {
   autoSweep?: boolean;
   sweptTotal?: number;
   realized: number;
+  lifetimePnl?: number;
   dayStartEquity: number;
   lastEngineAt: number;
   shiftStartedAt: number;
@@ -47,6 +48,8 @@ export type ProfileBook = {
   events: TapeEvent[];
   transfers: TransferRow[];
   equityHistory: EquityPoint[];
+  brain?: FloorState["brain"];
+  liveBudget?: number;
 };
 
 export type ProfileRow = {
@@ -66,6 +69,7 @@ export function snapshotBook(s: FloorState): ProfileBook {
     autoSweep: s.autoSweep,
     sweptTotal: s.sweptTotal,
     realized: s.realized,
+    lifetimePnl: s.lifetimePnl,
     dayStartEquity: s.dayStartEquity,
     lastEngineAt: s.lastEngineAt,
     shiftStartedAt: s.shiftStartedAt,
@@ -82,6 +86,8 @@ export function snapshotBook(s: FloorState): ProfileBook {
     events: s.events.slice(0, 40),
     transfers: s.transfers.slice(0, 12),
     equityHistory: s.equityHistory.slice(-90),
+    brain: s.brain,
+    liveBudget: s.liveBudget,
   };
 }
 
@@ -139,6 +145,9 @@ export function applyRemoteBook(book: ProfileBook) {
     events: Array.isArray(book.events) ? book.events : local.events,
     transfers: Array.isArray(book.transfers) ? book.transfers : local.transfers,
     equityHistory: Array.isArray(book.equityHistory) ? book.equityHistory : local.equityHistory,
+    lifetimePnl: typeof book.lifetimePnl === "number" ? book.lifetimePnl : local.lifetimePnl,
+    brain: book.brain ?? local.brain,
+    liveBudget: typeof book.liveBudget === "number" ? book.liveBudget : local.liveBudget,
     floorOpen: book.launched || local.floorOpen,
     autoTrade: true,
     opsMode: "auto",

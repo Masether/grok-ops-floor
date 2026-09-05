@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { AGENT_BY_ID } from "@/lib/agents";
+import { AGENT_BY_ID, AGENTS } from "@/lib/agents";
 import { onPulse, type FloorPulse } from "@/lib/bus";
 import { moneyFull } from "@/lib/format";
-import { PAIR_BY_ID } from "@/lib/kraken";
-import { GUILDS, SWARM_SIZE } from "@/lib/swarm";
+import { PAIR_BY_ID, getPair, pairLabel } from "@/lib/kraken";
+import { GUILDS, SWARM_SIZE, SWARM_SPIN } from "@/lib/swarm";
 import { IDLE_DEBATE } from "@/lib/coordinate";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { AgentGlyph, GrokCore } from "./glyphs.tsx";
 import { SwarmCanvas } from "./swarm-canvas.tsx";
+import { modOn } from "@/lib/desk-mods";
 
 type PulseDraw = FloorPulse & { id: number; born: number };
 
@@ -49,13 +50,20 @@ export function OrbitStage() {
   }, []);
 
   useEffect(() => {
-    const reduced =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion =
+      reduced ||
+      (typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     let raf = 0;
+    let frame = 0;
     const loop = (t: number) => {
       if (typeof document !== "undefined" && document.hidden) {
         raf = 0;
+        return;
+      }
+      frame += 1;
+      if (frame % 2 === 1) {
+        raf = requestAnimationFrame(loop);
         return;
       }
       const el = wrapRef.current;
@@ -69,33 +77,25 @@ export function OrbitStage() {
       const cx = w / 2;
       const cy = h / 2 + 4;
       const base = Math.min(w * 0.42, h * 0.4, 220);
-      const spin = reduced ? 0 : t / 11000;
+      const spin = reducedMotion ? 0 : t * SWARM_SPIN;
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       posRef.current.dispatcher = { x: cx, y: cy };
 
-      const ringOf: Record<string, number> = {
-        price: 0.38,
-        liquidity: 0.52,
-        arb: 0.66,
-        inventory: 0.8,
-        risk: 0.94,
-      };
-      const pts: { id: string; x: number; y: number }[] = [];
+      const n = AGENTS.length;
       const lines: string[] = [];
-      GUILDS.forEach((g, i) => {
-        const theta = spin + (i / GUILDS.length) * Math.PI * 2 - Math.PI / 2;
-        const rx = base * ringOf[g.id]!;
-        const ry = rx * 0.55;
+      AGENTS.forEach((a, i) => {
+        const theta = spin + (i / n) * Math.PI * 2 - Math.PI / 2;
+        const rx = base * 0.82;
+        const ry = rx * 0.58;
         const x = cx + Math.cos(theta) * rx;
         const y = cy + Math.sin(theta) * ry;
-        posRef.current[g.lead] = { x, y };
-        pts.push({ id: g.lead, x, y });
-        const node = orbRefs.current[g.lead];
+        posRef.current[a.id] = { x, y };
+        const node = orbRefs.current[a.id];
         if (node) {
           node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
         }
         lines.push(
-          `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${g.color}33" stroke-width="1"/>`,
+          `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${a.color}28" stroke-width="1"/>`,
         );
       });
 
@@ -136,7 +136,7 @@ export function OrbitStage() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [reduced]);
 
   const pair = inspectPair ?? pairs[0];
   const ticker = pair ? tickers[pair] : undefined;
@@ -188,7 +188,7 @@ export function OrbitStage() {
           </ol>
           <ul className="mt-2 flex flex-wrap gap-1">
             {GUILDS.map((g) => {
-              const st = swarm.guilds[g.id];
+              const st = swarm.guilds?.[g.id];
               return (
                 <li key={g.id}>
                   <button
@@ -221,7 +221,7 @@ export function OrbitStage() {
               onClick={() => useFloor.getState().setInspectPair(pair)}
             >
               <div className="font-display text-2xs tracking-[0.14em] text-muted uppercase">
-                {PAIR_BY_ID[pair].label}
+                {pairLabel(pair)}
               </div>
               <div className="stat-num text-lg text-fg">{ticker.last.toLocaleString()}</div>
               <div
@@ -266,43 +266,43 @@ export function OrbitStage() {
       </div>
 
       <div ref={wrapRef} className="absolute inset-0">
-        <SwarmCanvas swarm={swarm} reduced={reduced} />
+        {modOn("swarm") ? <SwarmCanvas swarm={swarm} reduced={reduced} /> : null}
         <svg ref={svgRef} className="pointer-events-none absolute inset-0 size-full" />
         <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
           <GrokCore size={96} />
         </div>
-        {GUILDS.map((g) => {
-          const st = agents[g.lead];
-          const heat = Math.max(st?.heat ?? 0.15, swarm.guilds[g.id]?.heat ?? 0.2);
-          const on = selected === g.lead || heat > 0.55;
-          const shape = AGENT_BY_ID[g.lead]?.shape ?? "pulse";
+        {AGENTS.map((a) => {
+          const st = agents[a.id];
+          const guild = GUILDS.find((g) => g.lead === a.id);
+          const heat = Math.max(st?.heat ?? 0.15, guild ? swarm.guilds[guild.id]?.heat ?? 0.2 : 0.2);
+          const on = selected === a.id || heat > 0.55;
           return (
             <button
-              key={g.id}
+              key={a.id}
               ref={(n) => {
-                orbRefs.current[g.lead] = n;
+                orbRefs.current[a.id] = n;
               }}
               type="button"
-              onClick={() => selectAgent(selected === g.lead ? null : g.lead)}
+              onClick={() => selectAgent(selected === a.id ? null : a.id)}
               className="absolute top-0 left-0 z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
               style={{ willChange: "transform" }}
-              aria-label={`${g.name} ${g.role}`}
+              aria-label={`${a.name} ${a.role}`}
             >
               <span
-                className="grid size-11 place-items-center rounded-full"
+                className="grid size-9 place-items-center rounded-full"
                 style={{
-                  background: `radial-gradient(circle, ${g.color}33, transparent 70%)`,
-                  boxShadow: on ? `0 0 18px ${g.color}` : `0 0 8px ${g.color}55`,
-                  transform: `scale(${0.92 + heat * 0.18})`,
+                  background: `radial-gradient(circle, ${a.color}33, transparent 70%)`,
+                  boxShadow: on ? `0 0 16px ${a.color}` : `0 0 7px ${a.color}55`,
+                  transform: `scale(${0.9 + heat * 0.2})`,
                 }}
               >
-                <AgentGlyph shape={shape} color={g.color} size={22} />
+                <AgentGlyph shape={a.shape} color={a.color} size={18} />
               </span>
               <span
-                className="font-display mt-0.5 text-micro font-semibold tracking-[0.14em] uppercase"
-                style={{ color: g.color }}
+                className="font-display mt-0.5 text-micro font-semibold tracking-[0.12em] uppercase"
+                style={{ color: a.color }}
               >
-                {g.name}
+                {a.name}
               </span>
             </button>
           );

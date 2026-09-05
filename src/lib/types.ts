@@ -126,6 +126,9 @@ export type Position = {
   adds?: number;
   book?: "scalp" | "grid" | "dca";
   fee?: number;
+  banked?: boolean;
+  peakPnlUsd?: number;
+  costUsd?: number;
 };
 
 export type Order = {

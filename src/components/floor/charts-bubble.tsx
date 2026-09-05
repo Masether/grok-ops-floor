@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { FloorModal } from "@/components/ui/floor-modal";
 import {
   CHART_TOOLS,
   CHART_TYPES,
@@ -22,8 +23,9 @@ import {
   smaSeries,
   stochasticSeries,
 } from "@/lib/indicators";
+import { volumeSpikes, vwapSeries } from "@/lib/tape-lens";
 import { fetchOhlc } from "@/lib/kraken-api";
-import { PAIR_BY_ID } from "@/lib/kraken";
+import { PAIR_BY_ID, pairBase, pairLabel } from "@/lib/kraken";
 import {
   CHART_INTERVALS,
   asChartInterval,
@@ -104,18 +106,12 @@ export function ChartsBubble() {
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-[80] grid place-items-end bg-bg/45 p-2 backdrop-blur-[3px] sm:place-items-center sm:p-4"
-      role="presentation"
-      onClick={() => setOpen(false)}
+    <FloorModal
+      open={open}
+      onClose={() => setOpen(false)}
+      labelledBy="charts-title"
+      panelClassName="max-w-5xl"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="charts-title"
-        className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-surface/80 shadow-[0_0_0_1px_var(--color-border-strong),0_24px_80px_rgb(0_0_0/0.45)] backdrop-blur-md"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border px-3 py-2">
           <div className="min-w-0">
             <p className="panel-kicker" id="charts-title">
@@ -143,7 +139,7 @@ export function ChartsBubble() {
               aria-pressed={id === pair}
               onClick={() => setInspectPair(id)}
             >
-              {PAIR_BY_ID[id].base}
+              {pairBase(id)}
             </Button>
           ))}
         </div>
@@ -181,7 +177,7 @@ export function ChartsBubble() {
           </div>
         ) : (
           <div className="border-b border-border px-3 py-2 text-2xs text-subtle">
-            No open lot on {PAIR_BY_ID[pair].label}. Tape still prints.
+            No open lot on {pairLabel(pair)}. Tape still prints.
           </div>
         )}
 
@@ -194,7 +190,7 @@ export function ChartsBubble() {
             <p className="font-display text-micro tracking-[0.14em] text-subtle uppercase">Position</p>
             {position ? (
               <p className="mt-1 text-2xs text-muted">
-                {qty(position.qty, 4)} {PAIR_BY_ID[pair].label} · {position.mode}
+                {qty(position.qty, 4)} {pairLabel(pair)} · {position.mode}
               </p>
             ) : (
               <p className="mt-1 text-2xs text-subtle">Flat</p>
@@ -221,8 +217,7 @@ export function ChartsBubble() {
             )}
           </div>
         </div>
-      </div>
-    </div>
+    </FloorModal>
   );
 }
 
@@ -510,7 +505,8 @@ function MonitorChart({
         {model.emaFast ? <span className="text-info">EMA {model.emaFastN}</span> : null}
         {model.emaSlow ? <span className="text-warn">EMA {model.emaSlowN}</span> : null}
         {model.bb ? <span className="text-regime">BB {model.bbN}</span> : null}
-        {model.vols ? <span>Vol</span> : null}
+        {model.vwap ? <span className="text-treasury">VWAP</span> : null}
+        {model.vols ? <span>Vol{model.spikeNow ? " spike" : ""}</span> : null}
         {model.rsi ? <span>RSI {model.rsiN}</span> : null}
         {model.macd ? <span>MACD</span> : null}
         {model.stoch ? <span>Stoch {model.stochN}</span> : null}
@@ -542,6 +538,9 @@ type ChartModel = {
   emaFast?: number[];
   emaSlow?: number[];
   bb?: { mid: number[]; upper: number[]; lower: number[] };
+  vwap?: number[];
+  spikes?: boolean[];
+  spikeNow?: boolean;
   rsi?: number[];
   macd?: { line: number[]; signal: number[]; hist: number[] };
   stoch?: { k: number[]; d: number[] };
@@ -593,12 +592,15 @@ function buildModel(
   const emaSlow = on("ema") && emaInd ? ema(closes, emaInd.slow) : undefined;
   const smaArr = on("sma") && smaInd ? smaSeries(closes, smaInd.period) : undefined;
   const bb = on("bb") && bbInd ? bollingerBands(closes, bbInd.period, bbInd.k) : undefined;
+  const vwap = on("vwap") ? vwapSeries(candles) : undefined;
+  const vols = on("volume") ? candles.map((c) => c.volume) : undefined;
+  const spikes = vols ? volumeSpikes(vols) : undefined;
+  const spikeNow = spikes?.at(-1) === true;
+  const maxVol = vols ? Math.max(...vols, 1) : 1;
   const rsi = on("rsi") && rsiInd ? rsiSeries(closes, rsiInd.period) : undefined;
   const macd = on("macd") ? macdSeries(closes) : undefined;
   const stoch =
     on("stoch") && stochInd ? stochasticSeries(highs, lows, closes, stochInd.period, 3) : undefined;
-  const vols = on("volume") ? candles.map((c) => c.volume) : undefined;
-  const maxVol = vols ? Math.max(...vols, 1) : 1;
 
   let lo = Math.min(...lows);
   let hi = Math.max(...highs);
@@ -612,6 +614,7 @@ function buildModel(
   bump(smaArr);
   bump(bb?.upper);
   bump(bb?.lower);
+  bump(vwap);
   if (position) {
     lo = Math.min(lo, position.stop, position.entry, position.take);
     hi = Math.max(hi, position.stop, position.entry, position.take);
@@ -668,6 +671,9 @@ function buildModel(
     emaFast,
     emaSlow,
     bb,
+    vwap,
+    spikes,
+    spikeNow,
     rsi,
     macd,
     stoch,
@@ -794,6 +800,9 @@ function Overlays({ model }: { model: ChartModel }) {
       ) : null}
       {model.emaSlow ? (
         <path d={pathOf(x, y, model.emaSlow)} fill="none" stroke="var(--color-warn)" strokeWidth={1.2} />
+      ) : null}
+      {model.vwap ? (
+        <path d={pathOf(x, y, model.vwap)} fill="none" stroke="var(--color-treasury)" strokeWidth={1.4} />
       ) : null}
     </g>
   );
@@ -1021,6 +1030,7 @@ function VolumePane({ model, candles }: { model: ChartModel; candles: Candle[] }
       {candles.map((c, i) => {
         const barH = (c.volume / max) * (h - 18);
         const up = c.close >= c.open;
+        const spike = model.spikes?.[i];
         return (
           <rect
             key={c.time}
@@ -1028,8 +1038,8 @@ function VolumePane({ model, candles }: { model: ChartModel; candles: Candle[] }
             y={y0 - barH}
             width={model.bodyW}
             height={Math.max(1, barH)}
-            fill={up ? "var(--color-good)" : "var(--color-danger)"}
-            opacity={0.55}
+            fill={spike ? "var(--color-treasury)" : up ? "var(--color-good)" : "var(--color-danger)"}
+            opacity={spike ? 0.9 : 0.55}
           />
         );
       })}

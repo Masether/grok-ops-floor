@@ -263,6 +263,16 @@ export function getPair(id: string): PairDef | undefined {
   return PAIR_BY_ID[id as PairId] ?? extraPairs[id];
 }
 
+export function pairLabel(id: string | null | undefined): string {
+  if (!id) return "";
+  return getPair(id)?.label ?? id;
+}
+
+export function pairBase(id: string | null | undefined): string {
+  if (!id) return "";
+  return getPair(id)?.base ?? id;
+}
+
 export function registerPair(def: PairDef): PairId {
   extraPairs[def.id] = def;
   (PAIR_BY_ID as Record<string, PairDef>)[def.id] = def;
@@ -274,17 +284,29 @@ export const PAIR_BY_WS: Record<string, PairDef> = Object.fromEntries(
 );
 
 export const DEFAULT_PAIRS: PairId[] = [
-  "XBTUSD",
   "ETHUSD",
+  "SOLUSD",
+  "XRPUSD",
+  "LINKUSD",
+  "AVAXUSD",
   "SUIUSD",
-  "TAOUSD",
-  "PEPEUSD",
-  "WIFUSD",
 ];
 
+/** Every Kraken USD meme in the catalog. Scout adds more at runtime. */
+export const HEAT_PAIRS: PairId[] = PAIRS.filter((d) => d.sleeve === "heat").map((d) => d.id);
+export const HEAT_MAX_LOTS = 6;
+
+export function heatUniverse(existing: PairId[] = []): PairId[] {
+  const extra = Object.values(extraPairs)
+    .filter((d) => d.sleeve === "heat" && d.quote !== "XBT" && d.quote !== "BTC")
+    .map((d) => d.id as PairId);
+  const rest = existing.filter((id) => getPair(id)?.sleeve === "heat");
+  return [...new Set([...HEAT_PAIRS, ...rest, ...extra])].filter((id) => Boolean(getPair(id)));
+}
+
 export const SLEEVE_META: Record<BookSleeve, { label: string; blurb: string }> = {
-  core: { label: "Core", blurb: "BTC, ETH, SOL and names that can compound" },
-  heat: { label: "Heat", blurb: "Rising memes — small size, ride the tape, never marry" },
+  core: { label: "Core", blurb: "USD book now. BTC book turns on at $1000 of BTC." },
+  heat: { label: "Heat", blurb: "All Kraken USD memes. Follow the spike; 15% profit giveback closes it." },
   stock: { label: "xStocks", blurb: "Tokenized NVDA, TSLA, AAPL, SPY on Kraken (not US)" },
 };
 
@@ -382,8 +404,26 @@ export function ensureBtcQuotePairs(): PairId[] {
 
 export const BTC_BOOK: PairId[] = ensureBtcQuotePairs();
 
-/** Live watchlist: BTC-quoted alts first so the book spends BTC, not USD fees. */
-export function liveWatchPairs(existing: PairId[] = []): PairId[] {
-  const rest = existing.filter((id) => id !== "XBTUSD" && !BTC_BOOK.includes(id));
-  return [...new Set([...BTC_BOOK, ...rest])].slice(0, 16) as PairId[];
+/** BTC pairs stay parked until the bag is worth this much. */
+export const BTC_BOOK_MIN_USD = 1000;
+
+export function btcBookArmed(btcUsd: number): boolean {
+  return Number.isFinite(btcUsd) && btcUsd >= BTC_BOOK_MIN_USD;
+}
+
+/** Live watchlist. Heat-only when core is off. */
+export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = false): PairId[] {
+  if (heatOnly) {
+    return heatUniverse(existing);
+  }
+  const usdCore = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD");
+  const rest = existing.filter((id) => {
+    if (id === "XBTUSD") return false;
+    if (!btcBookArmed(btcUsd) && isBtcQuote(id)) return false;
+    return true;
+  });
+  const btc = btcBookArmed(btcUsd) ? BTC_BOOK : [];
+  return [...new Set([...HEAT_PAIRS, ...usdCore, ...rest, ...btc])]
+    .filter((id) => Boolean(getPair(id)))
+    .slice(0, 16) as PairId[];
 }

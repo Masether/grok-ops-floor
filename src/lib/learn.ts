@@ -1,6 +1,17 @@
+import type { PlaybookId } from "./playbook.ts";
 import type { Candle, PairId } from "./types.ts";
 
 export type SetupId = "cross" | "rsi" | "momentum";
+export type ExitKind = "take" | "stop" | "time" | "reject" | "risk" | "unknown";
+
+/**
+ * World techniques → this desk. We do not run extra engines.
+ * momentum / breakout → scalp
+ * mean-reversion / RSI fade → grid
+ * dip scale-in → dca
+ * ATR stop + 2R take + trail → already code in risk-stops/scalp
+ */
+export const DESK_METHODS = ["scalp", "grid", "dca"] as const;
 
 export type Lesson = {
   ts: number;
@@ -8,6 +19,9 @@ export type Lesson = {
   win: boolean;
   pnl: number;
   setup: SetupId | "unknown";
+  kind: ExitKind;
+  book: PlaybookId | "unknown";
+  hour: number;
   note: string;
 };
 
@@ -46,6 +60,9 @@ export type Brain = {
   lastNote: string;
   pairBias: Partial<Record<PairId, number>>;
   setupScore: Record<SetupId, number>;
+  bookScore: Record<PlaybookId, number>;
+  hourScore: number[];
+  rejectCount: Partial<Record<PairId, number>>;
   lessons: Lesson[];
   assetMemory: Partial<Record<PairId, AssetMemory>>;
 };
@@ -66,6 +83,9 @@ export const DEFAULT_BRAIN: Brain = {
   lastNote: "brain cold — waiting on fills",
   pairBias: {},
   setupScore: { cross: 0, rsi: 0, momentum: 0 },
+  bookScore: { scalp: 0, grid: 0, dca: 0 },
+  hourScore: Array.from({ length: 24 }, () => 0),
+  rejectCount: {},
   lessons: [],
   assetMemory: {},
 };
@@ -74,25 +94,89 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-export function setupFromReason(reason: string): SetupId | "unknown" {
-  if (reason.includes("cross")) return "cross";
-  if (reason.includes("Oversold") || reason.includes("Overbought") || reason.includes("RSI"))
-    return "rsi";
-  if (reason.toLowerCase().includes("momentum")) return "momentum";
+export function playbookFromReason(reason: string): PlaybookId | "unknown" {
+  const r = reason.toLowerCase();
+  if (r.includes("dust")) return "unknown";
+  if (r.includes("grid")) return "grid";
+  if (r.includes("dca")) return "dca";
+  if (r.includes("scalp") || r.includes("clip") || r.includes("flip")) return "scalp";
   return "unknown";
+}
+
+export function hourOf(ts = Date.now()): number {
+  return new Date(ts).getUTCHours();
+}
+
+function hoursOf(brain: Brain): number[] {
+  const h = brain.hourScore;
+  if (Array.isArray(h) && h.length === 24) return h.slice();
+  return Array.from({ length: 24 }, () => 0);
+}
+
+function booksOf(brain: Brain): Record<PlaybookId, number> {
+  return {
+    scalp: brain.bookScore?.scalp ?? 0,
+    grid: brain.bookScore?.grid ?? 0,
+    dca: brain.bookScore?.dca ?? 0,
+  };
+}
+
+/** Skip new entries in hours that keep losing after enough prints. */
+export function hourQuiet(brain: Brain, hour = hourOf()): boolean {
+  if (!brain.enabled || brain.samples < 8) return false;
+  const score = hoursOf(brain)[hour] ?? 0;
+  return score <= -4;
+}
+
+export function bookAllowed(brain: Brain, book: PlaybookId | "unknown"): boolean {
+  if (book === "unknown") return true;
+  if (!brain.enabled) return true;
+  return (booksOf(brain)[book] ?? 0) > -5;
+}
+
+export function setupFromReason(reason: string): SetupId | "unknown" {
+  const r = reason.toLowerCase();
+  if (r.includes("cross") || r.includes("ema") || r.includes("breakout")) return "cross";
+  if (r.includes("oversold") || r.includes("overbought") || r.includes("rsi") || r.includes("mean"))
+    return "rsi";
+  if (r.includes("momentum") || r.includes("burst") || r.includes("flip")) return "momentum";
+  return "unknown";
+}
+
+export function kindFromReason(reason: string): ExitKind {
+  const r = reason.toLowerCase();
+  if (r.includes("dust")) return "unknown";
+  if (r.includes("reject") || r.includes("eapi") || r.includes("insufficient") || r.includes("nonce"))
+    return "reject";
+  if (r.includes("regime") || r.includes("flow") || r.includes("skip") || r.includes("risk")) return "risk";
+  if (r.includes("stop") || r.includes("cut") || /\bsl\b/.test(r)) return "stop";
+  if (r.includes("dead") || r.includes("time") || r.includes("clip")) return "time";
+  if (r.includes("take") || r.includes("2r") || r.includes("trail")) return "take";
+  return "unknown";
+}
+
+export function pairBlocked(brain: Brain, pair: PairId): boolean {
+  if (!brain.enabled) return false;
+  return (brain.rejectCount?.[pair] ?? 0) >= 4 || (brain.pairBias[pair] ?? 0) <= -0.45;
 }
 
 export function learnFromClose(
   brain: Brain,
-  args: { pair: PairId; pnl: number; reason: string },
+  args: { pair: PairId; pnl: number; reason: string; playbook?: PlaybookId; hour?: number },
 ): Brain {
   if (!brain.enabled) return brain;
+  if (/dust/i.test(args.reason)) return brain;
   const win = args.pnl > 0;
   const setup = setupFromReason(args.reason);
+  const book = args.playbook ?? playbookFromReason(args.reason);
+  const hour = ((args.hour ?? hourOf()) % 24 + 24) % 24;
   const next: Brain = {
     ...brain,
     pairBias: { ...brain.pairBias },
     setupScore: { ...brain.setupScore },
+    bookScore: booksOf(brain),
+    hourScore: hoursOf(brain),
+    rejectCount: { ...brain.rejectCount },
     lessons: brain.lessons.slice(),
     assetMemory: { ...brain.assetMemory },
   };
@@ -108,7 +192,9 @@ export function learnFromClose(
     next.momThresh = clamp(next.momThresh - 0.0002, 0.003, 0.012);
     next.pairBias[args.pair] = clamp((next.pairBias[args.pair] ?? 0) + 0.06, -0.5, 0.5);
     if (setup !== "unknown") next.setupScore[setup] = clamp(next.setupScore[setup] + 1, -8, 12);
-    next.lastNote = `kept ${args.pair} · ${setup} +${args.pnl.toFixed(2)} · RSI ${next.rsiBuy.toFixed(0)}/${next.rsiSell.toFixed(0)}`;
+    if (book !== "unknown") next.bookScore[book] = clamp(next.bookScore[book] + 1, -8, 12);
+    next.hourScore[hour] = clamp((next.hourScore[hour] ?? 0) + 0.8, -8, 12);
+    next.lastNote = `kept ${args.pair} · ${book}/${setup} +${args.pnl.toFixed(2)} · h${hour} UTC`;
   } else {
     next.losses += 1;
     next.streak = next.streak <= 0 ? next.streak - 1 : -1;
@@ -119,15 +205,70 @@ export function learnFromClose(
     next.volMult = clamp(next.volMult + 0.04, 1.1, 1.8);
     next.momThresh = clamp(next.momThresh + 0.0004, 0.003, 0.012);
     next.pairBias[args.pair] = clamp((next.pairBias[args.pair] ?? 0) - 0.09, -0.5, 0.5);
+    if (kindFromReason(args.reason) === "stop") {
+      next.pairBias[args.pair] = clamp((next.pairBias[args.pair] ?? 0) - 0.05, -0.5, 0.5);
+      next.minConf = clamp(next.minConf + 0.01, 0.36, 0.72);
+    }
     if (setup !== "unknown") next.setupScore[setup] = clamp(next.setupScore[setup] - 1.4, -8, 12);
-    next.lastNote = `cut ${args.pair} · ${setup} ${args.pnl.toFixed(2)} · conf ${(next.minConf * 100).toFixed(0)}%`;
+    if (book !== "unknown") next.bookScore[book] = clamp(next.bookScore[book] - 1.3, -8, 12);
+    next.hourScore[hour] = clamp((next.hourScore[hour] ?? 0) - 1, -8, 12);
+    next.lastNote = `cut ${args.pair} · ${book}/${setup} ${args.pnl.toFixed(2)} · h${hour} UTC`;
   }
+  const kind = kindFromReason(args.reason);
   next.lessons.unshift({
     ts: Date.now(),
     pair: args.pair,
     win,
     pnl: args.pnl,
     setup,
+    kind,
+    book,
+    hour,
+    note: next.lastNote,
+  });
+  next.lessons = next.lessons.slice(0, 24);
+  return next;
+}
+
+/** Venue rejects, regime/flow/risk skips — not a fill, still a lesson. */
+export function learnFromMiss(
+  brain: Brain,
+  args: { pair: PairId; reason: string; playbook?: PlaybookId; hour?: number },
+): Brain {
+  if (!brain.enabled) return brain;
+  if (/dust/i.test(args.reason)) return brain;
+  const kind = kindFromReason(args.reason);
+  const book = args.playbook ?? playbookFromReason(args.reason);
+  const hour = ((args.hour ?? hourOf()) % 24 + 24) % 24;
+  const next: Brain = {
+    ...brain,
+    pairBias: { ...brain.pairBias },
+    setupScore: { ...brain.setupScore },
+    bookScore: booksOf(brain),
+    hourScore: hoursOf(brain),
+    rejectCount: { ...brain.rejectCount },
+    lessons: brain.lessons.slice(),
+    assetMemory: { ...brain.assetMemory },
+  };
+  next.pairBias[args.pair] = clamp((next.pairBias[args.pair] ?? 0) - 0.04, -0.5, 0.5);
+  next.hourScore[hour] = clamp((next.hourScore[hour] ?? 0) - 0.35, -8, 12);
+  if (kind === "reject") {
+    next.rejectCount[args.pair] = (next.rejectCount[args.pair] ?? 0) + 1;
+    if (book !== "unknown") next.bookScore[book] = clamp(next.bookScore[book] - 0.4, -8, 12);
+  }
+  if (kind === "risk") {
+    next.minConf = clamp(next.minConf + 0.004, 0.36, 0.72);
+  }
+  next.lastNote = `miss ${args.pair} · ${kind} · ${args.reason}`.slice(0, 140);
+  next.lessons.unshift({
+    ts: Date.now(),
+    pair: args.pair,
+    win: false,
+    pnl: 0,
+    setup: setupFromReason(args.reason),
+    kind,
+    book,
+    hour,
     note: next.lastNote,
   });
   next.lessons = next.lessons.slice(0, 24);
@@ -269,8 +410,11 @@ export function localBrainReply(
   const memories = Object.values(brain.assetMemory).filter(Boolean);
   const top = memories.slice().sort((a, b) => (b?.wr ?? 0) - (a?.wr ?? 0))[0];
   const low = q.toLowerCase();
-  if (low.includes("rsi") || low.includes("when")) {
-    return `Buy under RSI ${brain.rsiBuy.toFixed(0)}, fade over ${brain.rsiSell.toFixed(0)}. Size tilt ${brain.sizeTilt.toFixed(2)}x. ${extras.lastSignal ?? "No live ticket."}`;
+  if (low.includes("when") || low.includes("hour") || low.includes("time")) {
+    const hours = (brain.hourScore ?? []).map((v, i) => ({ i, v }));
+    const best = hours.slice().sort((a, b) => b.v - a.v)[0];
+    const worst = hours.slice().sort((a, b) => a.v - b.v)[0];
+    return `UTC hour ${best ? best.i : "—"} is the best print so far. Skip hour ${worst && worst.v <= -4 ? worst.i : "none yet"}. RSI ${brain.rsiBuy.toFixed(0)}/${brain.rsiSell.toFixed(0)}.`;
   }
   if (low.includes("hot") || low.includes("what") || low.includes("buy")) {
     return top

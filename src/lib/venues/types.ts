@@ -21,6 +21,7 @@ export type VenueAdapter = {
       pair: PairId;
       side: "buy" | "sell";
       volume: string;
+      kraken?: string;
     },
   ): Promise<{ txid: string; descr: string }>;
   cancelAll(keys: VenueKeys): Promise<{ count: number }>;

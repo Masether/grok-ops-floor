@@ -20,7 +20,7 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
   return (
     <input
       className={cn(
-        "h-9 w-full rounded-sm bg-bg px-3 font-mono text-sm text-fg shadow-[0_0_0_1px_var(--color-border-strong)] outline-none placeholder:text-subtle focus-visible:shadow-[0_0_0_1px_var(--color-ring)]",
+        "h-9 w-full rounded-sm bg-bg-1 px-3 font-mono text-sm text-fg shadow-[0_0_0_1px_var(--color-border-strong)] outline-none placeholder:text-subtle focus-visible:shadow-[0_0_0_1px_var(--color-ring)]",
         className,
       )}
       {...props}

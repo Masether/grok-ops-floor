@@ -155,6 +155,60 @@
   .desk-row-near-stop {
     animation: desk-stop-flash 1.1s ease-in-out infinite;
   }
+
+  /*
+   * Desk / charts / brain / settings paint.
+   * Hard hex + portal-to-body. Do not use backdrop-filter or alpha
+   * backgrounds here — Safari groups those with the orbit canvas.
+   */
+  .floor-modal-root {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: end;
+    padding: 8px;
+    isolation: isolate;
+  }
+  @media (min-width: 640px) {
+    .floor-modal-root {
+      place-items: center;
+      padding: 16px;
+    }
+  }
+  .floor-modal-dim {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: #000000;
+    opacity: 0.72;
+  }
+  .floor-modal-panel {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    width: 100%;
+    max-width: 42rem;
+    max-height: 92dvh;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 16px;
+    background: #181b28;
+    color: #e8edf5;
+    isolation: isolate;
+    mix-blend-mode: normal;
+    pointer-events: auto;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    opacity: 1;
+    box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14), 0 24px 80px rgb(0 0 0 / 0.72);
+  }
+  .floor-modal-panel.max-w-5xl {
+    max-width: 64rem;
+  }
+  .floor-modal-panel.max-w-lg {
+    max-width: 32rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

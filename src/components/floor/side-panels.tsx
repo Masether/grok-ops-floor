@@ -3,7 +3,7 @@ import { AGENTS, AGENT_BY_ID } from "@/lib/agents";
 import { pctOfCapital, fillLeg, fillWhy } from "@/lib/desk-pnl";
 import { px, money, moneyFull, pct, qty, ago, clockHms } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
-import { PAIR_BY_ID, getPair } from "@/lib/kraken";
+import { PAIR_BY_ID, getPair, pairBase, pairLabel } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
 import { deskIsLive } from "@/lib/live-budget";
 import { usdOnBook } from "@/lib/specialists";
@@ -18,13 +18,13 @@ export function ReworkQueue() {
       <div className="panel-head">
         <div>
           <h2 className="panel-kicker">Rework queue</h2>
-          <p className="panel-sub">last tickets the floor passed back</p>
+          <p className="panel-sub">skips, holds, rejects — same as the tape</p>
         </div>
         <span className="stat-num text-xl text-fg">{count}</span>
       </div>
       <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2">
         {queue.length === 0 ? (
-          <li className="text-2xs text-subtle">Queue empty. Playbook is clean.</li>
+          <li className="text-2xs text-subtle">Waiting on the first skip/hold/scout…</li>
         ) : (
           queue.slice(0, 8).map((q) => (
             <li key={q.id}>
@@ -41,7 +41,7 @@ export function ReworkQueue() {
                   {q.title}
                 </span>
                 {q.pair ? (
-                  <span className="text-micro text-subtle">{PAIR_BY_ID[q.pair].label}</span>
+                  <span className="text-micro text-subtle">{pairLabel(q.pair)}</span>
                 ) : null}
               </div>
               <p className="truncate text-micro text-muted">{q.detail}</p>
@@ -221,6 +221,8 @@ export function TheDesk() {
   const liveBudget = useFloor((s) => s.liveBudget);
   const history = useFloor((s) => s.equityHistory);
   const orders = useFloor((s) => s.orders);
+  const events = useFloor((s) => s.events);
+  const queue = useFloor((s) => s.queue);
   const setDeskOpen = useFloor((s) => s.setDeskOpen);
   const wr = winRate(brain);
   const live = deskIsLive({ mode, liveArmed, liveBalance });
@@ -249,6 +251,9 @@ export function TheDesk() {
   const sparkMin = spark.length ? Math.min(...spark.map((p) => p.equity), cap) : cap;
   const sparkMax = spark.length ? Math.max(...spark.map((p) => p.equity), cap) : cap;
   const sparkSpan = Math.max(sparkMax - sparkMin, 1);
+  const eqFlat = sparkSpan < Math.max(0.08, Math.abs(cap) * 0.0002);
+  const heatOf = (p: (typeof spark)[number]) =>
+    (p.scanner ?? 0) + (p.signal ?? 0) + (p.risk ?? 0) + (p.runner ?? 0);
   return (
     <section className="panel flex min-h-[280px] flex-col overflow-hidden">
       <div className="panel-head">
@@ -288,9 +293,14 @@ export function TheDesk() {
               key={`${p.t}-${i}`}
               className="min-w-px flex-1 rounded-xs"
               style={{
-                height: `${12 + ((p.equity - sparkMin) / sparkSpan) * 18}px`,
-                background:
-                  p.equity >= cap ? "var(--color-good)" : "var(--color-danger)",
+                height: eqFlat
+                  ? `${8 + (heatOf(p) / 4) * 22}px`
+                  : `${12 + ((p.equity - sparkMin) / sparkSpan) * 18}px`,
+                background: eqFlat
+                  ? "var(--color-info)"
+                  : p.equity >= cap
+                    ? "var(--color-good)"
+                    : "var(--color-danger)",
                 opacity: 0.35 + (i / spark.length) * 0.65,
               }}
             />
@@ -328,11 +338,34 @@ export function TheDesk() {
               .slice(0, 10);
             const label = (id: string) => getPair(id)?.label ?? id;
             if (bookPos.length === 0 && tape.length === 0) {
+              const liveTape = events.slice(0, 6);
+              const liveQ = queue.slice(0, 4);
+              if (liveTape.length === 0 && liveQ.length === 0) {
+                return (
+                  <li className="text-micro text-subtle">
+                    Cash is USD — waiting on the first watch/skip. IN appears on the next live buy.
+                  </li>
+                );
+              }
               return (
-                <li className="text-micro text-subtle">
-                  Cash is USD — no coin is open. Brain below is the journal, not a position. IN
-                  appears on the next live buy.
-                </li>
+                <>
+                  {liveTape.map((e) => (
+                    <li key={e.id} className="flex items-center justify-between gap-2 text-2xs">
+                      <span className="font-display tracking-[0.08em] text-info uppercase">
+                        {e.agent.slice(0, 4)}
+                      </span>
+                      <span className="min-w-0 truncate text-fg">{e.title}</span>
+                      <span className="stat-num text-subtle">{ago(e.ts)}</span>
+                    </li>
+                  ))}
+                  {liveQ.map((q) => (
+                    <li key={q.id} className="flex items-center justify-between gap-2 text-2xs">
+                      <span className="font-display tracking-[0.08em] text-warn uppercase">Q</span>
+                      <span className="min-w-0 truncate text-fg">{q.title}</span>
+                      <span className="stat-num text-subtle">{ago(q.ts)}</span>
+                    </li>
+                  ))}
+                </>
               );
             }
             return (
@@ -473,10 +506,10 @@ export function PairStrip() {
           >
             <div className="flex items-center justify-between">
               <span className="font-display text-2xs tracking-[0.12em] uppercase">
-                {PAIR_BY_ID[id].base}
+                {pairBase(id)}
               </span>
               <span className="text-micro text-subtle uppercase">
-                {PAIR_BY_ID[id].sleeve === "stock" ? "stk" : PAIR_BY_ID[id].sleeve}
+                {(getPair(id) ?? PAIR_BY_ID[id])?.sleeve === "stock" ? "stk" : (getPair(id) ?? PAIR_BY_ID[id])?.sleeve ?? ""}
               </span>
             </div>
             <div className="flex items-center justify-between gap-2">

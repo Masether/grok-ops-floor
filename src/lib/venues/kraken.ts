@@ -31,6 +31,7 @@ export const krakenAdapter: VenueAdapter = {
         pair: args.pair,
         side: args.side,
         volume: args.volume,
+        kraken: args.kraken,
       },
     });
   },

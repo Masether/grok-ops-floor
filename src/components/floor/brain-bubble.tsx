@@ -2,12 +2,13 @@ import { X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { FloorModal } from "@/components/ui/floor-modal";
 import { Input } from "@/components/ui/field";
 import { askBrain } from "@/lib/grok-brief";
 import { uid } from "@/lib/format";
-import { PAIR_BY_ID } from "@/lib/kraken";
+import { PAIR_BY_ID, pairBase } from "@/lib/kraken";
 import { localBrainReply } from "@/lib/learn";
-import { studyBook } from "@/lib/engine";
+import { studyBook } from "@/lib/engine-call";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -72,7 +73,7 @@ export function BrainBubble() {
           ? res.text
           : localBrainReply(prompt, brain, {
               equity: desk.equity,
-              pairs: pairs.map((id) => PAIR_BY_ID[id].base).join(" · "),
+              pairs: pairs.map((id) => pairBase(id)).join(" · "),
               lastSignal: last?.reason,
             });
       push({ id: uid("bm"), role: "brain", text, ts: Date.now() });
@@ -82,7 +83,7 @@ export function BrainBubble() {
         role: "brain",
         text: localBrainReply(prompt, brain, {
           equity: desk.equity,
-          pairs: pairs.map((id) => PAIR_BY_ID[id].base).join(" · "),
+          pairs: pairs.map((id) => pairBase(id)).join(" · "),
           lastSignal: last?.reason,
         }),
         ts: Date.now(),
@@ -98,18 +99,12 @@ export function BrainBubble() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[80] grid place-items-end bg-bg/45 p-2 backdrop-blur-[3px] sm:place-items-center sm:p-4"
-      role="presentation"
-      onClick={() => setOpen(false)}
+    <FloorModal
+      open={open}
+      onClose={() => setOpen(false)}
+      labelledBy="brain-title"
+      panelClassName="max-w-lg"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="brain-title"
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-lg bg-surface/80 shadow-[0_0_0_1px_var(--color-border-strong),0_24px_80px_rgb(0_0_0/0.45)] backdrop-blur-md"
-        onClick={(e) => e.stopPropagation()}
-      >
         <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2">
           <div>
             <p className="panel-kicker" id="brain-title">
@@ -203,7 +198,6 @@ export function BrainBubble() {
             {busy ? "…" : "Send"}
           </Button>
         </form>
-      </div>
-    </div>
+    </FloorModal>
   );
 }
