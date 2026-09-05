@@ -53,12 +53,13 @@ describe("grid", () => {
       playbookWantsBuy({
         playbook: "grid",
         kind: "hold",
-        rsi: 70,
-        changePct: 2,
+        rsi: 74,
+        changePct: 3.6,
         hasPos: false,
         dipFromEntry: 0,
         adds: 0,
         msSinceAdd: 0,
+        macd: "up",
       }),
       false,
     );

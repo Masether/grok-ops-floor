@@ -144,8 +144,9 @@ export function playbookWantsBuy(input: {
   if (kind === "sell") return false;
   if (playbook === "grid") {
     if (hasPos) return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds && lane !== "up";
-    if (lane === "up" && changePct > 1.2) return false;
-    return Math.abs(changePct) <= 2.4 && rsi < 62;
+    // Seed a first rung on quiet/range tape. Skip only a hard chase.
+    if (lane === "up" && changePct > 2.8) return false;
+    return rsi < 68 && changePct < 3.2;
   }
   if (hasPos) {
     return (
@@ -155,8 +156,9 @@ export function playbookWantsBuy(input: {
       lane !== "up"
     );
   }
-  // Fresh DCA: prefer dips / soft tape, allow hold-kind scans.
-  return lane !== "up" && (kind === "buy" || rsi < 58 || changePct <= -0.25);
+  // Fresh DCA: first clip can open on a soft dip OR a quiet scan (hold-kind).
+  // Don't require a down-lane — that's why majors were napping all day.
+  return kind === "buy" || rsi < 62 || changePct <= 0.15;
 }
 
 /** Assign a free pair to one of the enabled books using MACD. */

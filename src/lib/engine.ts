@@ -694,6 +694,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         : 0;
     let playbook = pickPlaybook({
       enabled: normalizePlaybooks(stNow.playbooks).filter((id) => {
+        // Scalp only on a real spike. Grid/DCA stay eligible so quiet majors print.
         if (id === "scalp") return spike.ok && modOn("scalp");
         if (id === "grid") return modOn("grid");
         if (id === "dca") return modOn("dca");
@@ -714,6 +715,11 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     if (spike.ok && modOn("scalp") && ticketKind !== "sell") {
       playbook = "scalp";
       ticketKind = "buy";
+    }
+    if (!playbook && sleeve !== "heat") {
+      const books = normalizePlaybooks(stNow.playbooks);
+      if (modOn("grid") && books.includes("grid") && signal.rsi < 68) playbook = "grid";
+      else if (modOn("dca") && books.includes("dca") && (signal.rsi < 62 || oneMinPct <= 0.2)) playbook = "dca";
     }
     if (!playbook) {
       ticketKind = "hold";
