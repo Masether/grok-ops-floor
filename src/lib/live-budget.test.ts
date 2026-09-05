@@ -37,7 +37,7 @@ describe("usdStable", () => {
     assert.equal(hasKrakenBook({}), false);
     assert.equal(hasKrakenBook({ ZUSD: "1" }), true);
     assert.equal(krakenKeysOn({ apiKey: "short", apiSecret: "x".repeat(20) }), null);
-    assert.ok(krakenKeysOn({ apiKey: "k".repeat(10), apiSecret: "s".repeat(10) }));
+    assert.ok(krakenKeysOn({ apiKey: "k".repeat(10), apiSecret: "s".repeat(16) }));
     assert.equal(spotQty({ XETH: "0.0049" }, "ETH"), 0.0049);
     assert.equal(spotQty({ ZUSD: "200" }, "WIF"), 0);
   });
