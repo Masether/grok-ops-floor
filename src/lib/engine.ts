@@ -822,7 +822,9 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       }
     }
 
-    if (playbook && playbook !== "scalp" && ticketKind === "buy") {
+    // Grid/DCA *want* near-fair tape. Pricer-quiet used to force HOLD under
+    // ~0.8% mispricing and starved the live book on quiet majors.
+    if (playbook === "scalp" && ticketKind === "buy" && sleeve === "heat") {
       const fair = fairValue(closes);
       const gap = mispricing(price, fair);
       if (pricerQuiet(gap, sleeve)) {
