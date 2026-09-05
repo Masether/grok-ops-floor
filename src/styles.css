@@ -180,8 +180,11 @@
     position: absolute;
     inset: 0;
     z-index: 0;
-    background: #000000;
-    opacity: 0.72;
+    /* solid rgba — never opacity: on dim (Safari transparency group) */
+    background: rgb(0 0 0 / 0.78);
+    opacity: 1;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
   .floor-modal-panel {
     position: relative;
@@ -193,15 +196,27 @@
     flex-direction: column;
     overflow: hidden;
     border-radius: 16px;
-    background: #181b28;
+    background-color: #181b28 !important;
+    background-image: none !important;
     color: #e8edf5;
     isolation: isolate;
     mix-blend-mode: normal;
     pointer-events: auto;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    opacity: 1;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
     box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14), 0 24px 80px rgb(0 0 0 / 0.72);
+  }
+  .floor-modal-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: #181b28;
+    pointer-events: none;
   }
   .floor-modal-panel.max-w-5xl {
     max-width: 64rem;

@@ -49,10 +49,23 @@ export function FloorModal({
         aria-modal="true"
         aria-labelledby={labelledBy}
         className={cn("floor-modal-panel", panelClassName)}
-        style={{ background: "#181b28", color: "#e8edf5", opacity: 1, isolation: "isolate" }}
+        style={{
+          backgroundColor: "#181b28",
+          backgroundImage: "none",
+          color: "#e8edf5",
+          opacity: 1,
+          isolation: "isolate",
+          WebkitBackdropFilter: "none",
+          backdropFilter: "none",
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {children}
+        <div
+          className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col"
+          style={{ backgroundColor: "#181b28", opacity: 1 }}
+        >
+          {children}
+        </div>
       </div>
     </div>,
     mount,
