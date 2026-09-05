@@ -16,15 +16,25 @@ export type IndustryCallInput = {
 
 export type IndustryCall = { allow: boolean; why: string };
 
-/** Sit-USD / skip gates from daily trend, short tape, wire, F&G, and fees. Risk control only. */
+/**
+ * Sit-USD / skip gates. Risk control only — not a profit promise.
+ * Scalp is strict; grid/DCA keep working on core when the tape is quiet.
+ */
 export function industryCall(input: IndustryCallInput): IndustryCall {
   if (input.kind !== "buy") return { allow: true, why: "clear" };
-
   if (!input.playbook) return { allow: false, why: "no book" };
+
+  // Dead daily: sit cash for every book.
   if (input.daily === "cash") return { allow: false, why: "daily sit USD" };
-  if (input.regime === "trend-down") return { allow: false, why: "tape trend down — sit" };
 
   const scalp = input.playbook === "scalp";
+  const book = input.playbook === "grid" || input.playbook === "dca";
+
+  // Hard trend-down: skip fresh scalps; grid/DCA may still mean-revert.
+  if (input.regime === "trend-down" && scalp) {
+    return { allow: false, why: "tape trend down — no scalp" };
+  }
+
   if (scalp && input.daily === "chop" && !input.spike) {
     return { allow: false, why: "daily chop — no scalp" };
   }
@@ -42,8 +52,13 @@ export function industryCall(input: IndustryCallInput): IndustryCall {
   if (typeof fg === "number" && fg >= 85 && scalp && input.daily !== "long") {
     return { allow: false, why: "extreme greed — no chase" };
   }
-  if (scalp && !input.feesClear) {
+  // Entry: spike quality is enough; exit path still uses coversFees / minTakePct.
+  if (scalp && !input.feesClear && !input.spike) {
     return { allow: false, why: "fees eat this clip" };
+  }
+  // Soft: extreme fear shrinks appetite for new DCA adds (not grid rungs).
+  if (typeof fg === "number" && fg <= 12 && book && input.playbook === "dca") {
+    return { allow: false, why: "extreme fear — no DCA add" };
   }
 
   return { allow: true, why: "clear" };

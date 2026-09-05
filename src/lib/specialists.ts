@@ -3,7 +3,7 @@ import { getPair, PAIR_BY_ID } from "./kraken.ts";
 import type { PairId, Ticker, WireItem } from "./types.ts";
 import type { Brain } from "./learn.ts";
 
-export type RegimeState = "trend-up" | "trend-down" | "chop";
+export type RegimeState = "trend-up" | "trend-down" | "chop" | "cold";
 
 export type RegimeRead = {
   state: RegimeState;
@@ -19,7 +19,7 @@ export type FlowRead = {
 
 export function readRegime(closes: number[]): RegimeRead {
   if (closes.length < 50) {
-    return { state: "chop", note: "regime cold — short tape", allowBuy: true };
+    return { state: "cold", note: "regime cold — short tape", allowBuy: true };
   }
   const e20 = ema(closes, 20);
   const e50 = ema(closes, 50);

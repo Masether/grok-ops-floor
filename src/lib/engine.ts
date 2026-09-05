@@ -746,10 +746,9 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       const regimeGate = readRegime(closes);
       const taker = takerPct(getPair(pair)?.quote ?? PAIR_BY_ID[pair]?.quote ?? "USD", stNow.liveTakerPct);
       const moveFrac = Math.max(oneMinPct, threePct) / 100;
+      // Spike quality opens the ticket; take/stop still use coversFees / minTakePct.
       const feesClear =
-        playbook !== "scalp" ||
-        edgeClearsFees(moveFrac, taker) ||
-        (spike.ok && threePct / 100 >= minTakePct(taker) * 0.7);
+        playbook !== "scalp" || spike.ok || edgeClearsFees(moveFrac, taker);
       const call = industryCall({
         kind: ticketKind,
         playbook,

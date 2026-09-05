@@ -23,11 +23,11 @@ describe("fees", () => {
 
   it("take sits above round-trip fee plus net pad (Tier-1 0.8%)", () => {
     const band = feeAwareStops(100, false, USD_TAKER);
-    assert.ok(band.takePct >= 0.008 * 2 + 0.004 + 0.0015);
+    assert.ok(band.takePct >= 0.008 * 2 + 0.003 + 0.001);
     assert.equal(feeOn(100, USD_TAKER), 0.8);
     assert.equal(blendTaker(0.008, 0.006), 0.008 * 0.6 + 0.006 * 0.4);
-    assert.equal(edgeClearsFees(0.0215, USD_TAKER), true);
-    assert.equal(edgeClearsFees(0.02, USD_TAKER), false);
+    assert.equal(edgeClearsFees(0.02, USD_TAKER), true);
+    assert.equal(edgeClearsFees(0.019, USD_TAKER), false);
   });
 
   it("refuses a take that would leave the wallet red after fees", () => {

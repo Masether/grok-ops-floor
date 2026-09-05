@@ -144,8 +144,8 @@ export function playbookWantsBuy(input: {
   if (kind === "sell") return false;
   if (playbook === "grid") {
     if (hasPos) return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds && lane !== "up";
-    if (lane === "up" && changePct > 0.6) return false;
-    return Math.abs(changePct) <= 1.6 && rsi < 58;
+    if (lane === "up" && changePct > 1.2) return false;
+    return Math.abs(changePct) <= 2.4 && rsi < 62;
   }
   if (hasPos) {
     return (
@@ -155,7 +155,8 @@ export function playbookWantsBuy(input: {
       lane !== "up"
     );
   }
-  return lane !== "up" && (kind === "buy" || rsi < 55 || changePct <= -0.35);
+  // Fresh DCA: prefer dips / soft tape, allow hold-kind scans.
+  return lane !== "up" && (kind === "buy" || rsi < 58 || changePct <= -0.25);
 }
 
 /** Assign a free pair to one of the enabled books using MACD. */

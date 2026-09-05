@@ -4,11 +4,11 @@
 export const USD_TAKER = 0.008;
 /** Same schedule for crypto/USD unless live fills override via learnTaker. */
 export const XBT_TAKER = 0.008;
-export const MIN_NET_PCT = 0.004;
+export const MIN_NET_PCT = 0.003;
 /** Don't bank a "win" that's dust after Kraken + a slip cushion. */
-export const MIN_NET_USD = 0.5;
+export const MIN_NET_USD = 0.35;
 /** Extra pad on top of round-trip taker so a wick doesn't look like a take. */
-export const SLIP_PAD_PCT = 0.0015;
+export const SLIP_PAD_PCT = 0.001;
 
 export function takerPct(quote: string, learned = 0): number {
   if (learned > 0.0005 && learned < 0.05) return learned;

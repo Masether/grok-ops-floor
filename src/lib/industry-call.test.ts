@@ -45,10 +45,12 @@ describe("industryCall", () => {
     assert.equal(tape.why, "tape chop — no scalp");
   });
 
-  it("denies trend-down", () => {
-    const r = industryCall({ ...clearScalp, regime: "trend-down" });
-    assert.equal(r.allow, false);
-    assert.equal(r.why, "tape trend down — sit");
+  it("denies trend-down scalp but allows grid", () => {
+    const scalp = industryCall({ ...clearScalp, regime: "trend-down" });
+    assert.equal(scalp.allow, false);
+    assert.match(scalp.why, /trend down/);
+    const grid = industryCall({ ...clearScalp, playbook: "grid", regime: "trend-down", spike: false });
+    assert.equal(grid.allow, true);
   });
 
   it("denies bear wire scalp", () => {
@@ -57,10 +59,12 @@ describe("industryCall", () => {
     assert.equal(r.why, "wire bear — skip scalp");
   });
 
-  it("denies unpaid fees", () => {
-    const r = industryCall({ ...clearScalp, feesClear: false });
-    assert.equal(r.allow, false);
-    assert.equal(r.why, "fees eat this clip");
+  it("denies unpaid fees only when there is no spike", () => {
+    const noSpike = industryCall({ ...clearScalp, feesClear: false, spike: false });
+    assert.equal(noSpike.allow, false);
+    assert.equal(noSpike.why, "fees eat this clip");
+    const withSpike = industryCall({ ...clearScalp, feesClear: false, spike: true });
+    assert.equal(withSpike.allow, true);
   });
 
   it("denies greed chase", () => {
