@@ -61,6 +61,12 @@ const NEWS_DESKS = [
   "Santiment social",
   "LunarCrush",
   "Tree News",
+  "X / Crypto Twitter",
+  "X · Bitcoin CT",
+  "X · ETH CT",
+  "X · SOL CT",
+  "X · meme CT",
+  "X · Saylor / CZ / Vitalik",
 ] as const;
 
 const CHAIN_DESKS = [

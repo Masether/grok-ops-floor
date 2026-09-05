@@ -43,11 +43,12 @@ export const WIRE_RULES: Rule[] = [
   { test: /\bsec\b|\bgensler\b|securities and exchange/i, orgs: ["SEC"], lean: "bear" },
   { test: /\bfed\b|\bpowell\b|\bfomc\b|\brate cut\b|\brate hike\b|\bcpi\b/i, orgs: ["Fed"], pairs: ["XBTUSD", "SPYxUSD"] },
   { test: /\bhack\b|\bexploit\b|\bdepeg\b|\bbanned\b|\blawsuit\b/i, lean: "bear" },
+  { test: /\bcrypto twitter\b|\bon x\b|\bsite:x\.com\b/i, orgs: ["X / CT"] },
   { test: /\betf approved\b|\binflows\b|\bstrategic reserve\b|\btreasury buy\b/i, lean: "bull" },
 ];
 
-const BULL = /\b(surge|rally|soar|ath|all-time high|inflow|adopt|approve|bullish|record high|beats)\b/i;
-const BEAR = /\b(crash|plunge|hack|exploit|lawsuit|ban|outflow|bearish|sec charges|collapse|depeg|dump)\b/i;
+const BULL = /\b(surge|rally|soar|ath|all-time high|inflow|adopt|approve|bullish|record high|beats|mooning|send it|based)\b/i;
+const BEAR = /\b(crash|plunge|hack|exploit|lawsuit|ban|outflow|bearish|sec charges|collapse|depeg|dump|rugged|rekt|ngmi)\b/i;
 
 export function tagHeadline(title: string): {
   pairs: PairId[];

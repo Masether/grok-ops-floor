@@ -222,4 +222,30 @@ describe("learnFromIndustry", () => {
     assert.ok((long.pairBias.XBTUSD ?? 0) > 0);
     assert.match(long.lastNote, /long/);
   });
+
+  it("learns harder from X social wire than plain news", () => {
+    const mk = (kind: WireItem["kind"], source: string): WireItem => ({
+      id: `x-${kind}-${source}`,
+      title: "ETH surge on CT",
+      source,
+      url: "https://x.com/example/status/1",
+      ts: Date.now(),
+      tone: "bull",
+      pairs: ["ETHUSD"],
+      orgs: [],
+      kind,
+      note: "X tape",
+    });
+    const news = learnFromIndustry(fresh(), {
+      wire: [mk("news", "Cointelegraph")],
+      fearGreed: { value: 50, label: "Neutral" },
+    });
+    const social = learnFromIndustry(fresh(), {
+      wire: [mk("social", "X"), mk("social", "X"), mk("social", "X")],
+      fearGreed: { value: 50, label: "Neutral" },
+    });
+    assert.ok((social.pairBias.ETHUSD ?? 0) > (news.pairBias.ETHUSD ?? 0));
+    assert.ok(social.bookScore.scalp > 0);
+    assert.match(social.lastNote, /X /);
+  });
 });

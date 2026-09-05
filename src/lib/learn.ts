@@ -24,7 +24,7 @@ export const DESK_METHODS = ["scalp", "grid", "dca"] as const;
 
 /** Short rules string for brain UI. */
 export const DESK_RULES =
-  "Never bank unpaid fees · Don't scalp chop · Ride daily trend · Cut losers · Wire confirms risk · Fewer tickets";
+  "Never bank unpaid fees · Don't scalp chop · Ride daily trend · Cut losers · Wire+X confirms risk · Fewer tickets";
 
 export type Lesson = {
   ts: number;
@@ -95,7 +95,7 @@ export const DEFAULT_BRAIN: Brain = {
   wins: 0,
   losses: 0,
   streak: 0,
-  lastNote: "brain cold — industry+fees · waiting on fills",
+  lastNote: "brain cold — industry+X+fees · waiting on fills",
   pairBias: {},
   setupScore: { cross: 0, rsi: 0, momentum: 0 },
   bookScore: { scalp: 0, grid: 0, dca: 0 },
@@ -409,9 +409,14 @@ export function learnFromIndustry(
     next.dailyStance = stance;
   }
   const fresh = (input.wire ?? []).filter((w) => Date.now() - w.ts < 6 * 3_600_000);
+  const isX = (w: WireItem) =>
+    w.kind === "social" || /^x\b/i.test(w.source) || /twitter/i.test(w.source);
   const bulls = fresh.filter((w) => w.tone === "bull").length;
   const bears = fresh.filter((w) => w.tone === "bear").length;
+  const xBulls = fresh.filter((w) => isX(w) && w.tone === "bull").length;
+  const xBears = fresh.filter((w) => isX(w) && w.tone === "bear").length;
   const trendWire = fresh.some((w) => w.kind === "trend" && w.tone === "bull");
+  const socialBuzz = fresh.some((w) => isX(w) && w.tone === "bull");
   const fg = input.fearGreed?.value;
 
   // Stance tilts only when dailyStance is provided (studyBook); wire refresh skips this.
@@ -421,9 +426,23 @@ export function learnFromIndustry(
     next.bookScore.dca = clamp(next.bookScore.dca + (stance === "cash" ? 0.2 : 0.5), -8, 12);
     next.minConf = clamp(next.minConf + (stance === "cash" ? 0.04 : 0.02), 0.36, 0.78);
   } else if (stance === "long") {
-    next.bookScore.scalp = clamp(next.bookScore.scalp + (trendWire ? 0.8 : 0.35), -8, 12);
+    next.bookScore.scalp = clamp(
+      next.bookScore.scalp + (trendWire ? 0.8 : 0.35) + (socialBuzz ? 0.35 : 0),
+      -8,
+      12,
+    );
     next.bookScore.dca = clamp(next.bookScore.dca + 0.25, -8, 12);
     next.minConf = clamp(next.minConf - 0.01, 0.36, 0.78);
+  }
+
+  // X / CT heat: more social bulls → slightly freer scalp; heavy bears cool size.
+  if (xBulls >= 2 && xBulls > xBears) {
+    next.bookScore.scalp = clamp(next.bookScore.scalp + 0.55, -8, 12);
+    next.minConf = clamp(next.minConf - 0.012, 0.36, 0.78);
+  } else if (xBears >= 2 && xBears > xBulls) {
+    next.bookScore.scalp = clamp(next.bookScore.scalp - 0.7, -8, 12);
+    next.sizeTilt = clamp(next.sizeTilt - 0.06, 0.55, 1.45);
+    next.minConf = clamp(next.minConf + 0.015, 0.36, 0.78);
   }
 
   // Fear & greed extremes tilt size.
@@ -434,9 +453,11 @@ export function learnFromIndustry(
   }
 
   // Soft pairBias bumps from bull/bear wire on tagged pairs.
+  // X / social gets a stronger nudge — CT moves memes and majors fast.
   for (const w of fresh) {
-    const delta = w.tone === "bull" ? 0.03 : w.tone === "bear" ? -0.04 : 0;
-    if (!delta) continue;
+    const base = w.tone === "bull" ? 0.03 : w.tone === "bear" ? -0.04 : 0;
+    if (!base) continue;
+    const delta = isX(w) ? base * 1.75 : base;
     for (const pair of w.pairs ?? []) {
       next.pairBias[pair] = clamp((next.pairBias[pair] ?? 0) + delta, -0.5, 0.5);
     }
@@ -444,8 +465,9 @@ export function learnFromIndustry(
 
   const fgNote = fg != null ? ` · FG ${fg}` : "";
   const wireNote = bulls || bears ? ` · wire ${bulls}↑/${bears}↓` : "";
+  const xNote = xBulls || xBears ? ` · X ${xBulls}↑/${xBears}↓` : "";
   const stanceNote = stance ?? "tape";
-  next.lastNote = `industry ${stanceNote}${fgNote}${wireNote} · fees-aware`.slice(0, 140);
+  next.lastNote = `industry ${stanceNote}${fgNote}${wireNote}${xNote} · fees-aware`.slice(0, 160);
   return next;
 }
 

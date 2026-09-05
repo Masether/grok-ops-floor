@@ -74,16 +74,24 @@ export const fetchWire = createServerFn({ method: "POST" }).handler(async () => 
     "https://news.google.com/rss/search?q=NVIDIA+OR+Tesla+OR+Apple+OR+Palantir+crypto+OR+xStocks&hl=en-US&gl=US&ceid=US:en",
   ];
 
+  // X / Crypto Twitter discourse (no X API key — Google News indexes public posts + CT talk).
+  const xQueries = [
+    "https://news.google.com/rss/search?q=when:1d+(Bitcoin+OR+Ethereum+OR+Solana+OR+crypto)+(site:x.com+OR+twitter+OR+%22on+X%22+OR+%22Crypto+Twitter%22)&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=when:1d+(PEPE+OR+BONK+OR+WIF+OR+DOGE+OR+memecoin)+(site:x.com+OR+twitter+OR+CT)&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=when:1d+(Saylor+OR+CZ+OR+Vitalik+OR+Musk+OR+%22crypto+twitter%22)+(Bitcoin+OR+crypto+OR+DOGE)&hl=en-US&gl=US&ceid=US:en",
+  ];
+
   const settled = await Promise.allSettled([
     ...queries.map((u) => pull(u)),
     pull("https://cointelegraph.com/rss"),
+    ...xQueries.map((u) => pull(u)),
     fetch("https://api.alternative.me/fng/?limit=1", { headers: { Accept: "application/json" } }).then((r) => r.json()),
     fetch("https://api.coingecko.com/api/v3/search/trending", { headers: { Accept: "application/json" } }).then((r) =>
       r.json(),
     ),
   ]);
 
-  const [g1, g2, g3, ct, fngRaw, trendRaw] = settled;
+  const [g1, g2, g3, ct, x1, x2, x3, fngRaw, trendRaw] = settled;
 
   for (const [res, src] of [
     [g1, "Google News"],
@@ -93,6 +101,26 @@ export const fetchWire = createServerFn({ method: "POST" }).handler(async () => 
   ] as const) {
     if (res.status !== "fulfilled") continue;
     for (const row of parseRss(res.value, src)) items.push(toItem(row, "news"));
+  }
+
+  for (const res of [x1, x2, x3]) {
+    if (res.status !== "fulfilled") continue;
+    for (const row of parseRss(res.value, "X")) {
+      const blob = `${row.title} ${row.url} ${row.source}`;
+      const fromX =
+        /\bx\.com\b|\btwitter\.com\b|\bon x\b|\bcrypto twitter\b|\bCT\b/i.test(blob) ||
+        /\bx\b|\btwitter\b/i.test(row.source);
+      items.push(
+        toItem(
+          {
+            ...row,
+            source: fromX ? "X" : row.source.includes("Google") ? "X · CT" : `X · ${row.source}`,
+          },
+          "social",
+          { note: "X / Crypto Twitter tape" },
+        ),
+      );
+    }
   }
 
   let fearGreed: { value: number; label: string } | null = null;
@@ -164,7 +192,7 @@ export const fetchWire = createServerFn({ method: "POST" }).handler(async () => 
   unique.sort((a, b) => b.ts - a.ts);
 
   return {
-    items: unique.slice(0, 28),
+    items: unique.slice(0, 40),
     fearGreed,
     fetchedAt: Date.now(),
   };

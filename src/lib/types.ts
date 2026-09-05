@@ -27,7 +27,7 @@ export type PipelineStage =
   | "signed";
 export type FeedSource = "kraken" | "sim";
 export type WireTone = "bull" | "bear" | "neutral";
-export type WireKind = "news" | "trend" | "macro";
+export type WireKind = "news" | "trend" | "macro" | "social";
 
 export type WireItem = {
   id: string;
