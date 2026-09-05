@@ -6,12 +6,12 @@ describe("scalpStops", () => {
   it("sets a stop under entry and a take above round-trip fees", () => {
     const { stop, take } = scalpStops(100, false);
     assert.equal(stop, 99.65);
-    assert.ok(take >= 101.2);
+    assert.ok(take >= 102.15);
   });
 });
 
 describe("scalpManage", () => {
-  const base = { openedAt: 1_000, entry: 100, mark: 100.1, stop: 99.65, take: 101.05 };
+  const base = { openedAt: 1_000, entry: 100, mark: 100.1, stop: 99.65, take: 102.2 };
 
   it("holds a fresh lot that has not cleared fees", () => {
     const r = scalpManage(base, 1_000 + 3_000);
@@ -19,12 +19,12 @@ describe("scalpManage", () => {
   });
 
   it("takes at the stretch target once fees are covered", () => {
-    const r = scalpManage({ ...base, mark: 101.4 }, 1_000 + 6_000);
+    const r = scalpManage({ ...base, mark: 102.3 }, 1_000 + 6_000);
     assert.equal(r.action, "take");
   });
 
   it("clips in seconds once the move covers fees", () => {
-    const r = scalpManage({ ...base, mark: 101.4 }, 1_000 + SCALP.fastTakeMs);
+    const r = scalpManage({ ...base, mark: 102.3 }, 1_000 + SCALP.fastTakeMs);
     assert.equal(r.action, "take");
   });
 
@@ -47,6 +47,11 @@ describe("scalpManage", () => {
 
   it("does not bank a take until Kraken fees are covered", () => {
     const r = scalpManage({ ...base, mark: 100.4, qty: 10 }, 1_000 + SCALP.fastTakeMs);
+    assert.equal(r.action, "hold");
+  });
+
+  it("holds a mark that used to clear old fees but not Tier-1 RT", () => {
+    const r = scalpManage({ ...base, mark: 101.4 }, 1_000 + SCALP.fastTakeMs);
     assert.equal(r.action, "hold");
   });
 

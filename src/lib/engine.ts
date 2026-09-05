@@ -6,15 +6,17 @@ import { fetchOhlc, fetchOrderFill, fetchTickers, fetchUsdUniverse } from "./kra
 import { PAIR_BY_ID, BTC_BOOK, HEAT_PAIRS, btcBookArmed, getPair, heatUniverse, isBtcQuote, isBtcUsd, pairBase, pairLabel, registerPair } from "./kraken.ts";
 import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
+import { industryCall } from "./industry-call.ts";
 import { hugeSpike, volumeRatio } from "./spike-alert.ts";
-import { blendTaker, feeAwareStops, feeOn, learnTaker, netPnl, takerPct, MIN_NET_USD } from "./fees.ts";
+import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
 import { autoBotReady } from "./auto-bot.ts";
 import { rankMemeScout, rankScout } from "./scout.ts";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up.ts";
 import { getLiveVenue } from "./venues/index.ts";
 import { connectTickerFeed } from "./kraken-ws.ts";
-import { learnFromClose, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn.ts";
+import { learnFromClose, learnFromIndustry, mergeAssetMemory, pairMinConf, studyFromCandles } from "./learn.ts";
+import { dailyStance } from "./daily-trend.ts";
 import { SCALP, scalpManage } from "./scalp.ts";
 import {
   asPlaybook,
@@ -700,6 +702,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       dipFromEntry,
       adds: existingLot?.adds ?? 1,
       msSinceAdd: lastBuy ? Date.now() - lastBuy.ts : 1e12,
+      bookScore: brain.bookScore,
     });
     if (spike.ok && modOn("scalp") && ticketKind !== "sell") {
       playbook = "scalp";
@@ -731,11 +734,48 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     if (sleeve === "heat" && !modOn("heat") && ticketKind === "buy") ticketKind = "hold";
     if (sleeve === "core" && !modOn("core") && ticketKind === "buy") ticketKind = "hold";
 
+    {
+      const day = brain.dailyStance ?? "unknown";
+      const regimeGate = readRegime(closes);
+      const taker = takerPct(getPair(pair)?.quote ?? PAIR_BY_ID[pair]?.quote ?? "USD", stNow.liveTakerPct);
+      const moveFrac = Math.max(oneMinPct, threePct) / 100;
+      const feesClear =
+        playbook !== "scalp" ||
+        edgeClearsFees(moveFrac, taker) ||
+        (spike.ok && threePct / 100 >= minTakePct(taker) * 0.7);
+      const call = industryCall({
+        kind: ticketKind,
+        playbook,
+        daily: day,
+        regime: regimeGate.state,
+        fearGreed: stNow.fearGreed?.value,
+        pairWireTone: wireHit?.tone ?? null,
+        spike: spike.ok,
+        feesClear,
+      });
+      if (ticketKind === "buy" && !call.allow) {
+        bumpAgent("hunter", call.why, 0.7);
+        pushEvent({
+          agent: "hunter",
+          stage: "handout",
+          pair,
+          title: `SKIP ${label}`,
+          detail: call.why,
+          tone: "info",
+        });
+        ticketKind = "hold";
+        playbook = null;
+      }
+    }
+
     if (!paper && ticketKind === "buy") {
       const recentPnl = stNow.orders
         .filter((o) => o.status === "filled" && o.mode === "live" && o.side === "sell")
         .slice(0, 4)
         .map((o) => o.pnl ?? 0);
+      const gateTaker = takerPct(getPair(pair)?.quote ?? PAIR_BY_ID[pair]?.quote ?? "USD", stNow.liveTakerPct);
+      const day = brain.dailyStance ?? "unknown";
+      const regimeGate = readRegime(closes);
       const gate = liveEntry({
         grokKind,
         readKind: read.kind,
@@ -745,9 +785,16 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         heat: sleeve === "heat",
         hot: spike.ok,
         changePct: sleeve === "heat" ? Math.max(oneMinPct, threePct) : ticker?.changePct ?? 0,
+        expectedMovePct: Math.max(oneMinPct, threePct) / 100,
+        taker: gateTaker,
         recentPnl,
         sessionPnl: dayNow,
         budget: stNow.liveBudget || 200,
+        daily: day,
+        regime: regimeGate.state,
+        fearGreed: stNow.fearGreed?.value ?? null,
+        pairWireTone: wireHit?.tone ?? null,
+        spike: spike.ok,
       });
       if (!gate.ok) {
         bumpAgent("risk", gate.why, 0.7);
@@ -1494,6 +1541,19 @@ export async function studyBook(): Promise<{ ok: true; note: string }> {
         bumpAgent("sentinel", `study miss ${pair}`, 0.6);
       }
     }
+    {
+      const st = useFloor.getState();
+      const samplePair = st.pairs[0];
+      const closes = samplePair ? (st.candles[samplePair] ?? []).map((c) => c.close) : [];
+      const stance = closes.length >= 60 ? dailyStance(closes).stance : "chop";
+      patch({
+        brain: learnFromIndustry(st.brain, {
+          wire: st.wire ?? [],
+          fearGreed: st.fearGreed,
+          dailyStance: stance,
+        }),
+      });
+    }
     pushEvent({
       agent: "hunter",
       next: "archivist",
@@ -1968,6 +2028,12 @@ async function refreshWire() {
   try {
     const res = await fetchWire();
     useFloor.getState().setWire(res.items, res.fearGreed);
+    patch({
+      brain: learnFromIndustry(useFloor.getState().brain, {
+        wire: res.items,
+        fearGreed: res.fearGreed,
+      }),
+    });
     const top = res.items[0];
     bumpAgent("wire", top ? top.title.slice(0, 42) : "wire quiet", 0.85);
     if (top?.pairs[0]) {

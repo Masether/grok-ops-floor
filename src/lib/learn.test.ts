@@ -2,16 +2,19 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_BRAIN,
+  DESK_RULES,
   bookAllowed,
   hourQuiet,
   kindFromReason,
   learnFromClose,
+  learnFromIndustry,
   learnFromMiss,
   pairBlocked,
   pairMinConf,
   setupAllowed,
   type Brain,
 } from "./learn.ts";
+import type { WireItem } from "./types.ts";
 
 function fresh(over: Partial<Brain> = {}): Brain {
   return {
@@ -186,5 +189,37 @@ describe("brain books and hours", () => {
     assert.equal(brain.rejectCount.SOLUSD, 4);
     assert.equal(pairBlocked(brain, "SOLUSD"), true);
     assert.equal(pairBlocked(brain, "ETHUSD"), false);
+  });
+});
+
+describe("learnFromIndustry", () => {
+  it("cuts scalp bookScore in chop/cash and bumps slightly on long+trend wire", () => {
+    assert.match(DESK_RULES, /unpaid fees/i);
+    const wire: WireItem[] = [
+      {
+        id: "w1",
+        title: "BTC rips",
+        source: "test",
+        url: "https://example.com",
+        ts: Date.now(),
+        tone: "bull",
+        pairs: ["XBTUSD"],
+        orgs: [],
+        kind: "trend",
+        note: "trend",
+      },
+    ];
+    const chop = learnFromIndustry(fresh(), { wire: [], fearGreed: { value: 50, label: "Neutral" }, dailyStance: "chop" });
+    assert.ok(chop.bookScore.scalp < 0);
+    assert.match(chop.lastNote, /chop/);
+
+    const cash = learnFromIndustry(fresh(), { wire: [], fearGreed: { value: 12, label: "Extreme Fear" }, dailyStance: "cash" });
+    assert.ok(cash.bookScore.scalp <= chop.bookScore.scalp);
+    assert.ok(cash.sizeTilt < DEFAULT_BRAIN.sizeTilt);
+
+    const long = learnFromIndustry(fresh(), { wire, fearGreed: { value: 55, label: "Neutral" }, dailyStance: "long" });
+    assert.ok(long.bookScore.scalp > 0);
+    assert.ok((long.pairBias.XBTUSD ?? 0) > 0);
+    assert.match(long.lastNote, /long/);
   });
 });

@@ -28,7 +28,7 @@ describe("grid", () => {
     assert.ok(take > 102);
     const hold = gridManage({ entry: 100, mark: 100.2, stop, take, qty: 1 });
     assert.equal(hold.action, "hold");
-    const reduce = gridManage({ entry: 100, mark: 101.2, stop, take, qty: 10 });
+    const reduce = gridManage({ entry: 100, mark: 102.3, stop, take, qty: 10 });
     assert.equal(reduce.action, "reduce");
     assert.ok(reduce.sellFrac > 0 && reduce.sellFrac < 1);
     const dump = gridManage({ entry: 100, mark: stop - 0.01, stop, take, qty: 1 });

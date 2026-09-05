@@ -1,5 +1,6 @@
 import type { PlaybookId } from "./playbook.ts";
-import type { Candle, PairId } from "./types.ts";
+import type { DailyStance } from "./daily-trend.ts";
+import type { Candle, PairId, WireItem } from "./types.ts";
 
 export type SetupId = "cross" | "rsi" | "momentum";
 export type ExitKind = "take" | "stop" | "time" | "reject" | "risk" | "unknown";
@@ -10,8 +11,20 @@ export type ExitKind = "take" | "stop" | "time" | "reject" | "risk" | "unknown";
  * mean-reversion / RSI fade → grid
  * dip scale-in → dca
  * ATR stop + 2R take + trail → already code in risk-stops/scalp
+ *
+ * Trader rules:
+ * - never bank unpaid fees
+ * - don't scalp chop
+ * - ride daily trend
+ * - cut losers
+ * - wire confirms not replaces risk
+ * - fewer tickets
  */
 export const DESK_METHODS = ["scalp", "grid", "dca"] as const;
+
+/** Short rules string for brain UI. */
+export const DESK_RULES =
+  "Never bank unpaid fees · Don't scalp chop · Ride daily trend · Cut losers · Wire confirms risk · Fewer tickets";
 
 export type Lesson = {
   ts: number;
@@ -65,6 +78,8 @@ export type Brain = {
   rejectCount: Partial<Record<PairId, number>>;
   lessons: Lesson[];
   assetMemory: Partial<Record<PairId, AssetMemory>>;
+  /** Daily EMA stance from studyBook — omit until studied. */
+  dailyStance?: DailyStance;
 };
 
 export const DEFAULT_BRAIN: Brain = {
@@ -73,14 +88,14 @@ export const DEFAULT_BRAIN: Brain = {
   rsiSell: 62,
   emaBoost: 0.18,
   volMult: 1.35,
-  momThresh: 0.006,
-  minConf: 0.48,
+  momThresh: 0.01,
+  minConf: 0.55,
   sizeTilt: 1,
   samples: 0,
   wins: 0,
   losses: 0,
   streak: 0,
-  lastNote: "brain cold — waiting on fills",
+  lastNote: "brain cold — industry+fees · waiting on fills",
   pairBias: {},
   setupScore: { cross: 0, rsi: 0, momentum: 0 },
   bookScore: { scalp: 0, grid: 0, dca: 0 },
@@ -332,7 +347,7 @@ export function studyFromCandles(pair: PairId, candles: Candle[]): AssetMemory {
     const entry = c.close;
     let win = false;
     for (let k = i + 1; k <= Math.min(n - 1, i + 6); k++) {
-      if (closes[k]! >= entry * 1.015) {
+      if (closes[k]! >= entry * 1.022) {
         win = true;
         break;
       }
@@ -367,6 +382,71 @@ export function studyFromCandles(pair: PairId, candles: Candle[]): AssetMemory {
       ? `${pair} · ${n} bars · ${(wr * 100).toFixed(0)}% on ${samples} RSI/EMA tests · ${bestSetup}`
       : `${pair} · not enough history`,
   };
+}
+
+
+export function learnFromIndustry(
+  brain: Brain,
+  input: {
+    wire: WireItem[];
+    fearGreed?: { value: number; label: string } | null;
+    dailyStance?: DailyStance | "long" | "cash" | "chop";
+  },
+): Brain {
+  if (!brain.enabled) return brain;
+  const next: Brain = {
+    ...brain,
+    pairBias: { ...brain.pairBias },
+    setupScore: { ...brain.setupScore },
+    bookScore: booksOf(brain),
+    hourScore: hoursOf(brain),
+    rejectCount: { ...brain.rejectCount },
+    lessons: brain.lessons.slice(),
+    assetMemory: { ...brain.assetMemory },
+  };
+  const stance = input.dailyStance;
+  if (stance === "long" || stance === "cash" || stance === "chop") {
+    next.dailyStance = stance;
+  }
+  const fresh = (input.wire ?? []).filter((w) => Date.now() - w.ts < 6 * 3_600_000);
+  const bulls = fresh.filter((w) => w.tone === "bull").length;
+  const bears = fresh.filter((w) => w.tone === "bear").length;
+  const trendWire = fresh.some((w) => w.kind === "trend" && w.tone === "bull");
+  const fg = input.fearGreed?.value;
+
+  // Stance tilts only when dailyStance is provided (studyBook); wire refresh skips this.
+  if (stance === "chop" || stance === "cash") {
+    next.bookScore.scalp = clamp(next.bookScore.scalp - (stance === "cash" ? 2.2 : 1.4), -8, 12);
+    next.bookScore.grid = clamp(next.bookScore.grid + 0.4, -8, 12);
+    next.bookScore.dca = clamp(next.bookScore.dca + (stance === "cash" ? 0.2 : 0.5), -8, 12);
+    next.minConf = clamp(next.minConf + (stance === "cash" ? 0.04 : 0.02), 0.36, 0.78);
+  } else if (stance === "long") {
+    next.bookScore.scalp = clamp(next.bookScore.scalp + (trendWire ? 0.8 : 0.35), -8, 12);
+    next.bookScore.dca = clamp(next.bookScore.dca + 0.25, -8, 12);
+    next.minConf = clamp(next.minConf - 0.01, 0.36, 0.78);
+  }
+
+  // Fear & greed extremes tilt size.
+  if (typeof fg === "number") {
+    if (fg <= 20) next.sizeTilt = clamp(next.sizeTilt - 0.08, 0.55, 1.45);
+    else if (fg >= 80) next.sizeTilt = clamp(next.sizeTilt - 0.05, 0.55, 1.45);
+    else if (fg >= 45 && fg <= 60) next.sizeTilt = clamp(next.sizeTilt + 0.02, 0.55, 1.45);
+  }
+
+  // Soft pairBias bumps from bull/bear wire on tagged pairs.
+  for (const w of fresh) {
+    const delta = w.tone === "bull" ? 0.03 : w.tone === "bear" ? -0.04 : 0;
+    if (!delta) continue;
+    for (const pair of w.pairs ?? []) {
+      next.pairBias[pair] = clamp((next.pairBias[pair] ?? 0) + delta, -0.5, 0.5);
+    }
+  }
+
+  const fgNote = fg != null ? ` · FG ${fg}` : "";
+  const wireNote = bulls || bears ? ` · wire ${bulls}↑/${bears}↓` : "";
+  const stanceNote = stance ?? "tape";
+  next.lastNote = `industry ${stanceNote}${fgNote}${wireNote} · fees-aware`.slice(0, 140);
+  return next;
 }
 
 export function mergeAssetMemory(brain: Brain, mem: AssetMemory): Brain {

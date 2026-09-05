@@ -12,6 +12,7 @@ export function volumeRatio(volumes: number[]): number {
   return avg > 0 ? last / avg : 1;
 }
 
+/** Only moves that can matter vs ~1.6%+ round-trip fees. */
 export function hugeSpike(input: {
   oneMinPct: number;
   threePct: number;
@@ -23,11 +24,11 @@ export function hugeSpike(input: {
   if (input.lane === "down" || input.oneMinPct <= 0) {
     return { ok: false, why: "not rising" };
   }
-  const tapeRip = input.oneMinPct >= 0.8 && input.volRatio >= 1.5;
-  const tapeBlast = input.threePct >= 2.2 && input.oneMinPct >= 0.25 && input.volRatio >= 1.3;
+  const tapeRip = input.oneMinPct >= 1.2 && input.volRatio >= 1.6;
+  const tapeBlast = input.threePct >= 2.5 && input.oneMinPct >= 0.4 && input.volRatio >= 1.3;
   if (tapeRip || tapeBlast) return { ok: true, source: "tape" };
   const wireFresh = input.wireKind === "trend" && (input.wireAgeMs ?? 1e12) < 30 * 60_000;
-  if (wireFresh && input.oneMinPct >= 0.35 && input.lane === "up") {
+  if (wireFresh && input.oneMinPct >= 0.7 && input.lane === "up") {
     return { ok: true, source: "wire" };
   }
   return { ok: false, why: "no huge spike" };

@@ -9,7 +9,8 @@ const base = {
   playbook: "scalp" as const,
   conf: 0.62,
   heat: false,
-  changePct: 0.8,
+  changePct: 2.5,
+  expectedMovePct: 0.025,
   recentPnl: [] as number[],
   sessionPnl: 0,
   budget: 200,
@@ -30,9 +31,26 @@ describe("liveEntry", () => {
       true,
     );
     assert.equal(liveEntry({ ...base, sessionPnl: -30 }).ok, false);
-    assert.equal(liveEntry({ ...base, heat: true, changePct: 0.04, lane: "down" }).ok, false);
-    assert.equal(liveEntry({ ...base, heat: true, changePct: 0.08 }).ok, true);
-    assert.equal(liveEntry({ ...base, heat: true, hot: true, changePct: 3.2 }).ok, true);
-    assert.equal(liveEntry({ ...base, heat: true, hot: true, lane: "down", changePct: 0.5 }).ok, true);
+    assert.equal(liveEntry({ ...base, heat: true, changePct: 0.04, lane: "down", expectedMovePct: 0.0004 }).ok, false);
+    assert.equal(liveEntry({ ...base, heat: true, changePct: 2.5, expectedMovePct: 0.025 }).ok, true);
+    assert.equal(liveEntry({ ...base, heat: true, hot: true, changePct: 3.2, expectedMovePct: 0.032 }).ok, true);
+    assert.equal(
+      liveEntry({ ...base, heat: true, hot: true, lane: "down", changePct: 1.5, expectedMovePct: 0.015 }).ok,
+      true,
+    );
+    assert.equal(
+      liveEntry({ ...base, changePct: 0.8, expectedMovePct: 0.008, hot: false }).ok,
+      false,
+    );
+    const cashBlock = liveEntry({
+      ...base,
+      daily: "cash",
+      regime: "trend-up",
+      spike: true,
+      hot: true,
+      fearGreed: 50,
+    });
+    assert.equal(cashBlock.ok, false);
+    if (!cashBlock.ok) assert.equal(cashBlock.why, "daily sit USD");
   });
 });

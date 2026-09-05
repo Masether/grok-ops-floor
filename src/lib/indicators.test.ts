@@ -68,7 +68,7 @@ describe("ema", () => {
 
 describe("readScalp", () => {
   it("buys a 1m uptick instead of holding", () => {
-    const closes = [100, 100.02, 100.01, 100.05, 100.04, 100.08, 100.1, 100.16];
+    const closes = [100, 100.05, 100.1, 100.2, 100.35, 100.5, 100.7, 100.95];
     const vols = closes.map(() => 100);
     const read = readScalp(closes, vols);
     assert.equal(read.kind, "buy");

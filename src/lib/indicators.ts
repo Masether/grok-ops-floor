@@ -164,7 +164,7 @@ export function readSignal(
   return { kind, confidence, reason, rsi: r, emaFast, emaSlow, macdHist: hist, setup };
 }
 
-/** 1-minute scalp read — more tickets, less "desk holds". */
+/** 1-minute scalp read — fee-aware fewer tickets, prefer hold on noise. */
 export function readScalp(
   closes: number[],
   volumes: number[],
@@ -217,7 +217,9 @@ export function readScalp(
     };
   }
 
-  if (crossedUp || (ret1 > 0.00035 && (trendUp || ret3 > 0.00045))) {
+  const momBuy =
+    ret1 > 0.0012 && (trendUp || ret3 > 0.0025 || (volBoost > 0 && ret3 > 0.0015));
+  if (crossedUp || momBuy) {
     return {
       kind: "buy",
       confidence: Math.min(0.86, 0.5 + volBoost + Math.min(0.2, Math.abs(ret3) * 40) + (crossedUp ? 0.12 : 0)),
@@ -231,10 +233,10 @@ export function readScalp(
       setup: crossedUp ? "cross" : "momentum",
     };
   }
-  if (r < 42 && ret1 > 0 && last > prev) {
+  if (r < 36 && ret1 > 0.0008 && last > prev && trendUp) {
     return {
       kind: "buy",
-      confidence: Math.min(0.78, 0.48 + (42 - r) / 80 + volBoost),
+      confidence: Math.min(0.78, 0.48 + (36 - r) / 80 + volBoost),
       reason: `Scalp RSI bounce ${r.toFixed(0)}`,
       rsi: r,
       emaFast,

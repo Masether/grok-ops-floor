@@ -1,12 +1,12 @@
 import type { TapeLens } from "./tape-lens.ts";
-import { coversFees, USD_TAKER } from "./fees.ts";
+import { coversFees, feeAwareStops, USD_TAKER } from "./fees.ts";
 
 export type PlaybookId = "scalp" | "grid" | "dca";
 
 export const PLAYBOOKS: { id: PlaybookId; label: string; hint: string }[] = [
-  { id: "scalp", label: "Scalp", hint: "clip in seconds when net green" },
-  { id: "grid", label: "Grid", hint: "range · MACD chop" },
-  { id: "dca", label: "DCA", hint: "dip adds · MACD reset" },
+  { id: "scalp", label: "Scalp", hint: "fee-clear spike only · fewer tickets" },
+  { id: "grid", label: "Grid", hint: "range · MACD chop · fee-clear steps" },
+  { id: "dca", label: "DCA", hint: "dip adds · fee-clear take · MACD reset" },
 ];
 
 export const ALL_PLAYBOOKS: PlaybookId[] = ["scalp", "grid", "dca"];
@@ -15,9 +15,9 @@ export const DEFAULT_PLAYBOOK: PlaybookId = "scalp";
 
 /** Split of the $200 (or paper equity) across books when they run together. */
 export const BOOK_SHARE: Record<PlaybookId, number> = {
-  scalp: 0.15,
-  grid: 0.5,
-  dca: 0.35,
+  scalp: 0.08,
+  grid: 0.52,
+  dca: 0.40,
 };
 
 export function asPlaybook(v: unknown): PlaybookId {
@@ -47,7 +47,7 @@ export function macdLane(hist: number, prev: number): MacdLane {
 
 export const GRID = {
   rangePct: 0.025,
-  stepPct: 0.006,
+  stepPct: 0.009,
   slicePct: 0.12,
   maxAdds: 4,
   breakPct: 0.012,
@@ -84,12 +84,12 @@ export function bookStops(
   playbook: PlaybookId,
   entry: number,
   heat: boolean,
+  taker = USD_TAKER,
 ): { stop: number; take: number } {
   if (playbook === "grid") return gridStops(entry);
   if (playbook === "dca") return dcaStops(entry);
-  const stopPct = heat ? 0.012 : 0.0035;
-  const takePct = heat ? 0.04 : 0.0105;
-  return { stop: entry * (1 - stopPct), take: entry * (1 + takePct) };
+  const band = feeAwareStops(entry, heat, taker);
+  return { stop: band.stop, take: band.take };
 }
 
 export function gridManage(p: {

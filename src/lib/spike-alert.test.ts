@@ -7,9 +7,20 @@ describe("hugeSpike", () => {
     assert.equal(hugeSpike({ oneMinPct: 0.1, threePct: 0.2, volRatio: 1.1, lane: "up" }).ok, false);
     assert.equal(hugeSpike({ oneMinPct: 1.2, threePct: 1.4, volRatio: 2, lane: "up" }).ok, true);
     assert.equal(hugeSpike({ oneMinPct: 1.2, threePct: 1.4, volRatio: 2, lane: "down" }).ok, false);
+    assert.equal(
+      hugeSpike({
+        oneMinPct: 0.4,
+        threePct: 0.5,
+        volRatio: 1.1,
+        lane: "up",
+        wireKind: "trend",
+        wireAgeMs: 5 * 60_000,
+      }).ok,
+      false,
+    );
     const wire = hugeSpike({
-      oneMinPct: 0.4,
-      threePct: 0.5,
+      oneMinPct: 0.75,
+      threePct: 0.9,
       volRatio: 1.1,
       lane: "up",
       wireKind: "trend",
@@ -19,8 +30,8 @@ describe("hugeSpike", () => {
     if (wire.ok) assert.equal(wire.source, "wire");
     assert.equal(
       hugeSpike({
-        oneMinPct: 0.4,
-        threePct: 0.5,
+        oneMinPct: 0.75,
+        threePct: 0.9,
         volRatio: 1.1,
         lane: "up",
         wireKind: "macro",
