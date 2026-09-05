@@ -2,14 +2,14 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Slider, Switch } from "@/components/ui/field";
+import { X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-  Sheet,
-  SheetContent,
 } from "@/components/ui/overlay";
+import { FloorModal } from "@/components/ui/floor-modal";
 import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, refreshTreasury } from "@/lib/engine-call";
 import { secondRead } from "@/lib/grok-brief";
@@ -178,16 +178,31 @@ export function SettingsPanel() {
     } else setPairs([...pairs, id]);
   }
 
+  function closeSettings() {
+    setOpen(false);
+    persistProfile();
+  }
+
   return (
     <>
-      <Sheet
-        open={open}
-        onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) persistProfile();
-        }}
-      >
-        <SheetContent title="Desk settings">
+      <FloorModal open={open} onClose={closeSettings} labelledBy="settings-title">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <p
+            className="font-display text-sm font-semibold tracking-[0.16em] text-fg uppercase"
+            id="settings-title"
+          >
+            Desk settings
+          </p>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Close settings"
+            onClick={closeSettings}
+          >
+            <X className="size-4" />
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           <div className="space-y-6">
             <section className="space-y-3">
               <Label>How the floor works your money</Label>
@@ -589,8 +604,8 @@ export function SettingsPanel() {
               </p>
             </section>
           </div>
-        </SheetContent>
-      </Sheet>
+        </div>
+      </FloorModal>
 
       <Dialog open={armAsk} onOpenChange={setArmAsk}>
         <DialogContent>

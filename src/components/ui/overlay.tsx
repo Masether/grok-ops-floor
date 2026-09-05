@@ -47,6 +47,7 @@ export const DialogClose = DialogPrimitive.Close;
 export function DialogContent({
   className,
   children,
+  style,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content>) {
   return (
@@ -57,8 +58,13 @@ export function DialogContent({
           "fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg p-5 text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
-        style={{ background: "#181b28", isolation: "isolate", opacity: 1 }}
         {...props}
+        style={{
+          background: "#181b28",
+          isolation: "isolate",
+          opacity: 1,
+          ...(typeof style === "object" && style ? style : {}),
+        }}
       >
         {children}
       </DialogPrimitive.Content>
@@ -92,6 +98,7 @@ export function SheetContent({
   className,
   children,
   title,
+  style,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
   return (
@@ -102,8 +109,13 @@ export function SheetContent({
           "fixed top-0 right-0 z-50 flex h-dvh w-[min(420px,100vw)] flex-col text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
-        style={{ background: "#181b28", isolation: "isolate", opacity: 1 }}
         {...props}
+        style={{
+          background: "#181b28",
+          isolation: "isolate",
+          opacity: 1,
+          ...(typeof style === "object" && style ? style : {}),
+        }}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <DialogPrimitive.Title className="font-display text-sm font-semibold tracking-[0.16em] text-fg uppercase">
