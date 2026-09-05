@@ -546,6 +546,7 @@ export const useFloor = create<FloorState>()(
             autoTrade: true,
             floorOpen: true,
             autoSweep: true,
+            playbooks: [...ALL_PLAYBOOKS],
             pairs: liveWatchPairs(
               [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
               sleeve.btcUsd,
@@ -958,7 +959,7 @@ export const useFloor = create<FloorState>()(
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",
-          playbooks: ["grid", "dca", "scalp"],
+          playbooks: [...ALL_PLAYBOOKS],
           floorOpen: launched || keyed,
           autoTrade: true,
           agents: current.agents,
@@ -1033,7 +1034,7 @@ export function ensureLiveDesk(): boolean {
     mode: "live",
     venueId: "kraken",
     liveArmed: keyed ? true : s.liveArmed,
-    playbooks: ["grid", "dca", "scalp"],
+    playbooks: [...ALL_PLAYBOOKS],
     pairs: liveWatchPairs(s.pairs, 0, false),
   });
   return keyed;
@@ -1060,6 +1061,7 @@ export function bootFloorFromDisk() {
       opsMode: "auto",
       mode: "live",
       venueId: "kraken",
+      playbooks: [...ALL_PLAYBOOKS],
       liveArmed: keyed,
       keys: p.keys ?? useFloor.getState().keys,
       keysOk: keyed ? null : false,

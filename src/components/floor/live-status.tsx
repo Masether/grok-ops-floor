@@ -59,15 +59,23 @@ export function LiveStatusBar() {
     >
       <div className="min-w-0">
         <p className="font-display text-micro tracking-[0.16em] uppercase">
-          {connected ? (keysOk === true ? "AUTO BOT · Kraken" : "Kraken keys — testing") : "Connect Kraken"}
+          {keysOk === false
+            ? "KRAKEN AUTH FAIL"
+            : connected
+              ? keysOk === true
+                ? "AUTO BOT · Kraken"
+                : "Kraken keys — testing"
+              : "Connect Kraken"}
         </p>
-        <p className={cn("stat-num text-sm", live ? "text-danger" : "text-fg")}>
-          {connected
-            ? `USD + BTC · fees in the ticket · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
-            : "Query + Orders keys in Settings. No paper book."}
+        <p className={cn("stat-num text-sm", keysOk === false ? "text-danger" : live ? "text-danger" : "text-fg")}>
+          {keysOk === false
+            ? "Re-paste Query + Orders keys in Settings and tap Test. No live sends until auth clears."
+            : connected
+              ? `USD + BTC · fees in the ticket · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
+              : "Query + Orders keys in Settings. No paper book."}
         </p>
         <p className="mt-1 text-micro text-subtle">
-          Grid + DCA today. Scalp only a huge rising spike from the 1m tape or a trend wire. Scout{" "}
+          Tap SCALP + GRID + DCA so all three are on. Scalp = spikes only; grid/DCA run the majors. Scout{" "}
           {scoutDropped} · hot {scoutHot?.length ?? 0}.
         </p>
         <SignedOut>

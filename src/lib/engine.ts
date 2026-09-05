@@ -2135,20 +2135,33 @@ export async function refreshTreasury() {
     }
   } catch (err) {
     const why = err instanceof Error ? err.message : "Balance call failed";
-    useFloor.getState().setKeysOk(false);
-    bumpAgent("treasury", "Kraken auth failed", 1);
-    pushQueue({
-      title: "KRAKEN AUTH",
-      detail: why,
-      severity: "stall",
-    });
-    pushEvent({
-      agent: "treasury",
-      stage: "signed",
-      title: "KRAKEN AUTH FAIL",
-      detail: why,
-      tone: "bad",
-    });
+    const soft =
+      /rate limit|nonce too low|backing off|EService:Unavailable|network|fetch failed|timeout/i.test(
+        why,
+      );
+    if (!soft) {
+      useFloor.getState().setKeysOk(false);
+      bumpAgent("treasury", "Kraken auth failed", 1);
+      pushQueue({
+        title: "KRAKEN AUTH",
+        detail: why,
+        severity: "stall",
+      });
+      pushEvent({
+        agent: "treasury",
+        stage: "signed",
+        title: "KRAKEN AUTH FAIL",
+        detail: `${why} · re-paste Query+Orders keys and tap Test`,
+        tone: "bad",
+      });
+    } else {
+      bumpAgent("treasury", why.slice(0, 42), 0.6);
+      pushQueue({
+        title: "KRAKEN RETRY",
+        detail: why,
+        severity: "stall",
+      });
+    }
   }
 }
 

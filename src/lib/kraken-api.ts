@@ -7,12 +7,13 @@ const KRAKEN = "https://api.kraken.com";
 
 type KrakenEnvelope<T> = { error: string[]; result?: T };
 
-let lastNonce = 0;
+let lastNonce = 0n;
 
+/** Always-increasing nonce. Wall clock + counter so concurrent serverless isolates rarely collide. */
 function nextNonce(): string {
-  const n = Date.now() * 1000;
-  lastNonce = n <= lastNonce ? lastNonce + 1 : n;
-  return String(lastNonce);
+  const base = BigInt(Date.now()) * 1000n;
+  lastNonce = base > lastNonce ? base : lastNonce + 1n;
+  return lastNonce.toString();
 }
 
 async function sign(path: string, nonce: string, body: string, secret: string): Promise<string> {
