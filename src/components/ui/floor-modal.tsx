@@ -4,8 +4,10 @@ import { cn } from "@/lib/utils";
 
 /**
  * Opaque modal on document.body.
- * Safari treats `position:fixed` inside overflow/filter parents as a
- * backdrop-filter group, so Tailwind `bg-surface-3` on the desk looked like glass.
+ * Safari can glass fixed panels over the orbit canvas when any ancestor
+ * (or a semi-transparent dim) creates a filter/opacity group. This modal
+ * uses a fully opaque scrim + inline solid fills — no alpha, no backdrop-filter,
+ * no reliance on CSS-file classes for the paint that must stay solid.
  */
 export function FloorModal({
   open,
@@ -42,30 +44,53 @@ export function FloorModal({
   if (!open || !mount) return null;
 
   return createPortal(
-    <div className="floor-modal-root" role="presentation">
-      <div className="floor-modal-dim" onClick={onClose} />
+    <div
+      className="floor-modal-root"
+      role="presentation"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 2147483000,
+        display: "grid",
+        placeItems: "center",
+        padding: 16,
+        // Fully opaque — never rgba / opacity. Floor must not show through.
+        background: "#05060a",
+        WebkitBackdropFilter: "none",
+        backdropFilter: "none",
+      }}
+      onClick={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={labelledBy}
         className={cn("floor-modal-panel", panelClassName)}
         style={{
+          position: "relative",
+          zIndex: 1,
+          display: "flex",
+          width: "100%",
+          maxWidth: panelClassName?.includes("max-w-5xl")
+            ? "64rem"
+            : panelClassName?.includes("max-w-lg")
+              ? "32rem"
+              : "42rem",
+          maxHeight: "92dvh",
+          flexDirection: "column",
+          overflow: "hidden",
+          borderRadius: 16,
+          background: "#181b28",
           backgroundColor: "#181b28",
-          backgroundImage: "none",
           color: "#e8edf5",
           opacity: 1,
-          isolation: "isolate",
           WebkitBackdropFilter: "none",
           backdropFilter: "none",
+          boxShadow: "0 0 0 1px rgb(255 255 255 / 0.14), 0 24px 80px rgb(0 0 0 / 0.85)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          className="relative z-[1] flex min-h-0 min-w-0 flex-1 flex-col"
-          style={{ backgroundColor: "#181b28", opacity: 1 }}
-        >
-          {children}
-        </div>
+        {children}
       </div>
     </div>,
     mount,

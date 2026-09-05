@@ -52,10 +52,10 @@ export function DialogContent({
 }: ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black" style={{ opacity: 0.72 }} />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-[2147483000]" style={{ background: "#05060a", opacity: 1 }} />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg p-5 text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed top-1/2 left-1/2 z-[2147483001] w-[min(440px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 rounded-lg p-5 text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
         {...props}
@@ -103,10 +103,10 @@ export function SheetContent({
 }: ComponentProps<typeof DialogPrimitive.Content> & { title: string }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black" style={{ opacity: 0.72 }} />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-[2147483000]" style={{ background: "#05060a", opacity: 1 }} />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-0 right-0 z-50 flex h-dvh w-[min(420px,100vw)] flex-col text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
+          "fixed top-0 right-0 z-[2147483001] flex h-dvh w-[min(420px,100vw)] flex-col text-fg shadow-[0_0_0_1px_var(--color-border-strong)]",
           className,
         )}
         {...props}
