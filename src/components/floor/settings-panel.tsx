@@ -13,12 +13,12 @@ import {
 import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, refreshTreasury } from "@/lib/engine-call";
 import { secondRead } from "@/lib/grok-brief";
-import { PAIRS, PAIR_BY_ID, SLEEVE_META, pairBase } from "@/lib/kraken";
+import { PAIRS, PAIR_BY_ID, SLEEVE_META, liveWatchPairs, pairBase } from "@/lib/kraken";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
 import { persistDeskBook } from "@/lib/profile";
 import type { BookSleeve, PairId } from "@/lib/types";
-import { ALL_LANE_IDS, pickHotBook } from "@/lib/universe";
+import { ALL_LANE_IDS, defaultTradeBook, pickHotBook } from "@/lib/universe";
 import { COMING_SOON_VENUES } from "@/lib/venues";
 import { DurationPills } from "./duration-pills.tsx";
 import { InstallAppButton } from "./install-app.tsx";
@@ -408,34 +408,72 @@ export function SettingsPanel() {
             <section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label>Book — grow the wallet</Label>
-                <Button
-                  type="button"
-                  size="micro"
-                  variant="outline"
-                  onClick={() => {
-                    const picked = pickHotBook(tickers, ALL_LANE_IDS);
-                    setPairs(picked);
-                    toast.message(
-                      `All three: ${picked.map((id) => pairBase(id)).join(" · ")}`,
-                    );
-                  }}
-                >
-                  All three · bot pick
-                </Button>
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    type="button"
+                    size="micro"
+                    variant="outline"
+                    onClick={() => {
+                      const picked = liveWatchPairs(defaultTradeBook(), 0, false);
+                      setPairs(picked);
+                      toast.message(
+                        `Synced majors + heat: ${picked.map((id) => pairBase(id)).join(" · ")}`,
+                      );
+                    }}
+                  >
+                    Sync majors + heat
+                  </Button>
+                  <Button
+                    type="button"
+                    size="micro"
+                    variant="outline"
+                    onClick={() => {
+                      const picked = pickHotBook(tickers, ALL_LANE_IDS);
+                      setPairs(picked);
+                      toast.message(
+                        `Bot pick: ${picked.map((id) => pairBase(id)).join(" · ")}`,
+                      );
+                    }}
+                  >
+                    Bot pick tape
+                  </Button>
+                </div>
               </div>
               <p className="text-2xs text-subtle">
-                All three lanes: hot tape, uprising alts, and memes. xStocks are tokenized
+                Core majors should stay lit (ETH SOL …). Heat is a small meme pocket. Tap
+                &quot;Sync majors + heat&quot; if only memes are highlighted. xStocks are tokenized
                 NVDA/TSLA/AAPL/SPY on Kraken (not available in the US). Nothing here is a promise.
                 Memes can go to zero.
               </p>
-              {(["core", "heat", "stock"] as BookSleeve[]).map((sleeve) => (
+              {(["core", "heat", "stock"] as BookSleeve[]).map((sleeve) => {
+                const sleeveIds = PAIRS.filter((p) => p.sleeve === sleeve).map((p) => p.id);
+                const allOn = sleeveIds.every((id) => pairs.includes(id));
+                return (
                 <div key={sleeve}>
-                  <p className="font-display text-micro tracking-[0.14em] text-muted uppercase">
-                    {SLEEVE_META[sleeve].label}
-                    <span className="ml-2 font-sans tracking-normal text-subtle normal-case">
-                      {SLEEVE_META[sleeve].blurb}
-                    </span>
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-display text-micro tracking-[0.14em] text-muted uppercase">
+                      {SLEEVE_META[sleeve].label}
+                      <span className="ml-2 font-sans tracking-normal text-subtle normal-case">
+                        {SLEEVE_META[sleeve].blurb}
+                      </span>
+                    </p>
+                    <Button
+                      type="button"
+                      size="micro"
+                      variant="outline"
+                      onClick={() => {
+                        if (allOn) {
+                          setPairs(pairs.filter((id) => !sleeveIds.includes(id)));
+                          toast.message(`${SLEEVE_META[sleeve].label} off`);
+                        } else {
+                          setPairs([...new Set([...pairs, ...sleeveIds])]);
+                          toast.message(`${SLEEVE_META[sleeve].label} on`);
+                        }
+                      }}
+                    >
+                      {allOn ? "Clear" : "All on"}
+                    </Button>
+                  </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {PAIRS.filter((p) => p.sleeve === sleeve).map((p) => {
                       const on = pairs.includes(p.id);
@@ -452,7 +490,8 @@ export function SettingsPanel() {
                     })}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </section>
 
             <section className="space-y-4">

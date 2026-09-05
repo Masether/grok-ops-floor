@@ -20,6 +20,13 @@ export type Lane = {
 
 export const ALL_LANE_IDS: LaneId[] = ["hot", "rising", "meme"];
 
+/** Majors first, then a small heat pocket — what the live desk should open with. */
+export function defaultTradeBook(): PairId[] {
+  const core = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD");
+  const heat = ["DOGEUSD", "PEPEUSD", "WIFUSD", "BONKUSD"] as PairId[];
+  return [...new Set([...core, ...heat])];
+}
+
 export const LANES: Lane[] = [
   {
     id: "hot",
@@ -115,18 +122,32 @@ export function pickHotBook(
 ): PairId[] {
   const enabled = (lanes.length ? lanes : ALL_LANE_IDS).filter((id) => LANE_BY_ID[id]);
   if (enabled.length === ALL_LANE_IDS.length && !hasTape(tickers)) {
-    return [...DEFAULT_PAIRS];
+    return defaultTradeBook();
   }
-  const per = enabled.length >= 3 ? 2 : enabled.length === 2 ? 3 : 6;
+  // Prefer majors: 3 hot + 2 rising + 1 meme when all lanes are on.
+  const quota: Record<string, number> =
+    enabled.length >= 3
+      ? { hot: 3, rising: 2, meme: 1 }
+      : enabled.length === 2
+        ? Object.fromEntries(enabled.map((id) => [id, 3]))
+        : Object.fromEntries(enabled.map((id) => [id, 6]));
   const out: PairId[] = [];
   for (const id of enabled) {
+    const take = quota[id] ?? 2;
     const pool = LANE_BY_ID[id].pairs.filter((p) => !out.includes(p));
     const ranked = [...pool]
       .sort((a, b) => scorePair(b, tickers) - scorePair(a, tickers))
-      .slice(0, per);
+      .slice(0, take);
     out.push(...ranked);
   }
-  return out.length ? out : [...DEFAULT_PAIRS];
+  // Always keep DEFAULT majors present when hot/rising lanes are enabled.
+  if (enabled.includes("hot") || enabled.includes("rising")) {
+    for (const id of DEFAULT_PAIRS) {
+      if (id === "XBTUSD") continue;
+      if (!out.includes(id)) out.unshift(id);
+    }
+  }
+  return out.length ? [...new Set(out)].slice(0, 16) : defaultTradeBook();
 }
 
 export function pairLabels(ids: PairId[]): string {

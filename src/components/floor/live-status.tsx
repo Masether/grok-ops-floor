@@ -20,6 +20,7 @@ export function LiveStatusBar() {
   const scoutScanned = useFloor((s) => s.scoutScanned);
   const scoutDropped = useFloor((s) => s.scoutDropped);
   const scoutHot = useFloor((s) => s.scoutHot);
+  const pairs = useFloor((s) => s.pairs);
   const positions = useFloor((s) => s.positions);
   const tickers = useFloor((s) => s.tickers);
   const dayStartEquity = useFloor((s) => s.dayStartEquity);
@@ -93,7 +94,7 @@ export function LiveStatusBar() {
           Heat {heatOn ? "live" : "sleep"} · {heatLots}/{HEAT_MAX_LOTS} lots ·{" "}
           {moneyFull(heatOpen)} / {moneyFull(heatCap)} ({heatPct.toFixed(0)}%) · day{" "}
           {day >= 0 ? "+" : ""}
-          {moneyFull(day)} · names {HEAT_PAIRS.map((id) => id.replace("USD", "")).join(" ")}
+          {moneyFull(day)} · book {pairs.map((id) => id.replace("USD", "")).join(" ") || "—"}
           {realized < 0 ? ` · realized ${moneyFull(realized)}` : ""}
         </p>
       </div>

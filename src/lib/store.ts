@@ -4,6 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { AGENTS } from "./agents.ts";
 import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn.ts";
 import { DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
+import { defaultTradeBook } from "./universe.ts";
 import { modOn } from "./desk-mods.ts";
 import { btcOnBook, clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, pairsFromWallet, restoreLiveBudget } from "./live-budget.ts";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
@@ -435,7 +436,7 @@ export const useFloor = create<FloorState>()(
       humanVerified: true,
       keys: { apiKey: "", apiSecret: "" },
       keysOk: null,
-      pairs: DEFAULT_PAIRS,
+      pairs: defaultTradeBook(),
       scoutHot: [],
       scoutScanned: 0,
       scoutDropped: 0,
@@ -548,7 +549,7 @@ export const useFloor = create<FloorState>()(
             autoSweep: true,
             playbooks: [...ALL_PLAYBOOKS],
             pairs: liveWatchPairs(
-              [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
+              [...defaultTradeBook(), ...s.pairs],
               sleeve.btcUsd,
               !modOn("core"),
             ),
@@ -798,7 +799,7 @@ export const useFloor = create<FloorState>()(
         set((s) => ({
           liveBalance: b,
           pairs: liveWatchPairs(
-            [...pairsFromWallet(b), ...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...s.pairs],
+            [...pairsFromWallet(b), ...defaultTradeBook(), ...s.pairs],
             btcOnBook(b) * (s.tickers.XBTUSD?.last ?? 0),
             !modOn("core"),
           ),
@@ -955,7 +956,7 @@ export const useFloor = create<FloorState>()(
         return {
           ...current,
           ...p,
-          pairs: liveWatchPairs(pairs.length ? pairs : DEFAULT_PAIRS, 0, !modOn("core")),
+          pairs: liveWatchPairs(pairs.length ? pairs : defaultTradeBook(), 0, !modOn("core")),
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",
@@ -1035,7 +1036,7 @@ export function ensureLiveDesk(): boolean {
     venueId: "kraken",
     liveArmed: keyed ? true : s.liveArmed,
     playbooks: [...ALL_PLAYBOOKS],
-    pairs: liveWatchPairs(s.pairs, 0, false),
+    pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], 0, false),
   });
   return keyed;
 }
@@ -1068,7 +1069,7 @@ export function bootFloorFromDisk() {
       liveBudget: restoreLiveBudget(p.liveBudget),
       liveBalance: p.liveBalance ?? null,
       liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : 0,
-      pairs: liveWatchPairs(Array.isArray(p.pairs) ? p.pairs : [], 0, false),
+      pairs: liveWatchPairs([...(Array.isArray(p.pairs) ? p.pairs : []), ...defaultTradeBook()], 0, false),
       lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : 0,
       shiftStartedAt:
         typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : useFloor.getState().shiftStartedAt,
