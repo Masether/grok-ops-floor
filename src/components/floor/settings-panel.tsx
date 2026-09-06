@@ -13,7 +13,7 @@ import { FloorModal } from "@/components/ui/floor-modal";
 import { HumanGate } from "@/components/floor/human-gate";
 import { executeOrder, refreshTreasury } from "@/lib/engine-call";
 import { secondRead } from "@/lib/grok-brief";
-import { PAIRS, PAIR_BY_ID, SLEEVE_META, liveWatchPairs, pairBase } from "@/lib/kraken";
+import { PAIRS, PAIR_BY_ID, SLEEVE_META, listBookPairs, liveWatchPairs, pairBase } from "@/lib/kraken";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
 import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
 import { persistDeskBook } from "@/lib/profile";
@@ -486,7 +486,12 @@ export function SettingsPanel() {
                     variant="outline"
                     onClick={() => {
                       ensureCoreTradeMods();
-                      const picked = liveWatchPairs(defaultTradeBook(), 0, false);
+                      const scout = useFloor.getState().scoutHot ?? [];
+                      const picked = liveWatchPairs(
+                        [...defaultTradeBook(), ...scout, ...pairs],
+                        0,
+                        false,
+                      );
                       setPairs(picked);
                       toast.message(
                         `Synced majors + heat: ${picked.map((id) => pairBase(id)).join(" · ")}`,
@@ -512,13 +517,13 @@ export function SettingsPanel() {
                 </div>
               </div>
               <p className="text-2xs text-subtle">
-                Core majors should stay lit (ETH SOL …). Heat is a small meme pocket. Tap
-                &quot;Sync majors + heat&quot; if only memes are highlighted. xStocks are tokenized
-                NVDA/TSLA/AAPL/SPY on Kraken (not available in the US). Nothing here is a promise.
-                Memes can go to zero.
+                Core majors stay lit (ETH SOL …). Heat auto-scouts liquid Kraken USD risers
+                (ZEC, memes, etc.) every few minutes — not only the starter list. Tap Sync to
+                merge majors + latest scout. xStocks are tokenized NVDA/TSLA/AAPL/SPY on Kraken
+                (not available in the US). Nothing here is a promise. Memes can go to zero.
               </p>
               {(["core", "heat", "stock"] as BookSleeve[]).map((sleeve) => {
-                const sleeveIds = PAIRS.filter((p) => p.sleeve === sleeve).map((p) => p.id);
+                const sleeveIds = listBookPairs(sleeve).map((p) => p.id);
                 const allOn = sleeveIds.every((id) => pairs.includes(id));
                 return (
                 <div key={sleeve}>
@@ -552,7 +557,7 @@ export function SettingsPanel() {
                     </Button>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {PAIRS.filter((p) => p.sleeve === sleeve).map((p) => {
+                    {listBookPairs(sleeve).map((p) => {
                       const on = pairs.includes(p.id);
                       return (
                         <Button

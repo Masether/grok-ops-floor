@@ -60,6 +60,7 @@ export type PairId =
   | "BONKUSD"
   | "FLOKIUSD"
   | "PENGUUSD"
+  | "ZECUSD"
   | "NVDAxUSD"
   | "TSLAxUSD"
   | "AAPLxUSD"

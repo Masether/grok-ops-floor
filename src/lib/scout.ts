@@ -3,8 +3,10 @@
 import { getPair } from "./kraken.ts";
 
 export const MIN_LIQUIDITY_USD = 5_000;
-export const SCOUT_KEEP = 16;
+export const SCOUT_KEEP = 24;
 export const MEME_WATCH_CAP = 64;
+/** Top momentum heat names merged into the live book each scout. */
+export const TREND_HEAT_KEEP = 18;
 
 export type ScoutHit = {
   pair: string;
@@ -26,6 +28,10 @@ export function isKrakenMeme(hit: ScoutHit): boolean {
   return true;
 }
 
+function momentumScore(h: ScoutHit): number {
+  return Math.abs(h.changePct) * Math.log10(h.liquidity + 10);
+}
+
 export function rankScout(hits: ScoutHit[], minLiq = MIN_LIQUIDITY_USD): {
   kept: ScoutHit[];
   dropped: number;
@@ -34,16 +40,11 @@ export function rankScout(hits: ScoutHit[], minLiq = MIN_LIQUIDITY_USD): {
   const scanned = hits.length;
   const liquid = hits.filter((h) => h.liquidity >= minLiq && h.last > 0);
   const dropped = scanned - liquid.length;
-  const kept = [...liquid]
-    .sort(
-      (a, b) =>
-        b.changePct * Math.log10(b.liquidity + 10) - a.changePct * Math.log10(a.liquidity + 10),
-    )
-    .slice(0, SCOUT_KEEP);
+  const kept = [...liquid].sort((a, b) => momentumScore(b) - momentumScore(a)).slice(0, SCOUT_KEEP);
   return { kept, dropped, scanned };
 }
 
-/** Every liquid Kraken USD meme, hottest first. Not pump.fun — Kraken listed only. */
+/** Every liquid Kraken USD meme/alt-heat, hottest first. Not pump.fun — Kraken listed only. */
 export function rankMemeScout(hits: ScoutHit[], minLiq = MIN_LIQUIDITY_USD): {
   kept: ScoutHit[];
   dropped: number;
@@ -52,10 +53,23 @@ export function rankMemeScout(hits: ScoutHit[], minLiq = MIN_LIQUIDITY_USD): {
   const scanned = hits.length;
   const memes = hits.filter((h) => h.last > 0 && h.liquidity >= minLiq && isKrakenMeme(h));
   const dropped = scanned - memes.length;
-  const kept = [...memes].sort(
-    (a, b) =>
-      Math.abs(b.changePct) * Math.log10(b.liquidity + 10) -
-      Math.abs(a.changePct) * Math.log10(a.liquidity + 10),
-  );
+  const kept = [...memes].sort((a, b) => momentumScore(b) - momentumScore(a));
   return { kept: kept.slice(0, MEME_WATCH_CAP), dropped, scanned };
+}
+
+/**
+ * Trending heat for the live book: liquid non-core USD pairs ranked by |%|×log(liq).
+ * Prefer real movers (abs change ≥ 1.5%) but always fill up to TREND_HEAT_KEEP.
+ */
+export function rankTrendHeat(hits: ScoutHit[], minLiq = MIN_LIQUIDITY_USD): ScoutHit[] {
+  const heat = hits.filter((h) => {
+    if (!(h.last > 0) || h.liquidity < minLiq) return false;
+    if (!isKrakenMeme(h)) return false;
+    const def = getPair(h.pair);
+    if (def?.sleeve === "stock") return false;
+    return true;
+  });
+  const movers = heat.filter((h) => Math.abs(h.changePct) >= 1.5);
+  const pool = movers.length >= 8 ? movers : heat;
+  return [...pool].sort((a, b) => momentumScore(b) - momentumScore(a)).slice(0, TREND_HEAT_KEEP);
 }

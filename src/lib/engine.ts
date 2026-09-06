@@ -11,7 +11,7 @@ import { hugeSpike, volumeRatio } from "./spike-alert.ts";
 import { blendTaker, closePnlFromCost, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, reconcileClosePnl, remainLotBasis, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
 import { autoBotReady } from "./auto-bot.ts";
-import { rankMemeScout, rankScout } from "./scout.ts";
+import { rankMemeScout, rankScout, rankTrendHeat } from "./scout.ts";
 import { AWAY_MAX_MS, AWAY_MIN_MS, replayAway, type AwayBar, type AwayReport } from "./catch-up.ts";
 import { getLiveVenue } from "./venues/index.ts";
 import { connectTickerFeed } from "./kraken-ws.ts";
@@ -444,23 +444,25 @@ function runSimTick() {
 async function runScout() {
   const s = useFloor.getState();
   if (!s.launched || !s.floorOpen) return;
-  if (s.lastScoutAt && Date.now() - s.lastScoutAt < (!modOn("core") ? 3 * 60_000 : 10 * 60_000)) return;
+  // Heat/trending refresh often enough that ZEC-style rippers land on the book.
+  if (s.lastScoutAt && Date.now() - s.lastScoutAt < (!modOn("core") ? 3 * 60_000 : 5 * 60_000)) return;
   bumpAgent("hunter", "scout Kraken memes", 1);
   try {
     const res = await fetchUsdUniverse();
     for (const def of res.defs) registerPair(def);
     const ranked = !modOn("core") ? rankMemeScout(res.hits) : rankScout(res.hits);
-    const { kept, dropped, scanned } = ranked;
-    const hot = kept
+    const { dropped, scanned } = ranked;
+    const trend = rankTrendHeat(res.hits);
+    const hot = trend
       .map((h) => (getPair(h.pair) ? (h.pair as PairId) : null))
-      .filter((id): id is PairId => Boolean(id) && getPair(id!)?.sleeve === "heat");
+      .filter((id): id is PairId => Boolean(id));
     const btcPx = s.tickers.XBTUSD?.last ?? 0;
     const btcUsd = btcOnBook(s.liveBalance) * btcPx;
     // Never replace the user's book with heat-only. Hot memes append; majors stay.
     const nextPairs = liveWatchPairs(
       [...(s.pairs.length ? s.pairs : DEFAULT_PAIRS), ...hot],
       btcUsd,
-      false,
+      !modOn("core"),
     );
     const bookChanged = nextPairs.length !== s.pairs.length || nextPairs.some((id, i) => id !== s.pairs[i]);
     patch({

@@ -191,6 +191,16 @@ export const PAIRS: PairDef[] = [
     ordermin: 700,
     sleeve: "heat",
   }),
+  p("ZECUSD", {
+    kraken: "ZECUSD",
+    wsSymbol: "ZEC/USD",
+    resultKeys: ["XZECZUSD", "ZECUSD"],
+    base: "ZEC",
+    label: "ZEC/USD",
+    decimals: 4,
+    ordermin: 0.01,
+    sleeve: "heat",
+  }),
   p("NVDAxUSD", {
     kraken: "NVDAxUSD",
     wsSymbol: "NVDAx/USD",
@@ -296,6 +306,13 @@ export const DEFAULT_PAIRS: PairId[] = [
 export const HEAT_PAIRS: PairId[] = PAIRS.filter((d) => d.sleeve === "heat").map((d) => d.id);
 export const HEAT_MAX_LOTS = 6;
 
+/** Hardcoded + scout-registered USD pairs for settings / book UI. */
+export function listBookPairs(sleeve?: BookSleeve): PairDef[] {
+  const extras = Object.values(extraPairs);
+  const all = [...PAIRS, ...extras.filter((d) => !PAIRS.some((p) => p.id === d.id))];
+  return sleeve ? all.filter((d) => d.sleeve === sleeve) : all;
+}
+
 export function heatUniverse(existing: PairId[] = []): PairId[] {
   const extra = Object.values(extraPairs)
     .filter((d) => d.sleeve === "heat" && d.quote !== "XBT" && d.quote !== "BTC")
@@ -328,6 +345,7 @@ export const SEED_PRICE: Record<PairId, number> = {
   BONKUSD: 0.000019,
   FLOKIUSD: 0.000055,
   PENGUUSD: 0.018,
+  ZECUSD: 1100,
   NVDAxUSD: 178,
   TSLAxUSD: 340,
   AAPLxUSD: 228,
@@ -419,7 +437,7 @@ export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = f
     const seed = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD").slice(0, 4);
     return [...new Set([...seed, ...heat])]
       .filter((id) => Boolean(getPair(id)))
-      .slice(0, 24) as PairId[];
+      .slice(0, 36) as PairId[];
   }
   const seed =
     existing.length > 0
@@ -440,5 +458,5 @@ export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = f
       if (existing.includes(id) && !book.includes(id)) book.push(id);
     }
   }
-  return [...new Set(book)].slice(0, 24) as PairId[];
+  return [...new Set(book)].slice(0, 36) as PairId[];
 }
