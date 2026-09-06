@@ -8,7 +8,7 @@ import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
 import { industryCall } from "./industry-call.ts";
 import { hugeSpike, volumeRatio } from "./spike-alert.ts";
-import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, reconcileClosePnl, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
+import { blendTaker, closePnlFromCost, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, reconcileClosePnl, remainLotBasis, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
 import { autoBotReady } from "./auto-bot.ts";
 import { rankMemeScout, rankScout } from "./scout.ts";
@@ -1793,25 +1793,36 @@ function applyFill(order: Order) {
       }
       const sellQty = Math.min(order.qty, existing.qty);
       const entryPx = resolveLotEntry(existing);
-      const pnl = netPnl({
+      const pnl = closePnlFromCost({
+        costUsd: existing.costUsd,
+        lotQty: existing.qty,
+        sellQty,
         entry: entryPx,
         exit: fill,
-        qty: sellQty,
-        taker,
-        entryFee: existing.fee,
+        lotFee: existing.fee,
         exitFee: fee,
+        taker,
       });
       closePnl = pnl;
       realized += pnl;
       if (!liveFill) cash += fill * sellQty - fee;
       if (sellQty + 1e-12 < existing.qty) {
         const remain = existing.qty - sellQty;
-        const remainNet = netPnl({
+        const basis = remainLotBasis({
+          costUsd: existing.costUsd,
+          fee: existing.fee,
+          entry: existing.entry,
+          lotQty: existing.qty,
+          sellQty,
+        });
+        const remainNet = closePnlFromCost({
+          costUsd: basis.costUsd,
+          lotQty: remain,
+          sellQty: remain,
           entry: existing.entry,
           exit: fill,
-          qty: remain,
+          lotFee: basis.fee,
           taker,
-          entryFee: existing.fee,
         });
         const heatBank = /HEAT BANK/i.test(order.reason);
         positions = positions.map((p) =>
@@ -1820,6 +1831,8 @@ function applyFill(order: Order) {
                 ...p,
                 qty: remain,
                 mark: fill,
+                costUsd: basis.costUsd,
+                fee: basis.fee,
                 banked: p.banked || heatBank,
                 peakPnlUsd: remainNet,
               }
@@ -2041,12 +2054,14 @@ function manageOpenLot(
   );
   const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
   const taker = takerPct(quote, liveTaker);
-  const net = netPnl({
+  const net = closePnlFromCost({
+    costUsd: p.costUsd,
+    lotQty: p.qty,
+    sellQty: p.qty,
     entry: resolveLotEntry(p),
     exit: p.mark,
-    qty: p.qty,
+    lotFee: p.fee,
     taker,
-    entryFee: p.fee,
   });
   if (heat) {
     if (m.action === "hold") return { action: "hold", stop: m.stop, sellFrac: 0 };
@@ -2076,12 +2091,14 @@ function checkStops() {
     const mark = s.tickers[p.pair]?.last ?? p.mark;
     const def = getPair(p.pair) ?? PAIR_BY_ID[p.pair];
     const taker = takerPct(def?.quote ?? "USD", s.liveTakerPct);
-    const net = netPnl({
+    const net = closePnlFromCost({
+      costUsd: p.costUsd,
+      lotQty: p.qty,
+      sellQty: p.qty,
       entry: resolveLotEntry(p),
       exit: mark,
-      qty: p.qty,
+      lotFee: p.fee,
       taker,
-      entryFee: p.fee,
     });
     const peakPnlUsd = Math.max(p.peakPnlUsd ?? net, net);
     const pb = asPlaybook(p.book);

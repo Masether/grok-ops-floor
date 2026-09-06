@@ -145,3 +145,71 @@ export function reconcileClosePnl(input: {
     exitFee: input.exitFee,
   });
 }
+
+/**
+ * Prefer fee-inclusive costUsd when closing (partial or full).
+ * Avoids double-counting entry fee vs entry*qty+fee, and pro-rates partials.
+ */
+export function closePnlFromCost(input: {
+  costUsd?: number;
+  lotQty: number;
+  sellQty: number;
+  entry: number;
+  exit: number;
+  lotFee?: number;
+  exitFee?: number;
+  taker: number;
+}): number {
+  const sellQty = input.sellQty;
+  const lotQty = input.lotQty;
+  if (!(sellQty > 0) || !(lotQty > 0) || !(input.exit > 0)) return 0;
+  const frac = Math.min(1, sellQty / lotQty);
+  const cost =
+    typeof input.costUsd === "number" && input.costUsd > 0
+      ? input.costUsd
+      : input.entry > 0
+        ? input.entry * lotQty + Math.max(0, input.lotFee ?? 0)
+        : 0;
+  if (!(cost > 0)) {
+    const feeShare =
+      typeof input.lotFee === "number" && input.lotFee > 0 ? input.lotFee * frac : undefined;
+    return netPnl({
+      entry: input.entry,
+      exit: input.exit,
+      qty: sellQty,
+      taker: input.taker,
+      entryFee: feeShare,
+      exitFee: input.exitFee,
+    });
+  }
+  const costSold = cost * frac;
+  const exitFee =
+    input.exitFee ??
+    (input.taker > 0 ? feeOn(input.exit * sellQty, input.taker) : 0);
+  const net = input.exit * sellQty - exitFee - costSold;
+  return Number.isFinite(net) ? net : 0;
+}
+
+/** Remaining costUsd / fee after selling sellQty of lotQty. */
+export function remainLotBasis(input: {
+  costUsd?: number;
+  fee?: number;
+  entry: number;
+  lotQty: number;
+  sellQty: number;
+}): { costUsd: number; fee: number } {
+  const lotQty = input.lotQty;
+  const sellQty = input.sellQty;
+  const remain = Math.max(0, lotQty - sellQty);
+  if (!(lotQty > 0) || remain <= 0) return { costUsd: 0, fee: 0 };
+  const fracRemain = remain / lotQty;
+  const fullCost =
+    typeof input.costUsd === "number" && input.costUsd > 0
+      ? input.costUsd
+      : input.entry * lotQty + Math.max(0, input.fee ?? 0);
+  const fullFee = Math.max(0, input.fee ?? 0);
+  return {
+    costUsd: fullCost * fracRemain,
+    fee: fullFee * fracRemain,
+  };
+}

@@ -11,7 +11,9 @@ import {
   minTakePct,
   netPnl,
   resolveLotEntry,
+  closePnlFromCost,
   reconcileClosePnl,
+  remainLotBasis,
 } from "./fees.ts";
 
 describe("fees", () => {
@@ -53,5 +55,68 @@ describe("reconcileClosePnl", () => {
     const b = netPnl({ entry: 100, exit: 102.5, qty: 1, taker: 0.008, exitFee: 0.82 });
     assert.equal(a, b);
     assert.ok(a < 2.5);
+  });
+});
+
+
+describe("closePnlFromCost + remainLotBasis", () => {
+  it("full close: exit proceeds minus costUsd (entry fee already in cost)", () => {
+    // Bought $100 + $0.80 fee = costUsd 100.80; sell $110 exit fee $0.88
+    const pnl = closePnlFromCost({
+      costUsd: 100.8,
+      lotQty: 1,
+      sellQty: 1,
+      entry: 100,
+      exit: 110,
+      lotFee: 0.8,
+      exitFee: 0.88,
+      taker: 0.008,
+    });
+    assert.ok(Math.abs(pnl - (110 - 0.88 - 100.8)) < 1e-9);
+  });
+
+  it("partial GRID out pro-rates cost so remaining open is not fake-red", () => {
+    const lotQty = 2;
+    const sellQty = 1;
+    const costUsd = 201.6; // 2 * (100 + 0.8)
+    const pnl = closePnlFromCost({
+      costUsd,
+      lotQty,
+      sellQty,
+      entry: 100,
+      exit: 100,
+      lotFee: 1.6,
+      exitFee: 0.8,
+      taker: 0.008,
+    });
+    // Flat exit: sell half cost 100.8, get 100 - 0.8 = 99.2 → pnl -1.6 (fees)
+    assert.ok(pnl < 0);
+    const remain = remainLotBasis({
+      costUsd,
+      fee: 1.6,
+      entry: 100,
+      lotQty,
+      sellQty,
+    });
+    assert.ok(Math.abs(remain.costUsd - 100.8) < 1e-9);
+    assert.ok(Math.abs(remain.fee - 0.8) < 1e-9);
+    // Mark flat on remainder: unrealized = 100*1 - 100.8 = -0.8 (entry fee only), not -100+
+    const open = 100 * 1 - remain.costUsd;
+    assert.ok(Math.abs(open - -0.8) < 1e-9);
+  });
+
+  it("does not double-count entry fee when costUsd already includes it", () => {
+    const withCost = closePnlFromCost({
+      costUsd: 100.8,
+      lotQty: 1,
+      sellQty: 1,
+      entry: 100,
+      exit: 100,
+      lotFee: 0.8,
+      exitFee: 0.8,
+      taker: 0.008,
+    });
+    // Wrong double-count would be ~-1.6 extra; correct is 100 - 0.8 - 100.8 = -1.6 total fees once
+    assert.ok(Math.abs(withCost - -1.6) < 1e-9);
   });
 });
