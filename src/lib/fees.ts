@@ -125,3 +125,23 @@ export function feeAwareStops(
     takePct,
   };
 }
+
+
+/** Rebuild close PnL from a known entry + Kraken fill facts. */
+export function reconcileClosePnl(input: {
+  entry: number;
+  exit: number;
+  qty: number;
+  taker: number;
+  entryFee?: number;
+  exitFee?: number;
+}): number {
+  return netPnl({
+    entry: input.entry,
+    exit: input.exit,
+    qty: input.qty,
+    taker: input.taker,
+    entryFee: input.entryFee,
+    exitFee: input.exitFee,
+  });
+}

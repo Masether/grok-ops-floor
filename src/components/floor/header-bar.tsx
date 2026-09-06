@@ -58,12 +58,15 @@ export function HeaderBar() {
   for (const p of pairs) last[p] = tickers[p]?.last;
   const walletUsd = fundingCash + vaultMark(vault, last);
   const live = deskIsLive({ mode, liveArmed, liveBalance });
-  const profit = sessionProfit(desk.realized, desk.unrealized);
+  // Live: sleeve day change from Kraken wallet facts. Paper: journal closed+open.
+  const profit = live ? desk.dayPnl : sessionProfit(desk.realized, desk.unrealized);
   const krakenUsd = usdOnBook(liveBalance);
   const barBase = live ? liveBudget : startingCash;
   const barPct = profitBarPct(profit, barBase);
   const spark = equityHistory.slice(-40);
-  const sparkVals = spark.map((p) => sessionProfit(desk.realized, p.unrealized));
+  const sparkVals = spark.map((p) =>
+    live ? p.equity - (equityHistory[0]?.equity ?? p.equity) : sessionProfit(desk.realized, p.unrealized),
+  );
   const range = pnlRange(sparkVals, profit);
   const sparkMin = Math.min(range.low, 0);
   const sparkMax = Math.max(range.high, 0);
@@ -74,7 +77,7 @@ export function HeaderBar() {
       <div className="border-b border-border px-3 py-1.5 lg:px-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
-            Live PnL
+            {live ? "Sleeve PnL" : "Live PnL"}
           </span>
           <span
             className={cn(
@@ -85,8 +88,20 @@ export function HeaderBar() {
             {profit >= 0 ? "+" : ""}
             {moneyFull(profit)}
             <span className="ml-2 text-micro text-subtle">
-              {clockHms(now - (shiftStartedAt || now))} running · closed {money(desk.realized)} · open{" "}
-              {money(desk.unrealized)} · H {money(range.high)} · L {money(range.low)}
+              {clockHms(now - (shiftStartedAt || now))} running
+              {live ? (
+                <>
+                  {" "}
+                  · Kraken USD {money(krakenUsd)} · closed {money(desk.realized)} · open{" "}
+                  {money(desk.unrealized)}
+                </>
+              ) : (
+                <>
+                  {" "}
+                  · closed {money(desk.realized)} · open {money(desk.unrealized)} · H {money(range.high)} · L{" "}
+                  {money(range.low)}
+                </>
+              )}
             </span>
           </span>
         </div>

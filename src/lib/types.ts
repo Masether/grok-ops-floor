@@ -144,6 +144,8 @@ export type Order = {
   fillPrice?: number;
   fee?: number;
   pnl?: number;
+  /** Avg entry used when this order closed a lot (for Kraken fee settle). */
+  entryPrice?: number;
   krakenTxid?: string;
   book?: "scalp" | "grid" | "dca";
 };

@@ -11,6 +11,7 @@ import {
   minTakePct,
   netPnl,
   resolveLotEntry,
+  reconcileClosePnl,
 } from "./fees.ts";
 
 describe("fees", () => {
@@ -43,5 +44,14 @@ describe("resolveLotEntry + netPnl guards", () => {
     assert.equal(netPnl({ entry: 0, exit: 10, qty: 2, taker: 0.008 }), 0);
     const ok = netPnl({ entry: 20, exit: 21, qty: 1, taker: 0.008 });
     assert.ok(ok < 1 && ok > 0);
+  });
+});
+
+describe("reconcileClosePnl", () => {
+  it("matches netPnl with an explicit exit fee from Kraken", () => {
+    const a = reconcileClosePnl({ entry: 100, exit: 102.5, qty: 1, taker: 0.008, exitFee: 0.82 });
+    const b = netPnl({ entry: 100, exit: 102.5, qty: 1, taker: 0.008, exitFee: 0.82 });
+    assert.equal(a, b);
+    assert.ok(a < 2.5);
   });
 });

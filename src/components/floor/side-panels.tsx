@@ -314,7 +314,7 @@ export function TheDesk() {
           tone={toneOf(desk.unrealized)}
         />
         <BookStat
-          k="Realized"
+          k="Closed"
           v={`${money(desk.realized)} ${pct(realPct, 1)}`}
           tone={toneOf(desk.realized)}
         />

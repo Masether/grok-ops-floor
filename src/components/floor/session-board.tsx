@@ -16,7 +16,7 @@ export function SessionBoard() {
   const now = useNow();
 
   const live = mode === "live" || liveArmed;
-  const profit = sessionProfit(desk.realized, desk.unrealized);
+  const profit = live ? desk.dayPnl : sessionProfit(desk.realized, desk.unrealized);
   const startEq = history[0]?.equity ?? desk.equity - profit;
   const running = clockHms(now - (shiftStartedAt || now));
   const stale = lastEngineAt > 0 && now - lastEngineAt > 120_000;
@@ -60,7 +60,7 @@ export function SessionBoard() {
             {moneyFull(profit)}
           </p>
           <p className="stat-num text-micro text-subtle">
-            closed {money(desk.realized)} · open {money(desk.unrealized)} · {takes} take · {stops}{" "}
+            closed {money(desk.realized)} after fees · open {money(desk.unrealized)} · {takes} take · {stops}{" "}
             stop
           </p>
         </div>

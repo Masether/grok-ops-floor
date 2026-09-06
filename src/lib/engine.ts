@@ -8,7 +8,7 @@ import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
 import { industryCall } from "./industry-call.ts";
 import { hugeSpike, volumeRatio } from "./spike-alert.ts";
-import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
+import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, reconcileClosePnl, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
 import { autoBotReady } from "./auto-bot.ts";
 import { rankMemeScout, rankScout } from "./scout.ts";
@@ -1634,26 +1634,89 @@ async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiS
   try {
     await new Promise((r) => setTimeout(r, 600));
     const q = await fetchOrderFill({ data: { apiKey, apiSecret, txid } });
-    if (!(q.fee > 0)) return;
+    if (!(q.fee > 0) && !(q.price > 0) && !(q.cost > 0)) return;
     const notion = q.cost > 0 ? q.cost : 0;
-    const sample = learnTaker(notion || 1, q.fee);
+    const sample = q.fee > 0 ? learnTaker(notion || 1, q.fee) : 0;
     useFloor.setState((s) => {
-      const orders = s.orders.map((o) => (o.id === orderId ? { ...o, fee: q.fee } : o));
+      const prev = s.orders.find((o) => o.id === orderId);
+      if (!prev) {
+        return sample > 0 ? { liveTakerPct: blendTaker(s.liveTakerPct, sample) } : {};
+      }
+      const fillPx =
+        q.price > 0 ? q.price : (prev.fillPrice ?? prev.price);
+      const fee = q.fee > 0 ? q.fee : (prev.fee ?? 0);
+      const qty = q.vol > 0 ? q.vol : prev.qty;
+      let pnl = prev.pnl;
+      let realized = s.realized;
+      let lifetimePnl = s.lifetimePnl;
+      if (prev.side === "sell" && prev.status === "filled") {
+        const entryPx = resolveLotEntry({ entry: prev.entryPrice, qty });
+        if (entryPx > 0 && fillPx > 0 && qty > 0) {
+          const nextPnl = reconcileClosePnl({
+            entry: entryPx,
+            exit: fillPx,
+            qty,
+            taker: takerPct(getPair(prev.pair)?.quote ?? "USD", s.liveTakerPct),
+            exitFee: fee > 0 ? fee : undefined,
+          });
+          const prior = typeof prev.pnl === "number" && Number.isFinite(prev.pnl) ? prev.pnl : 0;
+          const delta = nextPnl - prior;
+          pnl = nextPnl;
+          realized = s.realized + delta;
+          lifetimePnl = s.lifetimePnl + delta;
+        }
+      }
+      const orders = s.orders.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              fee,
+              fillPrice: fillPx,
+              qty,
+              pnl,
+              entryPrice: o.entryPrice ?? prev.entryPrice,
+            }
+          : o,
+      );
       const order = orders.find((o) => o.id === orderId);
       const positions = s.positions.map((p) =>
         order && p.pair === order.pair && order.side === "buy"
-          ? { ...p, fee: q.fee }
+          ? { ...p, fee, entry: p.entry > 0 ? p.entry : fillPx }
           : p,
       );
       return {
         orders,
         positions,
-        liveTakerPct: blendTaker(s.liveTakerPct, sample),
+        realized,
+        lifetimePnl,
+        liveTakerPct: sample > 0 ? blendTaker(s.liveTakerPct, sample) : s.liveTakerPct,
       };
     });
-    bumpAgent("treasury", `Kraken fee ${q.fee.toFixed(2)}`, 0.7);
+    const settled = useFloor.getState().orders.find((o) => o.id === orderId);
+    const settledPnl = settled?.side === "sell" && typeof settled.pnl === "number" ? settled.pnl : null;
+    if (settledPnl != null && settledPnl >= PROFIT_SHOW_MIN_USD) {
+      profitShowHoldUntil = profitShowUntil(Date.now());
+      toastKrakenWin(settledPnl);
+      pushEvent({
+        agent: "treasury",
+        stage: "signed",
+        title: `WIN ${money(settledPnl)}`,
+        detail: "Kraken fill + fees · USD on Kraken — look before the next buy",
+        tone: "good",
+      });
+      if (useFloor.getState().autoSweep) {
+        useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + settledPnl }));
+      }
+    } else {
+      bumpAgent(
+        "treasury",
+        q.fee > 0 ? `Kraken fee ${q.fee.toFixed(2)} · PnL settled` : "Kraken fill settled",
+        0.7,
+      );
+    }
+    void refreshTreasury();
   } catch {
-    /* estimate stands */
+    /* estimate stands until next treasury poll */
   }
 }
 
@@ -1782,12 +1845,16 @@ function applyFill(order: Order) {
     }
     const lifetimePnl =
       closePnl != null && Number.isFinite(closePnl) ? s.lifetimePnl + closePnl : s.lifetimePnl;
+    const entryPrice =
+      order.side === "sell" && existing
+        ? resolveLotEntry(existing)
+        : order.entryPrice;
     return {
       cash,
       realized,
       lifetimePnl,
       positions,
-      orders: [{ ...order, fee, reason, pnl: closePnl }, ...s.orders].slice(0, 80),
+      orders: [{ ...order, fee, reason, pnl: closePnl, entryPrice }, ...s.orders].slice(0, 80),
       pendingLive: null,
     };
   });
@@ -1828,21 +1895,9 @@ function applyFill(order: Order) {
   sampleEquity(true);
   toastOrderFill(order, closePnl);
   if (closePnl != null && closePnl >= PROFIT_SHOW_MIN_USD) {
-    const profit = closePnl;
     if (order.mode === "live") {
-      // Let the USD hit show on Kraken before the next buy — not forever, just a look.
+      // Hold new buys until Kraken fee settle rewrites PnL — then toast the real number.
       profitShowHoldUntil = profitShowUntil(Date.now());
-      toastKrakenWin(profit);
-      pushEvent({
-        agent: "treasury",
-        stage: "signed",
-        title: `WIN ${money(profit)}`,
-        detail: "After fees · USD on Kraken — desk pauses new buys so you can see it",
-        tone: "good",
-      });
-      if (useFloor.getState().autoSweep) {
-        useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + profit }));
-      }
     } else if (useFloor.getState().autoSweep) {
       const swept = useFloor.getState().sweepProfit();
       if (swept.ok) {
