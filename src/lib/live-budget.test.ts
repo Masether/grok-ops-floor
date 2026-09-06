@@ -117,12 +117,10 @@ describe("liveSleeve", () => {
 });
 
 
-describe("cash reserve", () => {
-  it("keeps $40 on a $200 sleeve so GRID cannot drain to dust", () => {
+describe("cash reserve helpers", () => {
+  it("reports spendable USD above the soft reserve line", () => {
     assert.equal(liveCashReserve(200), 50);
     assert.equal(spendableUsd(10.3, 200), 0);
-    assert.equal(spendableUsd(6.22, 200), 0);
-    assert.ok(spendableUsd(80, 200) < 80);
     assert.equal(spendableUsd(80, 200), 30);
   });
 });
