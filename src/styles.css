@@ -142,6 +142,24 @@
     font-size: 0.75rem;
   }
 
+  /* Post-win banner: phone-friendly Continue / Check Kraken actions */
+  .trade-toast-win {
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    row-gap: 10px;
+  }
+
+  .trade-toast-win [data-content] {
+    flex: 1 1 auto;
+    min-width: min(100%, 12rem);
+  }
+
+  .trade-toast-win [data-button],
+  .trade-toast-win [data-cancel] {
+    min-height: 36px;
+    flex: 1 1 auto;
+  }
+
   @keyframes desk-stop-flash {
     0%,
     100% {

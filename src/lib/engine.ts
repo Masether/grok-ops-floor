@@ -39,7 +39,7 @@ import { isBudgetDayLeak, isPaperDayLeak } from "./book-sync.ts";
 import {
   PROFIT_SHOW_MIN_USD,
   profitShowBlocksBuys,
-  profitShowSecsLeft,
+  profitShowHoldWhy,
   profitShowUntil,
 } from "./profit-show.ts";
 import { btcOnBook, hasKrakenBook, isSyncedLot, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
@@ -88,6 +88,8 @@ const lastSignalAt = new Map<PairId, number>();
 let running = false;
 /** Pause new buys so a live win is visible as Kraken USD first. */
 let profitShowHoldUntil = 0;
+/** Sticky: user tapped Check Kraken — no auto-timeout until Continue buy. */
+let profitShowSticky = false;
 let timers: number[] = [];
 let stopWs: (() => void) | null = null;
 let lastEquitySample = 0;
@@ -1349,11 +1351,10 @@ function sizeTicket(
     return { ok: true, qty: existing.qty, side: "sell" };
   }
 
-  if (live && profitShowBlocksBuys(Date.now(), profitShowHoldUntil)) {
-    const secs = profitShowSecsLeft(Date.now(), profitShowHoldUntil);
+  if (live && profitShowBlocksBuys(Date.now(), profitShowHoldUntil, profitShowSticky)) {
     return {
       ok: false,
-      why: `win sitting as Kraken USD — look first, new buys in ${secs}s`,
+      why: profitShowHoldWhy(Date.now(), profitShowHoldUntil, profitShowSticky),
     };
   }
 
@@ -1821,6 +1822,7 @@ async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiS
       };
     });
     if (announcedWin != null) {
+      profitShowSticky = false;
       profitShowHoldUntil = profitShowUntil(Date.now());
       toastKrakenWin(announcedWin);
       pushEvent({
@@ -2044,6 +2046,7 @@ function applyFill(order: Order) {
   if (closePnl != null && closePnl >= PROFIT_SHOW_MIN_USD) {
     if (order.mode === "live") {
       // Hold new buys until Kraken fee settle rewrites PnL — then toast the real number.
+      profitShowSticky = false;
       profitShowHoldUntil = profitShowUntil(Date.now());
     } else if (useFloor.getState().autoSweep) {
       const swept = useFloor.getState().sweepProfit();
@@ -2427,6 +2430,18 @@ export async function scanLiveTape(): Promise<{ ok: true; acted: boolean; note: 
 
 export async function runDemoTicket() {
   return scanLiveTape();
+}
+
+/** Clear the post-win buy hold so the desk can buy again. */
+export function releaseProfitShowBuys() {
+  profitShowHoldUntil = 0;
+  profitShowSticky = false;
+}
+
+/** Keep buys blocked until Continue; refresh Free USD from Kraken. */
+export function holdProfitShowForKrakenCheck() {
+  profitShowSticky = true;
+  void refreshTreasury();
 }
 
 export async function refreshTreasury() {

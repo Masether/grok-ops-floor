@@ -1,11 +1,18 @@
+import { type CSSProperties, type MouseEvent } from "react";
 import { toast } from "sonner";
 import { money, px, qty } from "./format.ts";
 import { PAIR_BY_ID } from "./kraken.ts";
+import { PROFIT_SHOW_MS } from "./profit-show.ts";
 import { useFloor } from "./store.ts";
 import type { Order, Side, TradeMode } from "./types.ts";
 
 export type TradeToastPriority = 1 | 2 | 3;
 export type TradeToastTone = "danger" | "good" | "warn" | "info";
+
+export type TradeToastAction = {
+  label: string;
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void;
+};
 
 export type TradeToastInput = {
   priority: TradeToastPriority;
@@ -13,6 +20,12 @@ export type TradeToastInput = {
   detail?: string;
   tone: TradeToastTone;
   id?: string;
+  /** Override priority default duration (use Infinity to stick). */
+  durationMs?: number;
+  action?: TradeToastAction;
+  cancel?: TradeToastAction;
+  /** Extra class on the toast (e.g. trade-toast-win). */
+  className?: string;
 };
 
 export const TRADE_TOAST_DURATION_MS: Record<TradeToastPriority, number> = {
@@ -182,6 +195,37 @@ function toneStyle(tone: TradeToastTone): Record<string, string> {
   };
 }
 
+function actionBtnStyle(tone: TradeToastTone): CSSProperties {
+  const color = TONE_COLOR[tone];
+  return {
+    background: `color-mix(in oklab, ${color} 22%, transparent)`,
+    color,
+    border: `1px solid color-mix(in oklab, ${color} 45%, transparent)`,
+    fontFamily: "var(--font-display)",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    minHeight: 36,
+    padding: "0 12px",
+  };
+}
+
+function cancelBtnStyle(): CSSProperties {
+  return {
+    background: "rgba(255,255,255,0.08)",
+    color: "#e8edf5",
+    border: "1px solid rgba(255,255,255,0.14)",
+    fontFamily: "var(--font-display)",
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    minHeight: 36,
+    padding: "0 12px",
+  };
+}
+
 function showOne(input: TradeToastInput) {
   const key = toastDedupeKey(input);
   if (active.some((row) => row.key === key)) return;
@@ -194,18 +238,32 @@ function showOne(input: TradeToastInput) {
     }
   }
 
-  const duration = TRADE_TOAST_DURATION_MS[input.priority];
+  const duration = input.durationMs ?? TRADE_TOAST_DURATION_MS[input.priority];
   const id = input.id ?? key;
-  const payload = {
+  const payload: Parameters<typeof toast.message>[1] = {
     id,
     description: input.detail,
     duration,
     style: toneStyle(input.tone),
-    className: `trade-toast trade-toast-p${input.priority}`,
+    className: `trade-toast trade-toast-p${input.priority}${input.className ? ` ${input.className}` : ""}`,
     closeButton: input.priority === 1,
     onAutoClose: () => dropActive(id),
     onDismiss: () => dropActive(id),
   };
+  if (input.action) {
+    payload.action = {
+      label: input.action.label,
+      onClick: input.action.onClick,
+    };
+    payload.actionButtonStyle = actionBtnStyle(input.tone);
+  }
+  if (input.cancel) {
+    payload.cancel = {
+      label: input.cancel.label,
+      onClick: input.cancel.onClick,
+    };
+    payload.cancelButtonStyle = cancelBtnStyle();
+  }
 
   const shown =
     input.tone === "danger"
@@ -278,14 +336,65 @@ export function toastSweep(amount: number): void {
   });
 }
 
+function callReleaseProfitShowBuys() {
+  void import("./engine-call.ts").then((m) => m.releaseProfitShowBuys());
+}
+
+function callHoldProfitShowForKrakenCheck() {
+  void import("./engine-call.ts").then((m) => m.holdProfitShowForKrakenCheck());
+}
+
+function showStickyKrakenWin(amount: number, id: string) {
+  const title = `YOU MADE ${money(amount)}`;
+  const key = toastDedupeKey({ title, detail: "sticky", id });
+  dropActive(id);
+  const payload = {
+    id,
+    description: "Free USD refreshing — tap Continue buy when ready",
+    duration: Number.POSITIVE_INFINITY,
+    style: toneStyle("good"),
+    className: "trade-toast trade-toast-p2 trade-toast-win",
+    closeButton: false,
+    dismissible: false,
+    action: {
+      label: "Continue buy",
+      onClick: () => {
+        callReleaseProfitShowBuys();
+      },
+    },
+    actionButtonStyle: actionBtnStyle("good"),
+    onAutoClose: () => dropActive(id),
+    onDismiss: () => dropActive(id),
+  };
+  const shown = toast.success(title, payload);
+  active.push({ id: shown, priority: 2, key });
+}
+
 /** Live win — make the USD hit obvious before the next buy. */
 export function toastKrakenWin(amount: number): void {
+  const id = `kraken-win-${Math.round(amount * 100)}-${Date.now() % 10_000}`;
   pushTradeToast({
     priority: 2,
     title: `YOU MADE ${money(amount)}`,
-    detail: "After fees · sitting as USD on Kraken — look, then the desk can buy again",
+    detail: "After fees · sitting as USD on Kraken — Continue buy, or check Free USD first",
     tone: "good",
-    id: `kraken-win-${Math.round(amount * 100)}-${Date.now() % 10_000}`,
+    id,
+    durationMs: PROFIT_SHOW_MS,
+    className: "trade-toast-win",
+    action: {
+      label: "Continue buy",
+      onClick: () => {
+        callReleaseProfitShowBuys();
+      },
+    },
+    cancel: {
+      label: "Check Kraken first",
+      onClick: () => {
+        callHoldProfitShowForKrakenCheck();
+        // cancel always dismisses — re-show sticky Continue-only banner
+        queueMicrotask(() => showStickyKrakenWin(amount, id));
+      },
+    },
   });
 }
 

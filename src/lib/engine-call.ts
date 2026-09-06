@@ -31,3 +31,12 @@ export function closeLot(...args: Parameters<typeof import("./engine.ts").closeL
 export function cancelPendingTicket() {
   return import("./engine.ts").then((m) => m.cancelPendingTicket());
 }
+
+export function releaseProfitShowBuys() {
+  return import("./engine.ts").then((m) => m.releaseProfitShowBuys());
+}
+
+export function holdProfitShowForKrakenCheck() {
+  return import("./engine.ts").then((m) => m.holdProfitShowForKrakenCheck());
+}
+
