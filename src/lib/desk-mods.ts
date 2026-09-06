@@ -2,7 +2,7 @@
 
 export const DESK_MOD_KEY = "ops-desk-mods";
 export const DESK_MOD_VER_KEY = "ops-desk-mods-ver";
-export const DESK_MOD_VER = "9";
+export const DESK_MOD_VER = "10";
 
 export const DESK_MODS = [
   { id: "live", label: "Kraken live tape", hint: "prices, candles, fills", group: "must", on: true },
@@ -53,7 +53,18 @@ export function loadDeskMods(): DeskModMap {
     /* keep defaults */
   }
   base.live = true;
+  // Never let a stale save leave the desk meme-stuck.
+  base.core = true;
+  base.grid = true;
+  base.dca = true;
   return base;
+}
+
+/** Force the trade sleeves that seed majors. */
+export function ensureCoreTradeMods() {
+  const next = { ...loadDeskMods(), live: true, core: true, grid: true, dca: true };
+  saveDeskMods(next);
+  return next;
 }
 
 export function saveDeskMods(mods: DeskModMap) {

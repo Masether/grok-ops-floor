@@ -407,9 +407,12 @@ async function runScout() {
       .filter((id): id is PairId => Boolean(id) && getPair(id!)?.sleeve === "heat");
     const btcPx = s.tickers.XBTUSD?.last ?? 0;
     const btcUsd = btcOnBook(s.liveBalance) * btcPx;
-    const nextPairs = !modOn("core")
-      ? heatUniverse([...s.pairs, ...hot])
-      : liveWatchPairs([...DEFAULT_PAIRS, ...s.pairs, ...hot], btcUsd, false);
+    // Never replace the user's book with heat-only. Hot memes append; majors stay.
+    const nextPairs = liveWatchPairs(
+      [...(s.pairs.length ? s.pairs : DEFAULT_PAIRS), ...hot],
+      btcUsd,
+      false,
+    );
     const bookChanged = nextPairs.length !== s.pairs.length || nextPairs.some((id, i) => id !== s.pairs[i]);
     patch({
       scoutHot: hot,
@@ -449,9 +452,9 @@ async function refreshOhlcAll() {
   const interval = 1;
   const open = new Set(s.positions.map((p) => p.pair));
   const universe = [...new Set([
-    ...(!modOn("core") ? heatUniverse(s.pairs) : s.pairs),
-    ...((modOn("scout") || !modOn("core")) ? (s.scoutHot ?? []) : []),
-    ...[...open].filter((id) => modOn("core") || pairSleeve(id) === "heat"),
+    ...s.pairs,
+    ...(modOn("scout") ? (s.scoutHot ?? []) : []),
+    ...open,
   ])];
   const ranked = universe
     .map((pair) => ({

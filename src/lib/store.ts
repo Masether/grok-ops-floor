@@ -548,11 +548,7 @@ export const useFloor = create<FloorState>()(
             floorOpen: true,
             autoSweep: true,
             playbooks: [...ALL_PLAYBOOKS],
-            pairs: liveWatchPairs(
-              [...defaultTradeBook(), ...s.pairs],
-              sleeve.btcUsd,
-              !modOn("core"),
-            ),
+            pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], sleeve.btcUsd, false),
             dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
           });
           return;
@@ -796,14 +792,15 @@ export const useFloor = create<FloorState>()(
       setGrokNote: (note) => set({ grokNote: note }),
       setGrokBusy: (v) => set({ grokBusy: v }),
       setLiveBalance: (b) =>
-        set((s) => ({
-          liveBalance: b,
-          pairs: liveWatchPairs(
-            [...pairsFromWallet(b), ...defaultTradeBook(), ...s.pairs],
-            btcOnBook(b) * (s.tickers.XBTUSD?.last ?? 0),
-            !modOn("core"),
-          ),
-        })),
+        set((s) => {
+          const btcUsd = btcOnBook(b) * (s.tickers.XBTUSD?.last ?? 0);
+          // Keep the user's toggles. Only fold in wallet names + rescue meme-stuck books.
+          const base = s.pairs.length ? s.pairs : defaultTradeBook();
+          return {
+            liveBalance: b,
+            pairs: liveWatchPairs([...base, ...pairsFromWallet(b)], btcUsd, false),
+          };
+        }),
       setSettingsOpen: (v) => set({ settingsOpen: v }),
       bumpTicks: () => set({ ticks: get().ticks + 1 }),
       setBrain: (brain) => set({ brain }),
@@ -956,7 +953,7 @@ export const useFloor = create<FloorState>()(
         return {
           ...current,
           ...p,
-          pairs: liveWatchPairs(pairs.length ? pairs : defaultTradeBook(), 0, !modOn("core")),
+          pairs: liveWatchPairs(pairs.length ? pairs : defaultTradeBook(), 0, false),
           launched: launched || keyed,
           venueId: "kraken",
           opsMode: "auto",

@@ -411,20 +411,34 @@ export function btcBookArmed(btcUsd: number): boolean {
   return Number.isFinite(btcUsd) && btcUsd >= BTC_BOOK_MIN_USD;
 }
 
-/** Live watchlist. Core majors first; heat-only only when core sleeve is off. */
+/** Live watchlist. Respects the user's book. Never forces every meme back on. */
 export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = false): PairId[] {
   if (heatOnly) {
-    return heatUniverse(existing);
+    // Even in heat-only, keep a tiny major seed so settings/core clicks aren't wiped forever.
+    const heat = heatUniverse(existing.length ? existing : HEAT_PAIRS);
+    const seed = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD").slice(0, 4);
+    return [...new Set([...seed, ...heat])]
+      .filter((id) => Boolean(getPair(id)))
+      .slice(0, 24) as PairId[];
   }
-  const usdCore = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD");
-  const rest = existing.filter((id) => {
+  const seed =
+    existing.length > 0
+      ? existing
+      : ([...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...HEAT_PAIRS.slice(0, 4)] as PairId[]);
+  let book = seed.filter((id) => {
+    if (!getPair(id)) return false;
     if (id === "XBTUSD") return false;
     if (!btcBookArmed(btcUsd) && isBtcQuote(id)) return false;
     return true;
   });
-  const btc = btcBookArmed(btcUsd) ? BTC_BOOK : [];
-  // Core first so majors are never sliced off by the meme list.
-  return [...new Set([...usdCore, ...HEAT_PAIRS, ...rest, ...btc])]
-    .filter((id) => Boolean(getPair(id)))
-    .slice(0, 24) as PairId[];
+  // Stuck meme-only book → inject majors so grid/DCA can print.
+  if (!book.some((id) => getPair(id)?.sleeve === "core")) {
+    book = [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...book];
+  }
+  if (btcBookArmed(btcUsd)) {
+    for (const id of BTC_BOOK) {
+      if (existing.includes(id) && !book.includes(id)) book.push(id);
+    }
+  }
+  return [...new Set(book)].slice(0, 24) as PairId[];
 }

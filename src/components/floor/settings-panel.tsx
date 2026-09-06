@@ -19,6 +19,7 @@ import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
 import { persistDeskBook } from "@/lib/profile";
 import type { BookSleeve, PairId } from "@/lib/types";
 import { ALL_LANE_IDS, defaultTradeBook, pickHotBook } from "@/lib/universe";
+import { ensureCoreTradeMods } from "@/lib/desk-mods";
 import { COMING_SOON_VENUES } from "@/lib/venues";
 import { DurationPills } from "./duration-pills.tsx";
 import { InstallAppButton } from "./install-app.tsx";
@@ -172,10 +173,21 @@ export function SettingsPanel() {
   }
 
   function togglePair(id: PairId) {
+    const def = PAIR_BY_ID[id];
     if (pairs.includes(id)) {
       if (pairs.length === 1) return;
-      setPairs(pairs.filter((p) => p !== id));
-    } else setPairs([...pairs, id]);
+      // Don't let clearing the last core leave a meme-only book.
+      const next = pairs.filter((p) => p !== id);
+      const coreLeft = next.some((p) => PAIR_BY_ID[p]?.sleeve === "core");
+      if (!coreLeft && def?.sleeve === "core") {
+        toast.message("Keep at least one major on — use Clear on Heat to drop memes");
+        return;
+      }
+      setPairs(next);
+    } else {
+      if (def?.sleeve === "core") ensureCoreTradeMods();
+      setPairs([...pairs, id]);
+    }
   }
 
   function closeSettings() {
@@ -429,6 +441,7 @@ export function SettingsPanel() {
                     size="micro"
                     variant="outline"
                     onClick={() => {
+                      ensureCoreTradeMods();
                       const picked = liveWatchPairs(defaultTradeBook(), 0, false);
                       setPairs(picked);
                       toast.message(
@@ -478,9 +491,14 @@ export function SettingsPanel() {
                       variant="outline"
                       onClick={() => {
                         if (allOn) {
+                          if (sleeve === "core") {
+                            toast.message("Keep majors on — Clear Heat instead if the book is meme-stuck");
+                            return;
+                          }
                           setPairs(pairs.filter((id) => !sleeveIds.includes(id)));
                           toast.message(`${SLEEVE_META[sleeve].label} off`);
                         } else {
+                          if (sleeve === "core") ensureCoreTradeMods();
                           setPairs([...new Set([...pairs, ...sleeveIds])]);
                           toast.message(`${SLEEVE_META[sleeve].label} on`);
                         }
