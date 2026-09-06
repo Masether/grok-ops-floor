@@ -156,6 +156,17 @@
     animation: desk-stop-flash 1.1s ease-in-out infinite;
   }
 
+  /* Selected goal / chart tool — transparent mint like a lit candle. */
+  .mint-candle-glow {
+    color: var(--color-good);
+    background: color-mix(in oklab, var(--color-good) 14%, transparent) !important;
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--color-good) 55%, transparent),
+      0 0 14px color-mix(in oklab, var(--color-good) 28%, transparent),
+      inset 0 0 10px color-mix(in oklab, var(--color-good) 12%, transparent);
+  }
+
+
   /*
    * FloorModal paint is mostly inline (Safari-proof). These classes only
    * size the panel; backgrounds stay solid hex — never alpha / backdrop-filter.

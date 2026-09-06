@@ -17,11 +17,8 @@ import { cn } from "@/lib/utils";
 
 function useGoalMade(): number {
   const desk = useDesk();
-  const mode = useFloor((s) => s.mode);
-  const startingCash = useFloor((s) => s.startingCash);
-  const liveBudget = useFloor((s) => s.liveBudget);
-  const base = mode === "live" ? liveBudget : startingCash;
-  return desk.equity - base;
+  // Same as Day / P&L this run — closed + open after fees, never book vs budget.
+  return desk.dayPnl;
 }
 
 export function GoalChip() {
@@ -140,7 +137,9 @@ export function GoalDialog({
                 key={n}
                 type="button"
                 size="sm"
-                variant={Number(profit) === n ? "default" : "outline"}
+                variant={Number(profit) === n ? "outline" : "outline"}
+                className={Number(profit) === n ? "mint-candle-glow" : undefined}
+                aria-pressed={Number(profit) === n}
                 onClick={() => setProfit(String(n))}
               >
                 {fmtGoalUsd(n)}
@@ -166,7 +165,9 @@ export function GoalDialog({
                 key={n}
                 type="button"
                 size="sm"
-                variant={Number(days) === n ? "default" : "outline"}
+                variant="outline"
+                className={Number(days) === n ? "mint-candle-glow" : undefined}
+                aria-pressed={Number(days) === n}
                 onClick={() => setDays(String(n))}
               >
                 {n === 0 ? "No limit" : `${n}d`}

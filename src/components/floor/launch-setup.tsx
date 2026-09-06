@@ -330,7 +330,8 @@ function Chip({
     <Button
       type="button"
       size="micro"
-      variant={active ? "default" : "outline"}
+      variant="outline"
+      className={active ? "mint-candle-glow" : undefined}
       aria-pressed={active}
       onClick={onClick}
     >

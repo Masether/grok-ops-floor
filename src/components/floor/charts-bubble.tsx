@@ -242,7 +242,8 @@ function ChartToolbox({ pair }: { pair: PairId }) {
             key={t.id}
             type="button"
             size="sm"
-            variant={t.id === chartType ? "default" : "outline"}
+            variant="outline"
+            className={t.id === chartType ? "mint-candle-glow" : undefined}
             aria-pressed={t.id === chartType}
             onClick={() => setChartType(t.id)}
           >
@@ -255,7 +256,8 @@ function ChartToolbox({ pair }: { pair: PairId }) {
             key={t.id}
             type="button"
             size="sm"
-            variant={t.id === tool ? "default" : "outline"}
+            variant="outline"
+            className={t.id === tool ? "mint-candle-glow" : undefined}
             aria-pressed={t.id === tool}
             onClick={() => setTool(t.id)}
           >
@@ -308,9 +310,9 @@ function IndicatorChip({
       <Button
         type="button"
         size="sm"
-        variant={ind.on ? "default" : "outline"}
+        variant="outline"
         aria-pressed={ind.on}
-        className="rounded-none"
+        className={ind.on ? "rounded-none mint-candle-glow" : "rounded-none"}
         onClick={onToggle}
       >
         {meta.label}
