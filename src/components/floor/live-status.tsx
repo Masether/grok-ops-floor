@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { haltLive } from "@/lib/engine-call";
 import { moneyFull } from "@/lib/format";
 import { HEAT_BUDGET_PCT, heatAllowed, heatLotCount, heatOpenUsd } from "@/lib/book-balance";
-import { bookDayPnl } from "@/lib/desk-pnl";
+import { sessionProfit } from "@/lib/desk-pnl";
+import { lotsMark } from "@/lib/live-pnl";
+import { livePositions, liveSleeve } from "@/lib/live-budget";
 import { HEAT_MAX_LOTS, HEAT_PAIRS } from "@/lib/kraken";
-import { liveDayBase, liveSleeve } from "@/lib/live-budget";
 import { useFloor } from "@/lib/store";
 import { SignedIn, SignedOut } from "@/lib/auth/gates";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,6 @@ export function LiveStatusBar() {
   const pairs = useFloor((s) => s.pairs);
   const positions = useFloor((s) => s.positions);
   const tickers = useFloor((s) => s.tickers);
-  const dayStartEquity = useFloor((s) => s.dayStartEquity);
   const realized = useFloor((s) => s.realized);
   const setMode = useFloor((s) => s.setMode);
   const setLiveArmed = useFloor((s) => s.setLiveArmed);
@@ -32,15 +32,9 @@ export function LiveStatusBar() {
   const heatOpen = heatOpenUsd(positions, tickers);
   const heatLots = heatLotCount(positions);
   const heatCap = sleeve.budget * HEAT_BUDGET_PCT;
-  const day = bookDayPnl(
-    sleeve.equity,
-    liveDayBase({
-      dayStart: dayStartEquity,
-      budget: sleeve.budget,
-      equity: sleeve.equity,
-      openLots: positions.length,
-    }),
-  );
+  // Same Day as header/desk: closed + open after fees — not equity−dayStart.
+  const openPnl = lotsMark(livePositions(positions), tickers).unrealized;
+  const day = sessionProfit(realized, openPnl);
   const heatOn = heatAllowed(day);
   const heatPct = heatCap > 0 ? Math.min(100, (heatOpen / heatCap) * 100) : 0;
   const keyed = Boolean(keys.apiKey && keys.apiSecret);
