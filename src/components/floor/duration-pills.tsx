@@ -15,7 +15,9 @@ export function DurationPills({
           key={p.minutes}
           type="button"
           size="micro"
-          variant={value === p.minutes ? "default" : "outline"}
+          variant="outline"
+          className={value === p.minutes ? "mint-candle-glow" : undefined}
+          aria-pressed={value === p.minutes}
           onClick={() => onChange(p.minutes)}
         >
           {p.label}
