@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Slider, Switch } from "@/components/ui/field";
@@ -70,13 +70,23 @@ export function SettingsPanel() {
   const setSessionMinutes = useFloor((s) => s.setSessionMinutes);
   const [armAsk, setArmAsk] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Local drafts so iOS paste into one field is visible before both keys are long enough.
+  const [draftKey, setDraftKey] = useState(keys.apiKey);
+  const [draftSecret, setDraftSecret] = useState(keys.apiSecret);
+  useEffect(() => {
+    setDraftKey(keys.apiKey);
+    setDraftSecret(keys.apiSecret);
+  }, [keys.apiKey, keys.apiSecret]);
 
   async function testKeys() {
-    if (!krakenKeysOn(keys)) {
+    const apiKey = draftKey.replace(/\s+/g, "").trim() || keys.apiKey;
+    const apiSecret = draftSecret.replace(/\s+/g, "").trim() || keys.apiSecret;
+    if (apiKey.length < 8 || apiSecret.length < 16) {
       toast.error("Paste Query + Orders keys first.");
       return;
     }
-    const seedErr = rejectWalletSecret(keys.apiKey) || rejectWalletSecret(keys.apiSecret);
+    setKeys({ apiKey, apiSecret });
+    const seedErr = rejectWalletSecret(apiKey) || rejectWalletSecret(apiSecret);
     if (seedErr) {
       toast.error(seedErr);
       return;
@@ -373,23 +383,57 @@ export function SettingsPanel() {
               <HumanGate />
               <Input
                 type="text"
+                inputMode="text"
                 autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="next"
                 placeholder={krakenKeysOn(keys) ? "API key saved on this device" : "API key"}
-                value={keys.apiKey}
-                onChange={(e) => setKeys({ ...keys, apiKey: e.target.value })}
+                value={draftKey}
+                onChange={(e) => {
+                  const apiKey = e.target.value;
+                  setDraftKey(apiKey);
+                  setKeys({ apiKey, apiSecret: draftSecret });
+                }}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  if (!pasted) return;
+                  e.preventDefault();
+                  const apiKey = pasted;
+                  setDraftKey(apiKey);
+                  setKeys({ apiKey, apiSecret: draftSecret });
+                }}
               />
               <Input
-                type="password"
+                type="text"
+                inputMode="text"
                 autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                enterKeyHint="done"
                 placeholder={krakenKeysOn(keys) ? "Secret saved on this device" : "API secret (base64) — not a wallet key"}
-                value={keys.apiSecret}
-                onChange={(e) => setKeys({ ...keys, apiSecret: e.target.value })}
+                value={draftSecret}
+                onChange={(e) => {
+                  const apiSecret = e.target.value;
+                  setDraftSecret(apiSecret);
+                  setKeys({ apiKey: draftKey, apiSecret });
+                }}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData("text");
+                  if (!pasted) return;
+                  e.preventDefault();
+                  const apiSecret = pasted;
+                  setDraftSecret(apiSecret);
+                  setKeys({ apiKey: draftKey, apiSecret });
+                }}
               />
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy || !keys.apiKey}
+                  disabled={busy || !(draftKey || keys.apiKey)}
                   onClick={() => void testKeys()}
                 >
                   {busy ? "Testing…" : "Test connection"}

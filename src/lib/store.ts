@@ -633,10 +633,23 @@ export const useFloor = create<FloorState>()(
       setKeys: (keys) => {
         const apiKey = keys.apiKey.replace(/\s+/g, "").trim();
         const apiSecret = keys.apiSecret.replace(/\s+/g, "").trim();
-        if (rejectWalletSecret(apiKey) || rejectWalletSecret(apiSecret)) return;
-        // Incomplete paste/clear must not blank a working pair or flush a half wipe.
-        if (apiKey.length < 8 || apiSecret.length < 16) return;
+        if (apiKey && rejectWalletSecret(apiKey)) return;
+        if (apiSecret && rejectWalletSecret(apiSecret)) return;
         const prev = get().keys;
+        const hadPair = prev.apiKey.length >= 8 && prev.apiSecret.length >= 16;
+        // Full clear is allowed.
+        if (!apiKey && !apiSecret) {
+          set({ keys: { apiKey: "", apiSecret: "" }, keysOk: null });
+          queueMicrotask(flushFloorPersist);
+          return;
+        }
+        // Progressive paste (one field at a time) must update the controlled inputs.
+        // Only block incomplete edits when a working pair already exists (anti half-wipe).
+        if (apiKey.length < 8 || apiSecret.length < 16) {
+          if (hadPair) return;
+          set({ keys: { apiKey, apiSecret }, keysOk: null });
+          return;
+        }
         const same = prev.apiKey === apiKey && prev.apiSecret === apiSecret;
         set({
           keys: { apiKey, apiSecret },
