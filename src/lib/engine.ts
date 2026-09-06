@@ -1304,11 +1304,17 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
       why: `USDT ${sleeve.usdt.toFixed(0)} is on Kraken — convert it to USD or keep BTC as the book.`,
     };
   }
-  if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USD on Kraken" };
+  // venue = free Kraken USD/USDT/USDC (+ BTC mark). Open alt lots do not count as buy cash.
+  if (sleeve.venue < 15) {
+    return {
+      ok: false,
+      why: `Kraken free cash $${sleeve.usd.toFixed(2)} — need ≥$15 USD free to buy (sell a lot or deposit)`,
+    };
+  }
   if (sleeve.cash < MIN_LIVE_TICKET) {
     return {
       ok: false,
-      why: `budget $${sleeve.budget.toFixed(0)} is fully in lots — wait for a close`,
+      why: `sleeve cash $${sleeve.cash.toFixed(2)} — budget $${sleeve.budget.toFixed(0)} is in open lots, wait for a take`,
     };
   }
   return { ok: true, cash: sleeve.cash };
@@ -2443,7 +2449,7 @@ export async function refreshTreasury() {
       detail:
         usd >= MIN_LIVE_TICKET
           ? `Kraken USD ${usd.toFixed(2)} · heat scalp live`
-          : `USD ${usd.toFixed(2)} — deposit ≥$${MIN_LIVE_TICKET} to fire`,
+          : `USD ${usd.toFixed(2)} free — need ≥$${MIN_LIVE_TICKET} free to fire`,
       tone: usd >= MIN_LIVE_TICKET ? "good" : "warn",
     });
     const pending = useFloor.getState().pendingLive;

@@ -107,7 +107,7 @@ export function SettingsPanel() {
             ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
             : sleeve.usdt >= 15
               ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken, then test again`
-              : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Deposit $200 USD on Kraken.`,
+              : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Need ≥$15 free USD to buy.`,
         );
       } else {
         toast.error("Saved keys failed — paste them again.");
