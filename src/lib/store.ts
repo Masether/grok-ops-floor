@@ -651,9 +651,21 @@ export const useFloor = create<FloorState>()(
           queueMicrotask(flushFloorPersist);
           return;
         }
-        // Progressive paste (one field at a time) must update the controlled inputs.
-        // Only block incomplete edits when a working pair already exists (anti half-wipe).
+        // Progressive paste (one field at a time). Never wipe a working pair mid-edit —
+        // keep the other side from prev when only one field is long enough yet.
         if (apiKey.length < 8 || apiSecret.length < 16) {
+          const mergedKey = apiKey.length >= 8 ? apiKey : prev.apiKey;
+          const mergedSecret = apiSecret.length >= 16 ? apiSecret : prev.apiSecret;
+          if (mergedKey.length >= 8 && mergedSecret.length >= 16) {
+            const touched = mergedKey !== prev.apiKey || mergedSecret !== prev.apiSecret;
+            set({
+              keys: { apiKey: mergedKey, apiSecret: mergedSecret },
+              keysOk: touched ? null : get().keysOk,
+              humanVerified: true,
+            });
+            if (touched) queueMicrotask(flushFloorPersist);
+            return;
+          }
           if (hadPair) return;
           set({ keys: { apiKey, apiSecret }, keysOk: null });
           return;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ClipboardEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Slider, Switch } from "@/components/ui/field";
@@ -26,6 +26,11 @@ import { InstallAppButton } from "./install-app.tsx";
 import { LIVE_BUDGET_PRESETS, clampLiveBudget, krakenKeysOn, liveSleeve } from "@/lib/live-budget";
 import { PLAYBOOKS, type PlaybookId } from "@/lib/playbook";
 import { moneyFull } from "@/lib/format";
+
+function clipboardText(e: ClipboardEvent<HTMLInputElement>): string {
+  const d = e.clipboardData;
+  return (d.getData("text/plain") || d.getData("text") || "").replace(/\s+/g, "").trim();
+}
 
 export function SettingsPanel() {
   const open = useFloor((s) => s.settingsOpen);
@@ -102,9 +107,13 @@ export function SettingsPanel() {
         positions: s.positions,
       });
       if (ok) {
+        // Browser: Test success should arm + open the desk (keys alone used to sit idle).
+        ensureLiveDesk();
+        const after = useFloor.getState();
+        if (!after.liveArmed) after.setLiveArmed(true);
         toast.success(
           sleeve.usd >= 15
-            ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)}`
+            ? `Kraken connected · USD ${sleeve.usd.toFixed(2)} · budget $${sleeve.budget.toFixed(0)} · live armed`
             : sleeve.usdt >= 15
               ? `Kraken connected · USDT ${sleeve.usdt.toFixed(2)} — convert to USD on Kraken, then test again`
               : `Kraken connected · USD ${sleeve.usd.toFixed(2)}. Need ≥$15 free USD to buy.`,
@@ -394,15 +403,17 @@ export function SettingsPanel() {
                 onChange={(e) => {
                   const apiKey = e.target.value;
                   setDraftKey(apiKey);
-                  setKeys({ apiKey, apiSecret: draftSecret });
+                  setKeys({
+                    apiKey,
+                    apiSecret: draftSecret.replace(/\s+/g, "").trim() || keys.apiSecret,
+                  });
                 }}
                 onPaste={(e) => {
-                  const pasted = e.clipboardData.getData("text");
-                  if (!pasted) return;
+                  const apiKey = clipboardText(e);
+                  if (!apiKey) return;
                   e.preventDefault();
-                  const apiKey = pasted;
                   setDraftKey(apiKey);
-                  setKeys({ apiKey, apiSecret: draftSecret });
+                  setKeys({ apiKey, apiSecret: draftSecret.replace(/\s+/g, "").trim() || keys.apiSecret });
                 }}
               />
               <Input
@@ -418,15 +429,17 @@ export function SettingsPanel() {
                 onChange={(e) => {
                   const apiSecret = e.target.value;
                   setDraftSecret(apiSecret);
-                  setKeys({ apiKey: draftKey, apiSecret });
+                  setKeys({
+                    apiKey: draftKey.replace(/\s+/g, "").trim() || keys.apiKey,
+                    apiSecret,
+                  });
                 }}
                 onPaste={(e) => {
-                  const pasted = e.clipboardData.getData("text");
-                  if (!pasted) return;
+                  const apiSecret = clipboardText(e);
+                  if (!apiSecret) return;
                   e.preventDefault();
-                  const apiSecret = pasted;
                   setDraftSecret(apiSecret);
-                  setKeys({ apiKey: draftKey, apiSecret });
+                  setKeys({ apiKey: draftKey.replace(/\s+/g, "").trim() || keys.apiKey, apiSecret });
                 }}
               />
               <div className="flex gap-2">
@@ -441,7 +454,7 @@ export function SettingsPanel() {
                 <Button
                   size="sm"
                   variant={liveArmed ? "danger" : "live"}
-                  disabled={mode !== "live" || (keysOk !== true && !krakenKeysOn(keys))}
+                  disabled={keysOk !== true && !krakenKeysOn(keys)}
                   onClick={() => (liveArmed ? setLiveArmed(false) : setArmAsk(true))}
                 >
                   {liveArmed ? "Disarm" : "Arm live"}
