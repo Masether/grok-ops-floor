@@ -37,7 +37,7 @@ describe("wallet sync", () => {
     assert.deepEqual(r.dropped, ["SOLUSD"]);
   });
 
-  it("adopts a Kraken holding when the local book is empty after key re-arm", () => {
+  it("adopts a Kraken holding as synced inventory (not sleeve budget)", () => {
     const r = reconcileLiveLotsWithWallet({
       positions: [],
       liveBalance: { ZUSD: "10", SOL: "0.2" },
@@ -47,6 +47,8 @@ describe("wallet sync", () => {
     assert.equal(r.adopted.length, 1);
     assert.equal(r.positions[0]?.pair, "SOLUSD");
     assert.ok((r.positions[0]?.qty ?? 0) >= 0.2);
+    assert.equal(r.positions[0]?.synced, true);
+    assert.equal(r.positions[0]?.costUsd, 0);
   });
 
   it("skips a seed buy when Kraken already holds the coin", () => {
@@ -58,5 +60,24 @@ describe("wallet sync", () => {
       playbook: "grid",
     });
     assert.equal(s.skip, true);
+  });
+
+  it("normalizes legacy wallet adopt so full costUsd no longer freezes the sleeve", () => {
+    const r = reconcileLiveLotsWithWallet({
+      positions: [
+        lot({
+          pair: "SOLUSD",
+          qty: 0.2,
+          entry: 106,
+          mark: 106,
+          note: "synced from Kraken wallet",
+          costUsd: 21.2,
+        }),
+      ],
+      liveBalance: { ZUSD: "80", SOL: "0.2" },
+      tickers: { SOLUSD: { last: 106 } as never },
+    });
+    assert.equal(r.positions[0]?.synced, true);
+    assert.equal(r.positions[0]?.costUsd, 0);
   });
 });

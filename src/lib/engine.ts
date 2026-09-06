@@ -42,7 +42,7 @@ import {
   profitShowSecsLeft,
   profitShowUntil,
 } from "./profit-show.ts";
-import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
+import { btcOnBook, hasKrakenBook, isSyncedLot, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import {
   reconcileLiveLotsWithWallet,
@@ -1367,7 +1367,9 @@ function sizeTicket(
     const cap = playbook === "grid" ? GRID.maxAdds : DCA.maxAdds;
     if ((existing.adds ?? 1) >= cap) return { ok: false, why: "max adds on this pair" };
   }
-  if (!existing && book.length >= s.risk.maxPositions) {
+  // Synced wallet lots are managed inventory — they must not fill seed slots.
+  const seedBook = book.filter((p) => !isSyncedLot(p));
+  if (!existing && seedBook.length >= s.risk.maxPositions) {
     return { ok: false, why: "max positions open" };
   }
   if (s.brain.enabled && bias < -0.35) {

@@ -124,6 +124,12 @@ export function livePositions(positions: Position[]): Position[] {
   return positions.filter((p) => p.mode === "live");
 }
 
+/** Wallet-adopted inventory — manage/sell only; excluded from sleeve cost & seed slots. */
+export function isSyncedLot(p: { synced?: boolean; note?: string }): boolean {
+  return p.synced === true || p.note === "synced from Kraken wallet";
+}
+
+
 /** Pair ids for anything already sitting on Kraken (except BTC itself). */
 export function pairsFromWallet(bal: Record<string, string> | null | undefined): PairId[] {
   if (!bal) return [];
@@ -164,12 +170,14 @@ export function liveSleeve(input: {
   const btcUsd = btcUsdValue(input.liveBalance, btcPx);
   const venue = usdOnBook(input.liveBalance) + btcUsd;
   const lots = livePositions(input.positions).filter((p) => p.pair !== "XBTUSD");
+  // Synced wallet inventory is managed for sells but is not sleeve capital.
+  const sleeveLots = lots.filter((p) => !isSyncedLot(p));
   // Prefer costUsd (entry + fees) so sleeve equity matches open P&L — never invent fake green.
-  const cost = lots.reduce((a, p) => {
+  const cost = sleeveLots.reduce((a, p) => {
     if (typeof p.costUsd === "number" && p.costUsd > 0) return a + p.costUsd;
     return a + lotUsd(p, input.tickers, btcPx, true);
   }, 0);
-  const deployed = lots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx), 0);
+  const deployed = sleeveLots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx), 0);
   const cash = Math.max(0, Math.min(venue, Math.max(0, budget - cost)));
   return {
     budget,

@@ -124,3 +124,36 @@ describe("cash reserve helpers", () => {
     assert.equal(spendableUsd(80, 200), 30);
   });
 });
+
+describe("synced wallet inventory", () => {
+  it("synced wallet lots do not zero sleeve cash or eat the budget", () => {
+    const s = liveSleeve({
+      liveBudget: 200,
+      liveBalance: { ZUSD: "85", SOL: "0.2", ETH: "0.05" },
+      positions: [
+        {
+          ...lot({ qty: 0.2, entry: 106, mark: 106 }),
+          pair: "SOLUSD",
+          synced: true,
+          note: "synced from Kraken wallet",
+          costUsd: 0,
+        },
+        {
+          ...lot({ qty: 0.05, entry: 2500, mark: 2500 }),
+          pair: "ETHUSD",
+          synced: true,
+          note: "synced from Kraken wallet",
+          costUsd: 0,
+        },
+      ],
+      tickers: {
+        SOLUSD: { last: 106 } as never,
+        ETHUSD: { last: 2500 } as never,
+      },
+    });
+    assert.equal(s.cost, 0);
+    assert.equal(s.deployed, 0);
+    assert.equal(s.cash, 85);
+    assert.ok(s.cash >= 12, "free USD must remain seedable");
+  });
+});

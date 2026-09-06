@@ -144,10 +144,10 @@ export function playbookWantsBuy(input: {
   if (kind === "sell") return false;
   if (playbook === "grid") {
     if (hasPos) return dipFromEntry >= GRID.stepPct && adds < GRID.maxAdds && lane !== "up";
-    // First rung: quiet/range only — not every major every tick (that was the buy spray).
-    if (lane === "up" && changePct > 1.2) return false;
-    if (lane === "down") return rsi < 45 && changePct <= -0.35;
-    return rsi < 55 && changePct <= 0.4 && changePct >= -1.8;
+    // First rung: quiet/range OK — keep spray killed via engine buy gap, not zero seeds.
+    if (lane === "up" && changePct > 2.0) return false;
+    if (lane === "down") return rsi < 52 && changePct <= -0.2;
+    return rsi < 62 && changePct <= 1.2 && changePct >= -2.2;
   }
   if (hasPos) {
     return (
@@ -157,9 +157,9 @@ export function playbookWantsBuy(input: {
       lane !== "up"
     );
   }
-  // Fresh DCA: soft dip or quiet tape — not a free buy on every hold scan.
-  if (kind === "buy" && changePct <= -0.25 && rsi < 58) return true;
-  return rsi < 48 && changePct <= 0.05 && changePct >= -2.2;
+  // Fresh DCA: soft dip or quiet tape — engine gap stops spray, gates stay reachable.
+  if (kind === "buy" && changePct <= -0.15 && rsi < 60) return true;
+  return rsi < 56 && changePct <= 0.35 && changePct >= -2.5;
 }
 
 /** Assign a free pair to one of the enabled books using MACD. */

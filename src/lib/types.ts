@@ -129,6 +129,8 @@ export type Position = {
   banked?: boolean;
   peakPnlUsd?: number;
   costUsd?: number;
+  /** Adopted from Kraken wallet — manage/sell only; not sleeve budget. */
+  synced?: boolean;
 };
 
 export type Order = {

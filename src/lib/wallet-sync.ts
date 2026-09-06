@@ -35,7 +35,8 @@ export type WalletReconcileResult = {
 
 /**
  * Drop lots Kraken no longer holds (manual sell / external flat).
- * Resize lots down to wallet qty. Adopt missing USD majors already on Kraken.
+ * Resize lots down to wallet qty. Adopt missing USD majors as synced inventory
+ * (manage/sell only — does not consume sleeve cash or seed maxPositions).
  */
 export function reconcileLiveLotsWithWallet(input: {
   positions: Position[];
@@ -77,19 +78,26 @@ export function reconcileLiveLotsWithWallet(input: {
       continue;
     }
     open.add(p.pair);
+    // Legacy wallet adopts booked full costUsd and froze the sleeve — normalize.
+    const legacySynced =
+      p.synced === true || p.note === "synced from Kraken wallet";
+    const base = legacySynced ? { ...p, synced: true as const, costUsd: 0 } : p;
     if (held + 1e-12 < p.qty * 0.98) {
       const frac = held / p.qty;
       resized.push(p.pair);
       next.push({
-        ...p,
+        ...base,
         qty: held,
-        costUsd:
-          typeof p.costUsd === "number" && p.costUsd > 0 ? p.costUsd * frac : p.entry * held,
-        fee: typeof p.fee === "number" ? p.fee * frac : p.fee,
+        costUsd: legacySynced
+          ? 0
+          : typeof base.costUsd === "number" && base.costUsd > 0
+            ? base.costUsd * frac
+            : base.entry * held,
+        fee: typeof base.fee === "number" ? base.fee * frac : base.fee,
         mark,
       });
     } else {
-      next.push({ ...p, mark });
+      next.push({ ...base, mark });
     }
   }
 
@@ -116,9 +124,11 @@ export function reconcileLiveLotsWithWallet(input: {
         openedAt: now,
         mode: "live",
         note: "synced from Kraken wallet",
+        synced: true,
         adds: 1,
         book: "grid",
-        costUsd: qty * mark,
+        // External inventory — do not consume the $200 sleeve (cost counted 0 in liveSleeve).
+        costUsd: 0,
         peakPnlUsd: 0,
       });
     }
@@ -150,3 +160,5 @@ export function shouldSkipBuyAlreadyHeld(input: {
   }
   return { skip: false, why: "" };
 }
+
+export { isSyncedLot } from "./live-budget.ts";

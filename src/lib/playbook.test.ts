@@ -189,3 +189,35 @@ describe("macd lanes + all books together", () => {
     );
   });
 });
+
+describe("first-seed after spray kill", () => {
+  it("quiet major can still first-seed grid without a chase", () => {
+    assert.equal(
+      playbookWantsBuy({
+        playbook: "grid",
+        kind: "hold",
+        rsi: 50,
+        changePct: 0.2,
+        hasPos: false,
+        dipFromEntry: 0,
+        adds: 0,
+        msSinceAdd: 0,
+        macd: "chop",
+      }),
+      true,
+    );
+    assert.equal(
+      playbookWantsBuy({
+        playbook: "dca",
+        kind: "hold",
+        rsi: 52,
+        changePct: 0.1,
+        hasPos: false,
+        dipFromEntry: 0,
+        adds: 0,
+        msSinceAdd: 0,
+      }),
+      true,
+    );
+  });
+});
