@@ -10,6 +10,20 @@ export const MAX_LIVE_BUDGET = 50_000;
 export const LIVE_BUDGET_PRESETS = [50, 100, 200, 500] as const;
 export const MIN_LIVE_TICKET = 12;
 export const MIN_LIVE_HALT_USD = 40;
+/** Keep this much Kraken USD sitting — do not spend the sleeve to dust. */
+export const LIVE_CASH_RESERVE_PCT = 0.25;
+export const MIN_LIVE_CASH_RESERVE = 40;
+
+export function liveCashReserve(budget: number): number {
+  const b = clampLiveBudget(budget);
+  return Math.max(MIN_LIVE_CASH_RESERVE, Math.round(b * LIVE_CASH_RESERVE_PCT));
+}
+
+/** USD the desk may still spend on new buys. Sells always allowed. */
+export function spendableUsd(cash: number, budget: number): number {
+  const c = Number.isFinite(cash) ? cash : 0;
+  return Math.max(0, c - liveCashReserve(budget));
+}
 
 export function clampLiveBudget(n: number): number {
   const x = Number.isFinite(n) ? n : DEFAULT_LIVE_BUDGET;

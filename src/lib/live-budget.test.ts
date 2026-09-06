@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { btcOnBook, clampLiveBudget, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, liveDayBase, restoreLiveBudget, spotQty, usdStable } from "./live-budget.ts";
+import { btcOnBook, clampLiveBudget, liveCashReserve, liveSleeve, DEFAULT_LIVE_BUDGET, hasKrakenBook, krakenKeysOn, liveDayBase, restoreLiveBudget, spendableUsd, spotQty, usdStable } from "./live-budget.ts";
 import type { Position } from "./types.ts";
 
 function lot(partial: Pick<Position, "qty" | "entry" | "mark">): Position {
@@ -113,5 +113,16 @@ describe("liveSleeve", () => {
     assert.ok(Math.abs(s.equity - (s.cash + s.deployed)) < 0.001);
     // Must not invent ~$209 book vs $200 budget as if +$9 profit
     assert.ok(s.equity < 205, `equity ${s.equity} still inflated`);
+  });
+});
+
+
+describe("cash reserve", () => {
+  it("keeps $40 on a $200 sleeve so GRID cannot drain to dust", () => {
+    assert.equal(liveCashReserve(200), 50);
+    assert.equal(spendableUsd(10.3, 200), 0);
+    assert.equal(spendableUsd(6.22, 200), 0);
+    assert.ok(spendableUsd(80, 200) < 80);
+    assert.equal(spendableUsd(80, 200), 30);
   });
 });

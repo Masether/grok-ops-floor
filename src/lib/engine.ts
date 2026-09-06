@@ -42,7 +42,7 @@ import {
   profitShowSecsLeft,
   profitShowUntil,
 } from "./profit-show.ts";
-import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
+import { btcOnBook, hasKrakenBook, krakenKeysOn, liveCashReserve, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spendableUsd, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
 import { fetchWire } from "./wire-api.ts";
@@ -1243,9 +1243,7 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
     positions: s.positions,
     tickers: s.tickers,
   });
-  if (sleeve.btcUsd >= MIN_LIVE_TICKET) {
-    return { ok: true, cash: sleeve.cash };
-  }
+  // BTC on the book is a reserve, not a license to keep buying with the last USD.
   if (sleeve.usd < 12 && sleeve.usdt >= 12) {
     return {
       ok: false,
@@ -1253,10 +1251,12 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
     };
   }
   if (sleeve.venue < 15) return { ok: false, why: "deposit $200 USD on Kraken" };
-  if (sleeve.cash < MIN_LIVE_TICKET) {
+  const room = spendableUsd(sleeve.cash, sleeve.budget);
+  const reserve = liveCashReserve(sleeve.budget);
+  if (room < MIN_LIVE_TICKET) {
     return {
       ok: false,
-      why: `budget $${sleeve.budget.toFixed(0)} is fully in lots — wait for a close`,
+      why: `keeping $${reserve.toFixed(0)} USD on Kraken — no new buys until a take`,
     };
   }
   return { ok: true, cash: sleeve.cash };
@@ -1307,6 +1307,15 @@ function sizeTicket(
   if (!existing && book.length >= s.risk.maxPositions) {
     return { ok: false, why: "max positions open" };
   }
+  // Stop spraying new GRID/DCA clips once lots are on and USD is the reserve.
+  if (
+    live &&
+    !existing &&
+    (playbook === "grid" || playbook === "dca") &&
+    (book.length >= 3 || spendableUsd(cash, sleeve?.budget ?? s.liveBudget) < MIN_LIVE_TICKET * 2)
+  ) {
+    return { ok: false, why: "sit USD — lots already open, wait for a take" };
+  }
   if (s.brain.enabled && bias < -0.35) {
     return { ok: false, why: "brain retired this pair" };
   }
@@ -1317,7 +1326,9 @@ function sizeTicket(
   const wr =
     s.brain.samples > 8 ? s.brain.wins / s.brain.samples : Math.min(0.62, 0.46 + confidence * 0.2);
   const payoff = s.risk.takePct / Math.max(s.risk.stopPct, 1e-6);
-  const remaining = live ? cash : Math.min(cash, s.liveBudget || 200);
+  const remaining = live
+    ? spendableUsd(cash, sleeve?.budget ?? s.liveBudget)
+    : Math.min(cash, s.liveBudget || 200);
   const defQuote = def.quote;
   const btcPx = s.tickers.XBTUSD?.last ?? 0;
   if (live && isBtcUsd(pair)) return { ok: false, why: "BTC is the reserve — not sold for USD" };
@@ -1350,11 +1361,14 @@ function sizeTicket(
   if (!(usd > 0)) return { ok: false, why: "under min ticket — wait for cash in the $200 cap" };
   let qty = usd / price;
   let notional = qty * price;
-  if (live && notional < MIN_LIVE_TICKET && cash >= MIN_LIVE_TICKET) {
+  if (live && notional < MIN_LIVE_TICKET && remaining >= MIN_LIVE_TICKET) {
     qty = MIN_LIVE_TICKET / price;
     notional = MIN_LIVE_TICKET;
   }
   if (notional < 10) return { ok: false, why: "size below min ticket" };
+  if (live && notional > remaining) {
+    return { ok: false, why: `keeping $${liveCashReserve(sleeve?.budget ?? s.liveBudget).toFixed(0)} USD on Kraken` };
+  }
   if (notional > cash * 0.98) return { ok: false, why: live ? "over live budget" : "not enough cash" };
   let rounded = Number(qty.toFixed(Math.min(Math.max(def.decimals, 0), 8)));
   if (rounded < def.ordermin) {
