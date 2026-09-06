@@ -125,3 +125,29 @@ export function mergeRemotePnlFields<T extends {
     orders: Array.isArray(remote.orders) ? remote.orders : local.orders,
   };
 }
+
+
+/** Keep the richer P&L book when disk/rehydrate is stale or empty. */
+export function preferRicherBook<T extends {
+  realized?: number;
+  lifetimePnl?: number;
+  orders?: unknown[];
+  lastEngineAt?: number;
+  dayStartEquity?: number;
+  equityHistory?: unknown[];
+}>(disk: T, memory: T): T {
+  const dEng = typeof disk.lastEngineAt === "number" ? disk.lastEngineAt : 0;
+  const mEng = typeof memory.lastEngineAt === "number" ? memory.lastEngineAt : 0;
+  if (mEng > dEng) return { ...disk, ...memory };
+  if (dEng > mEng) return { ...memory, ...disk };
+
+  const dOrders = Array.isArray(disk.orders) ? disk.orders.length : 0;
+  const mOrders = Array.isArray(memory.orders) ? memory.orders.length : 0;
+  const dReal = typeof disk.realized === "number" ? Math.abs(disk.realized) : 0;
+  const mReal = typeof memory.realized === "number" ? Math.abs(memory.realized) : 0;
+  const dLife = typeof disk.lifetimePnl === "number" ? Math.abs(disk.lifetimePnl) : 0;
+  const mLife = typeof memory.lifetimePnl === "number" ? Math.abs(memory.lifetimePnl) : 0;
+
+  const memoryRicher = mOrders > dOrders || mReal > dReal + 1e-9 || mLife > dLife + 1e-9;
+  return memoryRicher ? { ...disk, ...memory } : { ...memory, ...disk };
+}

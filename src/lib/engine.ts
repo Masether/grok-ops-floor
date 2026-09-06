@@ -318,13 +318,43 @@ function sampleEquity(force = false) {
 
 function seedHistory() {
   const s = useFloor.getState();
+  const live = s.mode === "live" || s.liveArmed;
+  const sleeve = live
+    ? liveSleeve({
+        liveBudget: s.liveBudget,
+        liveBalance: s.liveBalance,
+        positions: s.positions,
+        tickers: s.tickers,
+      })
+    : null;
+  const baseline = live
+    ? sleeve && sleeve.equity > 0
+      ? sleeve.equity
+      : s.liveBudget
+    : s.cash;
+  // Scrub paper $10k spark leak on a live sleeve.
+  if (live && s.equityHistory.some((pt) => pt.equity > s.liveBudget * 3)) {
+    const now = Date.now();
+    patch({
+      equityHistory: Array.from({ length: 8 }, (_, i) => ({
+        t: now - (8 - i) * 3000,
+        equity: baseline,
+        cash: sleeve?.cash ?? baseline,
+        unrealized: 0,
+        scanner: 0.2,
+        signal: 0.2,
+        risk: 0.2,
+        runner: 0.2,
+      })),
+    });
+    return;
+  }
   if (s.equityHistory.length > 0) return;
   const now = Date.now();
-  const cash = s.cash;
   const points = Array.from({ length: 28 }, (_, i) => ({
     t: now - (28 - i) * 3000,
-    equity: cash,
-    cash,
+    equity: baseline,
+    cash: live ? (sleeve?.cash ?? baseline) : s.cash,
     unrealized: 0,
     scanner: 0.18 + Math.random() * 0.2,
     signal: 0.16 + Math.random() * 0.22,

@@ -5,6 +5,7 @@ import {
   dayStartOnLiveArm,
   isPaperDayLeak,
   mergeRemotePnlFields,
+  preferRicherBook,
   resolveLiveDayBase,
   syncClosedRealized,
 } from "./book-sync.ts";
@@ -119,5 +120,16 @@ describe("isPaperDayLeak", () => {
   it("flags paper capital on a live sleeve", () => {
     assert.equal(isPaperDayLeak(10_000, 200, 26.7), true);
     assert.equal(isPaperDayLeak(195, 200, 210), false);
+  });
+});
+
+describe("preferRicherBook", () => {
+  it("keeps in-memory fills when disk is empty/stale", () => {
+    const out = preferRicherBook(
+      { realized: 0, lifetimePnl: 0, orders: [], lastEngineAt: 100 },
+      { realized: 0.17, lifetimePnl: 0.17, orders: [{ id: "a" }, { id: "b" }], lastEngineAt: 200 },
+    );
+    assert.equal(out.realized, 0.17);
+    assert.equal((out.orders as unknown[]).length, 2);
   });
 });

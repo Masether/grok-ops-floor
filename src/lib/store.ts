@@ -11,6 +11,7 @@ import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts"
 import {
   closedRealizedFromOrders,
   dayStartOnLiveArm,
+  preferRicherBook,
   syncClosedRealized,
 } from "./book-sync.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
@@ -617,6 +618,8 @@ export const useFloor = create<FloorState>()(
         const apiKey = keys.apiKey.replace(/\s+/g, "").trim();
         const apiSecret = keys.apiSecret.replace(/\s+/g, "").trim();
         if (rejectWalletSecret(apiKey) || rejectWalletSecret(apiSecret)) return;
+        // Incomplete paste/clear must not blank a working pair or flush a half wipe.
+        if (apiKey.length < 8 || apiSecret.length < 16) return;
         const prev = get().keys;
         const same = prev.apiKey === apiKey && prev.apiSecret === apiSecret;
         set({
@@ -967,6 +970,24 @@ export const useFloor = create<FloorState>()(
           typeof (p.keys ?? current.keys)?.apiSecret === "string" &&
           ((p.keys ?? current.keys)?.apiSecret?.trim().length ?? 0) > 8;
         const liveOn = keyed;
+        const book = preferRicherBook(
+          {
+            realized: typeof p.realized === "number" ? p.realized : 0,
+            lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : 0,
+            orders: Array.isArray(p.orders) ? p.orders : [],
+            lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : 0,
+            dayStartEquity: shift.dayStartEquity,
+            equityHistory: shift.equityHistory,
+          },
+          {
+            realized: current.realized,
+            lifetimePnl: current.lifetimePnl,
+            orders: current.orders,
+            lastEngineAt: current.lastEngineAt,
+            dayStartEquity: current.dayStartEquity,
+            equityHistory: current.equityHistory,
+          },
+        );
         return {
           ...current,
           ...p,
@@ -986,11 +1007,19 @@ export const useFloor = create<FloorState>()(
           pendingLive: null,
           queue: [],
           swarm: idleSwarm(),
-          equityHistory: shift.equityHistory,
+          realized: book.realized ?? current.realized,
+          orders: Array.isArray(book.orders) ? book.orders : current.orders,
+          positions:
+            (book.orders?.length ?? 0) > (Array.isArray(p.orders) ? p.orders.length : 0)
+              ? current.positions
+              : Array.isArray(p.positions)
+                ? p.positions
+                : current.positions,
+          equityHistory: Array.isArray(book.equityHistory) ? book.equityHistory : shift.equityHistory,
           signals: shift.signals,
-          dayStartEquity: shift.dayStartEquity,
+          dayStartEquity: book.dayStartEquity ?? shift.dayStartEquity,
           shiftStartedAt: shift.shiftStartedAt,
-          lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : current.lastEngineAt,
+          lastEngineAt: book.lastEngineAt ?? current.lastEngineAt,
           settingsOpen: false,
           chartsOpen: false,
           deskOpen: false,
@@ -1014,7 +1043,7 @@ export const useFloor = create<FloorState>()(
           vault: Array.isArray(p.vault) ? p.vault : [],
           autoSweep: p.autoSweep !== false,
           sweptTotal: typeof p.sweptTotal === "number" && p.sweptTotal >= 0 ? p.sweptTotal : 0,
-          lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : current.lifetimePnl,
+          lifetimePnl: typeof book.lifetimePnl === "number" ? book.lifetimePnl : current.lifetimePnl,
           transfers: Array.isArray(p.transfers) ? p.transfers.slice(0, 24) : [],
           brain: {
             ...DEFAULT_BRAIN,
