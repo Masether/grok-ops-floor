@@ -77,7 +77,22 @@ export function coversFees(input: {
   }) >= MIN_NET_USD;
 }
 
-/** Gross move minus entry fee minus exit fee. */
+/** Prefer a real entry; fall back to costUsd/qty so closes never treat sale size as profit. */
+export function resolveLotEntry(input: {
+  entry?: number;
+  qty?: number;
+  costUsd?: number;
+}): number {
+  if (typeof input.entry === "number" && input.entry > 0) return input.entry;
+  const qty = input.qty;
+  const cost = input.costUsd;
+  if (typeof qty === "number" && qty > 0 && typeof cost === "number" && cost > 0) {
+    return cost / qty;
+  }
+  return 0;
+}
+
+/** Gross move minus entry fee minus exit fee. Bad/zero entry → 0 (never book sale notional as PnL). */
 export function netPnl(input: {
   entry: number;
   exit: number;
@@ -86,12 +101,15 @@ export function netPnl(input: {
   entryFee?: number;
   exitFee?: number;
 }): number {
+  if (!(input.entry > 0) || !(input.exit > 0) || !(input.qty > 0)) return 0;
+  if (!(input.taker >= 0) || !Number.isFinite(input.taker)) return 0;
   const notionIn = input.entry * input.qty;
   const notionOut = input.exit * input.qty;
   const gross = (input.exit - input.entry) * input.qty;
   const inFee = input.entryFee ?? feeOn(notionIn, input.taker);
   const outFee = input.exitFee ?? feeOn(notionOut, input.taker);
-  return gross - inFee - outFee;
+  const net = gross - inFee - outFee;
+  return Number.isFinite(net) ? net : 0;
 }
 
 export function feeAwareStops(

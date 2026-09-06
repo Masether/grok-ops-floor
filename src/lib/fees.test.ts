@@ -10,6 +10,7 @@ import {
   learnTaker,
   minTakePct,
   netPnl,
+  resolveLotEntry,
 } from "./fees.ts";
 
 describe("fees", () => {
@@ -33,5 +34,14 @@ describe("fees", () => {
   it("refuses a take that would leave the wallet red after fees", () => {
     assert.equal(coversFees({ entry: 100, mark: 100.4, qty: 10, taker: USD_TAKER }), false);
     assert.equal(coversFees({ entry: 100, mark: 102.2, qty: 10, taker: USD_TAKER }), true);
+  });
+});
+
+describe("resolveLotEntry + netPnl guards", () => {
+  it("never books sale notional as profit when entry is missing", () => {
+    assert.equal(resolveLotEntry({ entry: 0, qty: 2, costUsd: 40 }), 20);
+    assert.equal(netPnl({ entry: 0, exit: 10, qty: 2, taker: 0.008 }), 0);
+    const ok = netPnl({ entry: 20, exit: 21, qty: 1, taker: 0.008 });
+    assert.ok(ok < 1 && ok > 0);
   });
 });

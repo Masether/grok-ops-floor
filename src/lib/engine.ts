@@ -8,7 +8,7 @@ import { budgetStake } from "./budget-size.ts";
 import { liveEntry } from "./sharp.ts";
 import { industryCall } from "./industry-call.ts";
 import { hugeSpike, volumeRatio } from "./spike-alert.ts";
-import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, takerPct, MIN_NET_USD } from "./fees.ts";
+import { blendTaker, edgeClearsFees, feeAwareStops, feeOn, learnTaker, minTakePct, netPnl, resolveLotEntry, takerPct, MIN_NET_USD } from "./fees.ts";
 import { fairValue, mispricing, pricerQuiet } from "./pricer.ts";
 import { autoBotReady } from "./auto-bot.ts";
 import { rankMemeScout, rankScout } from "./scout.ts";
@@ -1688,8 +1688,9 @@ function applyFill(order: Order) {
         };
       }
       const sellQty = Math.min(order.qty, existing.qty);
+      const entryPx = resolveLotEntry(existing);
       const pnl = netPnl({
-        entry: existing.entry,
+        entry: entryPx,
         exit: fill,
         qty: sellQty,
         taker,
@@ -1938,7 +1939,7 @@ function manageOpenLot(
   const quote = p.pair ? getPair(p.pair)?.quote ?? "USD" : "USD";
   const taker = takerPct(quote, liveTaker);
   const net = netPnl({
-    entry: p.entry,
+    entry: resolveLotEntry(p),
     exit: p.mark,
     qty: p.qty,
     taker,
@@ -1973,7 +1974,7 @@ function checkStops() {
     const def = getPair(p.pair) ?? PAIR_BY_ID[p.pair];
     const taker = takerPct(def?.quote ?? "USD", s.liveTakerPct);
     const net = netPnl({
-      entry: p.entry,
+      entry: resolveLotEntry(p),
       exit: mark,
       qty: p.qty,
       taker,
