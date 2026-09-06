@@ -147,6 +147,9 @@ export type FloorState = {
   autoSweep: boolean;
   sweptTotal: number;
   lifetimePnl: number;
+  /** Last armed-desk closed+open from profile sync (watch devices). */
+  syncedTradePnl: number;
+  syncedTradePnlAt: number;
   transfers: TransferRow[];
   realized: number;
   dayStartEquity: number;
@@ -165,6 +168,8 @@ export type FloorState = {
   feedError: string | null;
   feedSource: FeedSource;
   lastEngineAt: number;
+  /** UI heartbeat — not used for profile sync LWW. */
+  lastBeatAt: number;
   lastFeedAt: number;
   shiftStartedAt: number;
   briefs: number;
@@ -459,6 +464,8 @@ export const useFloor = create<FloorState>()(
       autoSweep: true,
       sweptTotal: 0,
       lifetimePnl: 0,
+      syncedTradePnl: 0,
+      syncedTradePnlAt: 0,
       transfers: [],
       realized: 0,
       dayStartEquity: DEFAULT_LIVE_BUDGET,
@@ -478,6 +485,7 @@ export const useFloor = create<FloorState>()(
       feedSource: "kraken",
       lastFeedAt: 0,
       lastEngineAt: 0,
+      lastBeatAt: 0,
       shiftStartedAt: 0,
       briefs: 0,
       ticks: 0,

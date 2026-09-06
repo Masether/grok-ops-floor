@@ -2437,8 +2437,9 @@ export function startEngine(): () => void {
   }
   if (modOn("scout") || !modOn("core")) void runScout();
 
+  // Beat for "desk awake" UI only — do not bump lastEngineAt (that wins profile sync).
   const heartbeat = window.setInterval(() => {
-    patch({ lastEngineAt: Date.now() });
+    patch({ lastBeatAt: Date.now() });
   }, 5_000);
   const persistPulse = window.setInterval(() => {
     flushFloorPersist();

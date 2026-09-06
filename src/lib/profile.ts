@@ -4,7 +4,10 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import type { PairId, Order, Position, TapeEvent, EquityPoint } from "./types.ts";
 import { useFloor, type FloorState, type TransferRow } from "./store.ts";
-import { mergeRemotePnlFields } from "./book-sync.ts";
+import { mergeRemotePnlFields, shouldApplyRemoteBook } from "./book-sync.ts";
+import { lotsMark } from "./live-pnl.ts";
+import { sessionProfit } from "./desk-pnl.ts";
+import { krakenKeysOn } from "./live-budget.ts";
 
 const riskSchema = z
   .object({
@@ -51,6 +54,8 @@ export type ProfileBook = {
   equityHistory: EquityPoint[];
   brain?: FloorState["brain"];
   liveBudget?: number;
+  /** Closed+open at last armed persist — watch devices mirror this. */
+  tradePnl?: number;
 };
 
 export type ProfileRow = {
@@ -89,6 +94,13 @@ export function snapshotBook(s: FloorState): ProfileBook {
     equityHistory: s.equityHistory.slice(-90),
     brain: s.brain,
     liveBudget: s.liveBudget,
+    tradePnl: sessionProfit(
+      s.realized,
+      lotsMark(
+        s.positions.filter((p) => p.mode === "live"),
+        s.tickers,
+      ).unrealized,
+    ),
   };
 }
 
@@ -103,9 +115,23 @@ export function parseBook(json: string | null | undefined): ProfileBook | null {
   }
 }
 
+/** Only the armed Kraken desk may overwrite the shared profile book. */
+export function canPersistDeskBook(s: {
+  launched?: boolean;
+  liveArmed?: boolean;
+  keys?: { apiKey?: string; apiSecret?: string } | null;
+}): boolean {
+  return Boolean(s.launched && s.liveArmed && krakenKeysOn(s.keys));
+}
+
 export function persistDeskBook() {
   const s = useFloor.getState();
-  if (!s.launched) return;
+  if (!canPersistDeskBook(s)) return;
+  const book = snapshotBook(s);
+  useFloor.setState({
+    syncedTradePnl: book.tradePnl ?? 0,
+    syncedTradePnlAt: Date.now(),
+  });
   void saveProfile({
     data: {
       fundingCash: s.fundingCash,
@@ -117,7 +143,7 @@ export function persistDeskBook() {
         maxDailyLossPct: s.risk.maxDailyLossPct,
         maxPositions: s.risk.maxPositions,
       },
-      bookJson: JSON.stringify(snapshotBook(s)),
+      bookJson: JSON.stringify(book),
     },
   }).catch(() => {
     /* guest or unsigned */
@@ -126,7 +152,26 @@ export function persistDeskBook() {
 
 export function applyRemoteBook(book: ProfileBook) {
   const local = useFloor.getState();
-  if ((book.lastEngineAt ?? 0) < (local.lastEngineAt ?? 0)) return;
+  // Armed trading desk never pulls over itself — it is the writer.
+  if (canPersistDeskBook(local)) return;
+  if (
+    !shouldApplyRemoteBook(
+      {
+        lastEngineAt: local.lastEngineAt,
+        positions: local.positions,
+        orders: local.orders,
+        realized: local.realized,
+      },
+      {
+        lastEngineAt: book.lastEngineAt,
+        positions: book.positions,
+        orders: book.orders,
+        realized: book.realized,
+      },
+    )
+  ) {
+    return;
+  }
   const pnl = mergeRemotePnlFields(
     {
       realized: local.realized,
@@ -170,6 +215,18 @@ export function applyRemoteBook(book: ProfileBook) {
     floorOpen: book.launched || local.floorOpen,
     autoTrade: true,
     opsMode: "auto",
+    syncedTradePnl:
+      typeof book.tradePnl === "number" && Number.isFinite(book.tradePnl)
+        ? book.tradePnl
+        : sessionProfit(
+            pnl.realized,
+            lotsMark(
+              (Array.isArray(book.positions) ? book.positions : local.positions).filter(
+                (p) => p.mode === "live",
+              ),
+            ).unrealized,
+          ),
+    syncedTradePnlAt: book.lastEngineAt || Date.now(),
   });
 }
 

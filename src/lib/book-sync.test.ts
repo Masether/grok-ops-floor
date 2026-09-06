@@ -8,6 +8,7 @@ import {
   mergeRemotePnlFields,
   preferRicherBook,
   resolveLiveDayBase,
+  shouldApplyRemoteBook,
   syncClosedRealized,
 } from "./book-sync.ts";
 
@@ -160,6 +161,27 @@ describe("budget dayStart must not invent Day P&L", () => {
         tradePnl: 0.16,
       }),
       91.94,
+    );
+  });
+});
+
+describe("shouldApplyRemoteBook", () => {
+  it("lets a richer older book win over a heartbeat-newer empty local", () => {
+    assert.equal(
+      shouldApplyRemoteBook(
+        { lastEngineAt: 500, positions: [], orders: [], realized: 0 },
+        { lastEngineAt: 100, positions: [{ id: "a" }, { id: "b" }], orders: [{ id: "o" }], realized: 0 },
+      ),
+      true,
+    );
+  });
+  it("keeps a richer local when remote is thinner", () => {
+    assert.equal(
+      shouldApplyRemoteBook(
+        { lastEngineAt: 200, positions: [{ id: "a" }], orders: [{ id: "o" }, { id: "p" }], realized: 1 },
+        { lastEngineAt: 100, positions: [], orders: [], realized: 0 },
+      ),
+      false,
     );
   });
 });

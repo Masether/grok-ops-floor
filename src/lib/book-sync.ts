@@ -189,3 +189,36 @@ export function preferRicherBook<T extends {
   const memoryRicher = mOrders > dOrders || mReal > dReal + 1e-9 || mLife > dLife + 1e-9;
   return memoryRicher ? { ...disk, ...memory } : { ...memory, ...disk };
 }
+
+
+/** True when the cloud book should replace local (richer lots/fills, or same richness and newer). */
+export function shouldApplyRemoteBook(
+  local: {
+    lastEngineAt?: number;
+    positions?: unknown[];
+    orders?: unknown[];
+    realized?: number;
+  },
+  remote: {
+    lastEngineAt?: number;
+    positions?: unknown[];
+    orders?: unknown[];
+    realized?: number;
+  },
+): boolean {
+  const lPos = Array.isArray(local.positions) ? local.positions.length : 0;
+  const rPos = Array.isArray(remote.positions) ? remote.positions.length : 0;
+  const lOrd = Array.isArray(local.orders) ? local.orders.length : 0;
+  const rOrd = Array.isArray(remote.orders) ? remote.orders.length : 0;
+  const lReal = Math.abs(typeof local.realized === "number" ? local.realized : 0);
+  const rReal = Math.abs(typeof remote.realized === "number" ? remote.realized : 0);
+  const lEng = typeof local.lastEngineAt === "number" ? local.lastEngineAt : 0;
+  const rEng = typeof remote.lastEngineAt === "number" ? remote.lastEngineAt : 0;
+
+  const remoteRicher = rPos > lPos || rOrd > lOrd || rReal > lReal + 1e-9;
+  const localRicher = lPos > rPos || lOrd > rOrd || lReal > rReal + 1e-9;
+  if (remoteRicher && !localRicher) return true;
+  if (localRicher && !remoteRicher && lEng >= rEng) return false;
+  // Same richness: allow remote if not older — heartbeat must not invent "newer" alone.
+  return rEng >= lEng;
+}

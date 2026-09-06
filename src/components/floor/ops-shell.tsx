@@ -1,6 +1,6 @@
 import { Component, useEffect, useLayoutEffect, type ErrorInfo, type ReactNode } from "react";
 import { Toaster } from "sonner";
-import { applyRemoteBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
+import { applyRemoteBook, canPersistDeskBook, loadProfile, parseBook, persistDeskBook } from "@/lib/profile";
 import { bootFloorFromDisk, ensureLiveDesk, flushFloorPersist, hydrateFloor, useFloor } from "@/lib/store";
 import { krakenKeysOn } from "@/lib/live-budget";
 import { loadDeskMods, modOn } from "@/lib/desk-mods";
@@ -137,7 +137,8 @@ export function OpsShell() {
 
   useEffect(() => {
     const save = () => {
-      persistDeskBook();
+      // Watch devices must not overwrite the armed desk book.
+      if (canPersistDeskBook(useFloor.getState())) persistDeskBook();
       flushFloorPersist();
     };
     const onVis = () => {

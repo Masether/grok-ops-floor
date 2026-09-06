@@ -1,6 +1,7 @@
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from "recharts";
 import { clockHms, money, moneyFull } from "@/lib/format";
 import { sessionProfit } from "@/lib/desk-pnl";
+import { krakenKeysOn } from "@/lib/live-budget";
 import { useDesk, useFloor } from "@/lib/store";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -10,16 +11,26 @@ export function SessionBoard() {
   const history = useFloor((s) => s.equityHistory);
   const shiftStartedAt = useFloor((s) => s.shiftStartedAt);
   const lastEngineAt = useFloor((s) => s.lastEngineAt);
+  const lastBeatAt = useFloor((s) => s.lastBeatAt);
   const orders = useFloor((s) => s.orders);
   const liveArmed = useFloor((s) => s.liveArmed);
   const mode = useFloor((s) => s.mode);
+  const keys = useFloor((s) => s.keys);
+  const syncedTradePnl = useFloor((s) => s.syncedTradePnl);
+  const syncedTradePnlAt = useFloor((s) => s.syncedTradePnlAt);
   const now = useNow();
 
   const live = mode === "live" || liveArmed;
-  const profit = sessionProfit(desk.realized, desk.unrealized);
+  const armedWriter = liveArmed && Boolean(krakenKeysOn(keys));
+  const localProfit = sessionProfit(desk.realized, desk.unrealized);
+  // Watch phone: mirror the armed desk stamp when fresh so P&L this run matches laptop.
+  const syncFresh = syncedTradePnlAt > 0 && now - syncedTradePnlAt < 90_000;
+  const profit =
+    !armedWriter && syncFresh ? syncedTradePnl : localProfit;
   const startEq = history[0]?.equity ?? desk.equity - profit;
   const running = clockHms(now - (shiftStartedAt || now));
-  const stale = lastEngineAt > 0 && now - lastEngineAt > 120_000;
+  const awakeAt = Math.max(lastEngineAt || 0, lastBeatAt || 0);
+  const stale = awakeAt > 0 && now - awakeAt > 120_000;
   const fills = orders.filter((o) => o.status === "filled" && (live ? o.mode === "live" : o.mode !== "live"));
   const takes = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) > 0).length;
   const stops = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) < 0).length;
@@ -34,7 +45,7 @@ export function SessionBoard() {
     <section className="panel overflow-hidden">
       {stale ? (
         <p className="bg-danger/15 px-3 py-2 text-2xs text-danger">
-          Desk was asleep — last heartbeat {clockHms(now - lastEngineAt)} ago. The bot only
+          Desk was asleep — last heartbeat {clockHms(now - awakeAt)} ago. The bot only
           trades while this tab is awake. Lid closed = no tickets.
         </p>
       ) : null}
