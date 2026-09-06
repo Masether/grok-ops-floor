@@ -34,8 +34,8 @@ import {
 import { makeSimCandles, stepSim } from "./sim-feed.ts";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
 import { pairSleeve } from "./book-balance.ts";
-import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
-import { isPaperDayLeak } from "./book-sync.ts";
+import { bookDayPnl, haltCapUsd, sessionProfit } from "./desk-pnl.ts";
+import { isBudgetDayLeak, isPaperDayLeak } from "./book-sync.ts";
 import {
   PROFIT_SHOW_MIN_USD,
   profitShowBlocksBuys,
@@ -696,7 +696,10 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       ? haltCapUsd(liveNowSleeve?.budget ?? stNow.liveBudget, stNow.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
       : haltBase * stNow.risk.maxDailyLossPct;
     const dayNow = liveNow
-      ? bookDayPnl(liveNowSleeve?.equity ?? 0, haltBase)
+      ? sessionProfit(
+          stNow.realized,
+          lotsMark(bookNow, stNow.tickers).unrealized,
+        )
       : bookDayPnl(markEquity(stNow), haltBase);
     const halted = haltCap > 0 && dayNow <= -haltCap;
     const histPrev = closes.length > 28 ? macdHist(closes.slice(0, -1)) : read.macdHist;
@@ -1115,7 +1118,10 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
         : (sleeveNow?.equity ?? st.liveBudget)
       : st.dayStartEquity || st.startingCash;
     const dayPnl = liveHalt
-      ? bookDayPnl(sleeveNow?.equity ?? 0, gateBase)
+      ? sessionProfit(
+          st.realized,
+          lotsMark(livePositions(st.positions), st.tickers).unrealized,
+        )
       : bookDayPnl(markEquity(st), gateBase);
     const maxLoss = liveHalt
       ? haltCapUsd(st.liveBudget, st.risk.maxDailyLossPct, MIN_LIVE_HALT_USD)
@@ -2403,11 +2409,19 @@ export function startEngine(): () => void {
       tickers: st0.tickers,
     });
     const openLive = livePositions(st0.positions).length;
-    // Only repair leftover paper dayStart (e.g. $10k) on a live sleeve — never reset a green day.
+    // Repair paper $10k leak or $200-budget baseline that invents Day ≈ equity−budget.
     if (
-      openLive === 0 &&
       sleeve.equity > 0 &&
-      isPaperDayLeak(st0.dayStartEquity, st0.liveBudget, sleeve.equity)
+      (isPaperDayLeak(st0.dayStartEquity, st0.liveBudget, sleeve.equity) ||
+        isBudgetDayLeak({
+          dayStart: st0.dayStartEquity,
+          budget: st0.liveBudget,
+          equity: sleeve.equity,
+          tradePnl: sessionProfit(
+            st0.realized,
+            lotsMark(livePositions(st0.positions), st0.tickers).unrealized,
+          ),
+        }))
     ) {
       patch({ dayStartEquity: sleeve.equity });
     }

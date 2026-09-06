@@ -34,6 +34,27 @@ export function isPaperDayLeak(dayStart: number, budget: number, equity: number)
 }
 
 /**
+ * dayStart stuck on the budget label ($200) while sleeve equity is elsewhere
+ * and trading P&L is tiny — invents Day ≈ equity−budget (±$100 lies).
+ */
+export function isBudgetDayLeak(input: {
+  dayStart: number;
+  budget: number;
+  equity: number;
+  tradePnl?: number;
+}): boolean {
+  const start = input.dayStart;
+  const budget = input.budget;
+  const equity = input.equity;
+  if (!(start > 0) || !(budget > 0) || !(equity > 0)) return false;
+  if (Math.abs(start - budget) > 1) return false;
+  const bookGap = Math.abs(equity - start);
+  if (bookGap < 5) return false;
+  const trade = Number.isFinite(input.tradePnl) ? Math.abs(input.tradePnl as number) : 0;
+  return bookGap > trade + 5;
+}
+
+/**
  * Keep the same-day live baseline across re-arm / key re-paste.
  * Only seed from sleeve when missing, new UTC day, or paper leak.
  */
@@ -52,7 +73,13 @@ export function dayStartOnLiveArm(input: {
   const keep =
     sameDay &&
     input.dayStartEquity > 0 &&
-    !isPaperDayLeak(input.dayStartEquity, input.liveBudget, sleeve || input.dayStartEquity);
+    !isPaperDayLeak(input.dayStartEquity, input.liveBudget, sleeve || input.dayStartEquity) &&
+    !isBudgetDayLeak({
+      dayStart: input.dayStartEquity,
+      budget: input.liveBudget,
+      equity: sleeve || input.dayStartEquity,
+      tradePnl: 0,
+    });
   if (keep) {
     return {
       dayStartEquity: input.dayStartEquity,
@@ -74,12 +101,23 @@ export function resolveLiveDayBase(input: {
   budget: number;
   equity: number;
   openLots: number;
+  tradePnl?: number;
 }): number {
   const start = input.dayStart;
   if (!(start > 0)) {
     return input.equity > 0 ? input.equity : input.budget > 0 ? input.budget : 0;
   }
   if (isPaperDayLeak(start, input.budget, input.equity) && !(input.openLots > 0)) {
+    return input.equity > 0 ? input.equity : start;
+  }
+  if (
+    isBudgetDayLeak({
+      dayStart: start,
+      budget: input.budget,
+      equity: input.equity,
+      tradePnl: input.tradePnl,
+    })
+  ) {
     return input.equity > 0 ? input.equity : start;
   }
   return start;

@@ -77,7 +77,7 @@ export function HeaderBar() {
       <div className="border-b border-border px-3 py-1.5 lg:px-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
-            "Sleeve PnL"
+            Sleeve PnL
           </span>
           <span
             className={cn(

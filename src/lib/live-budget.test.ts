@@ -24,8 +24,10 @@ describe("clampLiveBudget", () => {
     assert.equal(clampLiveBudget(99_999), 50_000);
     assert.equal(restoreLiveBudget(100), 200);
     assert.equal(restoreLiveBudget(200), 200);
-    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 26.7, openLots: 0 }), 200);
-    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 180, openLots: 1 }), 200);
+    // Budget label as dayStart vs thin sleeve is a leak — snap to equity (not invent Day −$173).
+    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 26.7, openLots: 0 }), 26.7);
+    // Open lots + tradePnl unset: still snap when book gap >> 0.
+    assert.equal(liveDayBase({ dayStart: 200, budget: 200, equity: 180, openLots: 1 }), 180);
     assert.equal(liveDayBase({ dayStart: 10_000, budget: 200, equity: 26.7, openLots: 0 }), 26.7);
     assert.equal(liveDayBase({ dayStart: 26.7, budget: 200, equity: 28.1, openLots: 0 }), 26.7);
   });

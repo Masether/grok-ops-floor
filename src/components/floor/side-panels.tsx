@@ -375,8 +375,12 @@ export function TheDesk() {
               <>
                 {bookPos.map((p) => {
                   const mark = tickers[p.pair]?.last ?? p.mark;
-                  const pnl = (mark - p.entry) * p.qty;
-                  const pnlPct = p.entry ? ((mark - p.entry) / p.entry) * 100 : 0;
+                  const cost =
+                    typeof p.costUsd === "number" && p.costUsd > 0
+                      ? p.costUsd
+                      : p.entry * p.qty;
+                  const pnl = mark * p.qty - cost;
+                  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
                   return (
                     <li key={p.id} className="flex items-center justify-between gap-2 text-2xs">
                       <span className="font-display tracking-[0.08em] text-good uppercase">IN</span>
@@ -391,7 +395,8 @@ export function TheDesk() {
                 {tape.map((o) => {
                   const out = fillLeg(o) === "out";
                   const notion = (o.fillPrice ?? o.price) * o.qty;
-                  const shown = out ? o.pnl : -notion;
+                  // Buys: spend size only (muted). Never paint −$spend as a loss.
+                  const shown = out ? o.pnl : null;
                   return (
                     <li key={o.id} className="flex items-center justify-between gap-2 text-2xs">
                       <span
@@ -407,10 +412,20 @@ export function TheDesk() {
                       <span
                         className={cn(
                           "stat-num",
-                          shown == null ? "text-muted" : shown >= 0 ? "text-good" : "text-danger",
+                          out
+                            ? shown == null
+                              ? "text-muted"
+                              : shown >= 0
+                                ? "text-good"
+                                : "text-danger"
+                            : "text-muted",
                         )}
                       >
-                        {shown == null ? "—" : money(shown)}
+                        {out
+                          ? shown == null
+                            ? "—"
+                            : money(shown)
+                          : `spent ${money(notion)}`}
                       </span>
                       <span className="stat-num text-subtle">{ago(o.ts)}</span>
                     </li>

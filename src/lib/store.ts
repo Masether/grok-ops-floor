@@ -15,7 +15,7 @@ import {
   syncClosedRealized,
 } from "./book-sync.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
-import { bookDayPnl } from "./desk-pnl.ts";
+import { bookDayPnl, sessionProfit } from "./desk-pnl.ts";
 import {
   GOAL_DEFAULTS,
   asGoalLevel,
@@ -305,19 +305,24 @@ export function computeDesk(s: FloorState): DeskSnapshot {
         budget: sleeve?.budget ?? s.liveBudget,
         equity,
         openLots: book.length,
+        tradePnl: sessionProfit(s.realized, unrealized),
       })
     : s.dayStartEquity > 0
       ? s.dayStartEquity
       : s.startingCash > 0
         ? s.startingCash
         : equity;
+  // Live Day/Sleeve must be closed+open after fees — never equity−$200 budget (fake ±$100).
+  const dayPnl = live
+    ? sessionProfit(realized, unrealized)
+    : bookDayPnl(equity, dayBase);
   return {
     equity,
     cash,
     exposure: posValue,
     unrealized,
     realized,
-    dayPnl: bookDayPnl(equity, dayBase),
+    dayPnl,
     fills: fills.length,
     wins,
     losses,

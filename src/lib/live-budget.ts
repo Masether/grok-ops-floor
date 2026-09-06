@@ -27,6 +27,7 @@ export function liveDayBase(input: {
   budget: number;
   equity: number;
   openLots: number;
+  tradePnl?: number;
 }): number {
   return resolveLiveDayBase(input);
 }

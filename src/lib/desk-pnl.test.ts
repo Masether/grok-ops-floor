@@ -165,3 +165,12 @@ describe("fillLeg / fillWhy", () => {
     assert.equal(fillLeg({ side: "sell", reason: "CLOSE" }), "out");
   });
 });
+
+describe("live Day is sessionProfit not equity-budget", () => {
+  it("closed+open stays cents when book vs $200 budget looks like ±$100", () => {
+    assert.equal(sessionProfit(0, 0.16), 0.16);
+    assert.equal(sessionProfit(0, -0.04), -0.04);
+    assert.notEqual(bookDayPnl(91.94, 200), sessionProfit(0, 0.16));
+    assert.notEqual(bookDayPnl(227.85, 200), sessionProfit(0, -0.04));
+  });
+});

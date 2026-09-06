@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   closedRealizedFromOrders,
   dayStartOnLiveArm,
+  isBudgetDayLeak,
   isPaperDayLeak,
   mergeRemotePnlFields,
   preferRicherBook,
@@ -130,5 +131,35 @@ describe("preferRicherBook", () => {
     );
     assert.equal(out.realized, 0.17);
     assert.equal((out.orders as unknown[]).length, 2);
+  });
+});
+
+describe("budget dayStart must not invent Day P&L", () => {
+  it("flags $200 budget baseline vs $91 or $227 sleeve with flat trade", () => {
+    assert.equal(
+      isBudgetDayLeak({ dayStart: 200, budget: 200, equity: 91.94, tradePnl: 0.16 }),
+      true,
+    );
+    assert.equal(
+      isBudgetDayLeak({ dayStart: 200, budget: 200, equity: 227.85, tradePnl: -0.04 }),
+      true,
+    );
+    assert.equal(
+      isBudgetDayLeak({ dayStart: 200, budget: 200, equity: 200.1, tradePnl: 0.1 }),
+      false,
+    );
+  });
+
+  it("resolveLiveDayBase snaps off budget leak to sleeve equity", () => {
+    assert.equal(
+      resolveLiveDayBase({
+        dayStart: 200,
+        budget: 200,
+        equity: 91.94,
+        openLots: 4,
+        tradePnl: 0.16,
+      }),
+      91.94,
+    );
   });
 });
