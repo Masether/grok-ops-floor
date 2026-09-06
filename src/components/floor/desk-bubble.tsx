@@ -13,7 +13,7 @@ import {
 import { ago, money, moneyFull, pct, px, qty } from "@/lib/format";
 import { placeManualTicket, executeOrder, closeLot, cancelPendingTicket } from "@/lib/engine-call";
 import { PAIR_BY_ID, pairBase, pairLabel } from "@/lib/kraken";
-import { liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
+import { isSyncedLot, liveDayBase, MIN_LIVE_HALT_USD } from "@/lib/live-budget";
 import { fatBook, GROW_READY_USD } from "@/lib/book-balance";
 import { useDesk, useFloor, type DeskTab } from "@/lib/store";
 import type { Order, PairId, Side } from "@/lib/types";
@@ -191,6 +191,8 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
           <ul className="mt-2 space-y-1.5">
             {lots.map((p) => {
               const mark = tickers[p.pair]?.last ?? p.mark;
+              const synced = isSyncedLot(p);
+              const notion = mark * p.qty;
               const m = lotMetrics({
                 entry: p.entry,
                 mark,
@@ -198,29 +200,36 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
                 take: p.take,
                 qty: p.qty,
               });
+              // Synced Kraken bags: manage/sell only — never invent open P&L from adopt mark.
+              const rowPnl = synced ? 0 : m.pnl;
               return (
                 <li
                   key={p.id}
                   className={cn(
                     "rounded-sm px-2 py-2",
-                    m.nearStop
+                    !synced && m.nearStop
                       ? "desk-row-near-stop shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-danger)_55%,transparent)]"
                       : "shadow-[0_0_0_1px_var(--color-border)]",
                   )}
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-x-2">
                     <span className="font-display text-2xs tracking-[0.12em] uppercase">
-                      IN {pairLabel(p.pair)}
-                      {m.nearStop ? <span className="ml-1.5 text-danger">near stop</span> : null}
+                      {synced ? "SYN" : "IN"} {pairLabel(p.pair)}
+                      {!synced && m.nearStop ? <span className="ml-1.5 text-danger">near stop</span> : null}
                     </span>
-                    <span className={cn("stat-num text-sm", signedClass(m.pnl))}>{money(m.pnl)}</span>
+                    <span
+                      className={cn(
+                        "stat-num text-sm",
+                        synced ? "text-muted" : signedClass(rowPnl),
+                      )}
+                    >
+                      {synced ? `bag ${money(notion)}` : money(rowPnl)}
+                    </span>
                   </div>
                   <p className="mt-0.5 text-2xs text-muted">
-                    {qty(p.qty, 4)} @ {px(p.entry)} → {px(mark)} · stop {px(p.stop)} · take {px(p.take)} ·{" "}
-                    {pct(m.fromEntryPct, 2)}
-                    {m.underwater && m.fromEntryPct > -0.35
-                      ? " · fee/spread drag — not closed yet"
-                      : ""}
+                    {synced
+                      ? `${qty(p.qty, 4)} @ mark ${px(mark)} · wallet sync — sell only, no open P&L`
+                      : `${qty(p.qty, 4)} @ ${px(p.entry)} → ${px(mark)} · stop ${px(p.stop)} · take ${px(p.take)} · ${pct(m.fromEntryPct, 2)}${m.underwater && m.fromEntryPct > -0.35 ? " · fee/spread drag — not closed yet" : ""}`}
                   </p>
                   <Button
                     type="button"

@@ -44,6 +44,66 @@ describe("calc honesty identities", () => {
     assert.ok(Math.abs(s.cash + s.deployed - s.equity) < 1e-9);
   });
 
+
+  it("synced bags: Free + In lots (deployed) = Desk; synced add 0 open PnL", () => {
+    const positions = [
+      lot({
+        qty: 0.2,
+        entry: 106,
+        mark: 110,
+        pair: "SOLUSD",
+        synced: true,
+        note: "synced from Kraken wallet",
+        costUsd: 0,
+      }),
+      lot({ qty: 0.04, entry: 2500, mark: 2500, costUsd: 100.8 }),
+    ];
+    const tickers = {
+      SOLUSD: { last: 110 } as never,
+      ETHUSD: { last: 2500 } as never,
+    };
+    const s = liveSleeve({
+      liveBudget: 200,
+      liveBalance: { ZUSD: "85" },
+      positions,
+      tickers,
+    });
+    const marked = lotsMark(positions, tickers);
+    // Sleeve In lots excludes synced; desk exposure must use deployed (not marked.lots).
+    assert.equal(s.deployed, 0.04 * 2500);
+    assert.ok(marked.lots > s.deployed, "lotsMark still sees synced notion");
+    assert.equal(marked.unrealized, 0.04 * 2500 - 100.8);
+    assert.ok(Math.abs(s.cash + s.deployed - s.equity) < 1e-9);
+    assert.ok(Math.abs(sessionProfit(0, marked.unrealized) - marked.unrealized) < 1e-9);
+  });
+
+  it("synced-only book invents no Day open PnL", () => {
+    const positions = [
+      lot({
+        qty: 0.2,
+        entry: 106,
+        mark: 110,
+        pair: "SOLUSD",
+        synced: true,
+        note: "synced from Kraken wallet",
+        costUsd: 0,
+      }),
+    ];
+    const marked = lotsMark(positions, { SOLUSD: { last: 110 } as never });
+    assert.equal(marked.unrealized, 0);
+    assert.equal(sessionProfit(0, marked.unrealized), 0);
+    const s = liveSleeve({
+      liveBudget: 200,
+      liveBalance: { ZUSD: "85", SOL: "0.2" },
+      positions,
+      tickers: { SOLUSD: { last: 110 } as never },
+    });
+    assert.equal(s.cost, 0);
+    assert.equal(s.deployed, 0);
+    assert.equal(s.cash, 85);
+    assert.equal(s.equity, 85);
+  });
+
   it("after half GRID out, remaining cost matches half basis", () => {
     const remain = remainLotBasis({
       costUsd: 201.6,

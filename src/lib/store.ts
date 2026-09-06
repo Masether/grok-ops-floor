@@ -322,10 +322,13 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   const dayPnl = live
     ? sessionProfit(realized, unrealized)
     : bookDayPnl(equity, dayBase);
+  // Live In lots = sleeve deployed only. Synced wallet bags must not inflate exposure
+  // (Free + In lots = Desk equity). Paper still marks every open lot.
+  const exposure = live ? (sleeve?.deployed ?? 0) : posValue;
   return {
     equity,
     cash,
-    exposure: posValue,
+    exposure,
     unrealized,
     realized,
     dayPnl,
