@@ -865,6 +865,27 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       return;
     }
 
+    // Don't catch a falling knife on a fresh clip. Adds on an open lot can still DCA a dip.
+    if (ticketKind === "buy" && !existingLot && (oneMinPct <= -0.55 || threePct <= -1.25)) {
+      bumpAgent("hunter", "dump in flight — skip catch", 0.75);
+      pushQueue({
+        title: `SKIP DUMP ${label}`,
+        detail: `1m ${oneMinPct.toFixed(2)}% · 3m ${threePct.toFixed(2)}% — wait for the knife to slow`,
+        severity: "playbook",
+        pair,
+      });
+      pushEvent({
+        agent: "hunter",
+        next: "archivist",
+        stage: "handout",
+        pair,
+        title: `SKIP DUMP ${label}`,
+        detail: `tape falling ${oneMinPct.toFixed(2)}% / ${threePct.toFixed(2)}%`,
+        tone: "warn",
+      });
+      return;
+    }
+
     if (
       playbook === "scalp" &&
       ticketKind === "buy" &&

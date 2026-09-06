@@ -218,6 +218,9 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
                   <p className="mt-0.5 text-2xs text-muted">
                     {qty(p.qty, 4)} @ {px(p.entry)} → {px(mark)} · stop {px(p.stop)} · take {px(p.take)} ·{" "}
                     {pct(m.fromEntryPct, 2)}
+                    {m.underwater && m.fromEntryPct > -0.35
+                      ? " · fee/spread drag — not closed yet"
+                      : ""}
                   </p>
                   <Button
                     type="button"
@@ -301,7 +304,11 @@ function FillRow({ order }: { order: Order }) {
           order.pnl == null ? "text-muted" : signedClass(order.pnl),
         )}
       >
-        {order.pnl == null ? (out ? "—" : money(pxn * order.qty)) : money(order.pnl)}
+        {order.pnl == null
+          ? out
+            ? "—"
+            : `spent ${money(pxn * order.qty)}`
+          : money(order.pnl)}
       </span>
       <span className="stat-num w-8 shrink-0 text-right text-micro text-subtle">{ago(order.ts)}</span>
     </li>
