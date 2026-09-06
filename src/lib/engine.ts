@@ -44,6 +44,10 @@ import {
 } from "./profit-show.ts";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
+import {
+  reconcileLiveLotsWithWallet,
+  shouldSkipBuyAlreadyHeld,
+} from "./wallet-sync.ts";
 import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
 import { fetchWire } from "./wire-api.ts";
 import { sessionEnded } from "./session.ts";
@@ -1345,6 +1349,19 @@ function sizeTicket(
     };
   }
 
+  if (live && !existing) {
+    const held = shouldSkipBuyAlreadyHeld({
+      bal: s.liveBalance,
+      pair,
+      mark: price,
+      hasLocalLot: false,
+      playbook,
+    });
+    if (held.skip) {
+      applyWalletReconcile(s.liveBalance);
+      return { ok: false, why: held.why };
+    }
+  }
   if (existing && playbook === "scalp") return { ok: false, why: "already long this pair" };
   if (existing && playbook !== "scalp") {
     const cap = playbook === "grid" ? GRID.maxAdds : DCA.maxAdds;
@@ -2035,6 +2052,59 @@ function applyFill(order: Order) {
   flushFloorPersist();
 }
 
+
+function applyWalletReconcile(bal?: Record<string, string> | null) {
+  const s = useFloor.getState();
+  const liveBal = bal ?? s.liveBalance;
+  if (!liveBal || !hasKrakenBook(liveBal)) return;
+  const r = reconcileLiveLotsWithWallet({
+    positions: s.positions,
+    liveBalance: liveBal,
+    tickers: s.tickers,
+    uid,
+  });
+  const changed =
+    r.dropped.length > 0 || r.adopted.length > 0 || r.resized.length > 0;
+  if (!changed) return;
+  useFloor.setState({ positions: r.positions });
+  if (r.dropped.length) {
+    bumpAgent(
+      "treasury",
+      `Kraken sold · cleared ${r.dropped.map(pairLabel).join(", ")}`,
+      0.9,
+    );
+    pushEvent({
+      agent: "treasury",
+      stage: "signed",
+      title: "WALLET SYNC",
+      detail: `Manual/external sell on Kraken — dropped ${r.dropped.map(pairLabel).join(", ")}`,
+      tone: "warn",
+    });
+  }
+  if (r.adopted.length) {
+    bumpAgent(
+      "treasury",
+      `Synced ${r.adopted.map(pairLabel).join(", ")} from Kraken`,
+      0.8,
+    );
+    pushEvent({
+      agent: "treasury",
+      stage: "signed",
+      title: "WALLET SYNC",
+      detail: `Adopted Kraken holdings · ${r.adopted.map(pairLabel).join(", ")}`,
+      tone: "good",
+    });
+  }
+  if (r.resized.length) {
+    bumpAgent(
+      "treasury",
+      `Resized ${r.resized.map(pairLabel).join(", ")} to wallet`,
+      0.7,
+    );
+  }
+  flushFloorPersist();
+}
+
 function dropPhantomLot(pair: PairId) {
   useFloor.setState((s) => ({
     positions: s.positions.filter((p) => p.pair !== pair),
@@ -2357,6 +2427,7 @@ export async function refreshTreasury() {
     const bal = await venue.fetchBalance(s.keys);
     useFloor.getState().setLiveBalance(bal);
     useFloor.getState().setKeysOk(true);
+    applyWalletReconcile(bal);
     patch({ liveArmed: true, autoTrade: true, mode: "live", floorOpen: true, launched: true });
     const usd = usdOnBook(bal);
     bumpAgent("treasury", `Kraken USD ${usd.toFixed(2)}`, 0.7);
@@ -2473,6 +2544,7 @@ export function startEngine(): () => void {
   running = true;
   ensureLiveDesk();
   restoreOrphanLots();
+  applyWalletReconcile();
   if (!useFloor.getState().shiftStartedAt) {
     patch({ shiftStartedAt: Date.now() });
   }
