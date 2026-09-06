@@ -6,6 +6,7 @@ import {
   isBudgetDayLeak,
   isPaperDayLeak,
   mergeRemotePnlFields,
+  pickJournal,
   preferRicherBook,
   resolveLiveDayBase,
   shouldApplyRemoteBook,
@@ -180,6 +181,25 @@ describe("shouldApplyRemoteBook", () => {
       shouldApplyRemoteBook(
         { lastEngineAt: 200, positions: [{ id: "a" }], orders: [{ id: "o" }, { id: "p" }], realized: 1 },
         { lastEngineAt: 100, positions: [], orders: [], realized: 0 },
+      ),
+      false,
+    );
+  });
+});
+
+describe("pickJournal", () => {
+  it("never lets an empty reopen wipe a filled blotter", () => {
+    assert.deepEqual(pickJournal([], [{ id: "a" }]), [{ id: "a" }]);
+    assert.deepEqual(pickJournal([{ id: "d" }, { id: "e" }], []), [{ id: "d" }, { id: "e" }]);
+  });
+});
+
+describe("shouldApplyRemoteBook empty remote", () => {
+  it("rejects an empty newer cloud book over a local journal", () => {
+    assert.equal(
+      shouldApplyRemoteBook(
+        { lastEngineAt: 10, positions: [{ id: "p" }], orders: [{ id: "o" }], realized: 2 },
+        { lastEngineAt: 9999, positions: [], orders: [], realized: 0 },
       ),
       false,
     );

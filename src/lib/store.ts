@@ -11,6 +11,7 @@ import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts"
 import {
   closedRealizedFromOrders,
   dayStartOnLiveArm,
+  pickJournal,
   preferRicherBook,
   syncClosedRealized,
 } from "./book-sync.ts";
@@ -366,6 +367,10 @@ function writeFloorPersist() {
   persistTimer = undefined;
   if (!persistName) return;
   try {
+    const live = useFloor.getState();
+    if ((live.orders.length > 0 || live.positions.length > 0) && !live.lastEngineAt) {
+      useFloor.setState({ lastEngineAt: Date.now() });
+    }
     localStorage.setItem(persistName, persistValue);
   } catch {
     try {
@@ -1042,13 +1047,11 @@ export const useFloor = create<FloorState>()(
           queue: [],
           swarm: idleSwarm(),
           realized: book.realized ?? current.realized,
-          orders: Array.isArray(book.orders) ? book.orders : current.orders,
-          positions:
-            (book.orders?.length ?? 0) > (Array.isArray(p.orders) ? p.orders.length : 0)
-              ? current.positions
-              : Array.isArray(p.positions)
-                ? p.positions
-                : current.positions,
+          orders: pickJournal(
+            Array.isArray(book.orders) ? book.orders : p.orders,
+            current.orders,
+          ),
+          positions: pickJournal(p.positions, current.positions),
           equityHistory: Array.isArray(book.equityHistory) ? book.equityHistory : shift.equityHistory,
           signals: shift.signals,
           dayStartEquity: book.dayStartEquity ?? shift.dayStartEquity,
@@ -1066,8 +1069,8 @@ export const useFloor = create<FloorState>()(
             typeof p.goalDays === "number" ? p.goalDays : current.goalDays,
           ),
           goalLevel: asGoalLevel(p.goalLevel ?? current.goalLevel),
-          sessionMinutes: 0,
-          sessionEndsAt: null,
+          sessionMinutes: typeof p.sessionMinutes === "number" ? p.sessionMinutes : current.sessionMinutes,
+          sessionEndsAt: typeof p.sessionEndsAt === "number" ? p.sessionEndsAt : current.sessionEndsAt,
           chartInterval: asChartInterval(p.chartInterval ?? current.chartInterval),
           chartType: asChartType(p.chartType ?? current.chartType),
           chartIndicators: normalizeChartIndicators(p.chartIndicators ?? current.chartIndicators),
@@ -1162,10 +1165,12 @@ export function bootFloorFromDisk() {
       dayStartEquity: dayStart,
       startingCash: budget,
       cash: typeof p.cash === "number" && p.cash <= budget * 3 ? p.cash : budget,
-      realized: typeof p.realized === "number" ? p.realized : cur.realized,
+      realized: typeof p.realized === "number" && (Math.abs(p.realized) > 0 || cur.realized === 0)
+        ? p.realized
+        : cur.realized,
       lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : cur.lifetimePnl,
-      positions: Array.isArray(p.positions) ? p.positions : cur.positions,
-      orders: Array.isArray(p.orders) ? p.orders : cur.orders,
+      positions: pickJournal(Array.isArray(p.positions) ? p.positions : undefined, cur.positions),
+      orders: pickJournal(Array.isArray(p.orders) ? p.orders : undefined, cur.orders),
       events: Array.isArray(p.events) ? p.events : cur.events,
       equityHistory: Array.isArray(p.equityHistory) ? p.equityHistory : cur.equityHistory,
       sweptTotal: typeof p.sweptTotal === "number" ? p.sweptTotal : cur.sweptTotal,

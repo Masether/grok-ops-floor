@@ -2600,6 +2600,10 @@ export function startEngine(): () => void {
     patch({ lastBeatAt: Date.now() });
   }, 5_000);
   const persistPulse = window.setInterval(() => {
+    const st = useFloor.getState();
+    if (st.orders.length > 0 || st.positions.length > 0 || Math.abs(st.realized) > 0) {
+      patch({ lastEngineAt: Date.now() });
+    }
     flushFloorPersist();
   }, 8_000);
 

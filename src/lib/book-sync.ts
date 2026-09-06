@@ -215,10 +215,25 @@ export function shouldApplyRemoteBook(
   const lEng = typeof local.lastEngineAt === "number" ? local.lastEngineAt : 0;
   const rEng = typeof remote.lastEngineAt === "number" ? remote.lastEngineAt : 0;
 
+  const remoteEmpty = rPos === 0 && rOrd === 0 && rReal < 1e-9;
+  const localHasBook = lPos > 0 || lOrd > 0 || lReal > 1e-9;
+  // Empty/stale cloud must never wipe a phone journal on reopen.
+  if (remoteEmpty && localHasBook) return false;
+
   const remoteRicher = rPos > lPos || rOrd > lOrd || rReal > lReal + 1e-9;
   const localRicher = lPos > rPos || lOrd > rOrd || lReal > rReal + 1e-9;
   if (remoteRicher && !localRicher) return true;
-  if (localRicher && !remoteRicher && lEng >= rEng) return false;
+  if (localRicher && !remoteRicher) return false;
   // Same richness: allow remote if not older — heartbeat must not invent "newer" alone.
   return rEng >= lEng;
 }
+
+/** Prefer the non-empty journal side. Empty arrays never beat a live book. */
+export function pickJournal<T>(disk: T[] | undefined, memory: T[] | undefined): T[] {
+  const d = Array.isArray(disk) ? disk : [];
+  const m = Array.isArray(memory) ? memory : [];
+  if (d.length === 0 && m.length > 0) return m;
+  if (m.length === 0 && d.length > 0) return d;
+  return d.length >= m.length ? d : m;
+}
+
