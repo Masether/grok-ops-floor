@@ -16,7 +16,7 @@ export function SessionBoard() {
   const now = useNow();
 
   const live = mode === "live" || liveArmed;
-  const profit = live ? desk.dayPnl : sessionProfit(desk.realized, desk.unrealized);
+  const profit = sessionProfit(desk.realized, desk.unrealized);
   const startEq = history[0]?.equity ?? desk.equity - profit;
   const running = clockHms(now - (shiftStartedAt || now));
   const stale = lastEngineAt > 0 && now - lastEngineAt > 120_000;

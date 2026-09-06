@@ -91,4 +91,25 @@ describe("liveSleeve", () => {
     assert.equal(s.cash, 160);
     assert.equal(s.equity, 180);
   });
+
+  it("prefers costUsd (entry+fees) over entry*qty so book size matches open P&L", () => {
+    // Low entry*qty would fake free room → green $209; costUsd keeps sleeve honest.
+    const s = liveSleeve({
+      liveBudget: 200,
+      liveBalance: { ZUSD: "92.12" },
+      positions: [
+        {
+          ...lot({ qty: 0.047, entry: 1800, mark: 2495 }),
+          costUsd: 117.4,
+        },
+      ],
+      tickers: { ETHUSD: { last: 2495 } as never },
+    });
+    assert.equal(s.cost, 117.4);
+    assert.ok(Math.abs(s.deployed - 0.047 * 2495) < 0.02);
+    assert.equal(s.cash, Math.min(92.12, 200 - 117.4));
+    assert.ok(Math.abs(s.equity - (s.cash + s.deployed)) < 0.001);
+    // Must not invent ~$209 book vs $200 budget as if +$9 profit
+    assert.ok(s.equity < 205, `equity ${s.equity} still inflated`);
+  });
 });

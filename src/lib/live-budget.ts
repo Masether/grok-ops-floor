@@ -149,7 +149,11 @@ export function liveSleeve(input: {
   const btcUsd = btcUsdValue(input.liveBalance, btcPx);
   const venue = usdOnBook(input.liveBalance) + btcUsd;
   const lots = livePositions(input.positions).filter((p) => p.pair !== "XBTUSD");
-  const cost = lots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx, true), 0);
+  // Prefer costUsd (entry + fees) so sleeve equity matches open P&L — never invent fake green.
+  const cost = lots.reduce((a, p) => {
+    if (typeof p.costUsd === "number" && p.costUsd > 0) return a + p.costUsd;
+    return a + lotUsd(p, input.tickers, btcPx, true);
+  }, 0);
   const deployed = lots.reduce((a, p) => a + lotUsd(p, input.tickers, btcPx), 0);
   const cash = Math.max(0, Math.min(venue, Math.max(0, budget - cost)));
   return {

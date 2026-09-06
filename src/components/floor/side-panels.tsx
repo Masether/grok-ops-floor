@@ -241,7 +241,7 @@ export function TheDesk() {
   const liveNote = liveFills[0]
     ? `${liveFills[0].side === "sell" ? "out" : "in"} ${getPair(liveFills[0].pair)?.label ?? liveFills[0].pair} · ${fillWhy(liveFills[0].reason)} · ${money(liveFills[0].pnl ?? 0)}`
     : "";
-  const eqPct = pctOfCapital(desk.equity - cap, cap);
+  const tradePnl = desk.realized + desk.unrealized;
   const unrlPct = pctOfCapital(desk.unrealized, cap);
   const realPct = pctOfCapital(desk.realized, cap);
   const dayPct = pctOfCapital(desk.dayPnl, cap);
@@ -270,14 +270,15 @@ export function TheDesk() {
         <span
           className={cn(
             "stat-num text-lg",
-            eqPct > 0 ? "text-good" : eqPct < 0 ? "text-danger" : "text-muted",
+            tradePnl > 0 ? "text-good" : tradePnl < 0 ? "text-danger" : "text-muted",
           )}
+          title={`Book ${moneyFull(desk.equity)} · trade P&L ${money(tradePnl)}`}
         >
           {moneyFull(desk.equity)}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-2 border-b border-border px-3 py-2 sm:grid-cols-4">
-        <BookStat k="Start" v={moneyFull(cap)} />
+        <BookStat k="Budget" v={moneyFull(cap)} />
         <BookStat k="Free" v={moneyFull(desk.cash)} />
         <BookStat k="In lots" v={moneyFull(desk.exposure)} />
         <BookStat
@@ -298,7 +299,9 @@ export function TheDesk() {
                   : `${12 + ((p.equity - sparkMin) / sparkSpan) * 18}px`,
                 background: eqFlat
                   ? "var(--color-info)"
-                  : p.equity >= cap
+                  : (typeof p.unrealized === "number"
+                        ? p.unrealized
+                        : p.equity - (spark[0]?.equity ?? p.equity)) >= 0
                     ? "var(--color-good)"
                     : "var(--color-danger)",
                 opacity: 0.35 + (i / spark.length) * 0.65,
