@@ -30,8 +30,11 @@ export function liveEntry(input: {
   const taker = input.taker ?? USD_TAKER;
   if (!input.playbook) return { ok: false, why: "no book" };
   if (input.grokKind === "sell" && !hot) return { ok: false, why: "Grok veto" };
-  if (input.conf < 0.34 && !(input.heat && hot)) return { ok: false, why: "weak tape" };
   const bookBuy = input.playbook === "grid" || input.playbook === "dca";
+  // "weak tape" is a scalp gate. Grid/DCA are allowed to seed on quiet majors.
+  if (!bookBuy && input.conf < 0.34 && !(input.heat && hot)) {
+    return { ok: false, why: "weak tape" };
+  }
   const spikeBuy = input.playbook === "scalp" && hot;
   const wants = bookBuy || spikeBuy || input.readKind === "buy" || input.grokKind === "buy";
   if (!wants) return { ok: false, why: "no buy from tape or Grok" };

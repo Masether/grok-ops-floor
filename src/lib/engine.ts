@@ -932,7 +932,13 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const regime = readRegime(closes);
     bumpAgent("regime", regime.state, 0.9);
     emitPulse({ from: "signal", to: "regime" });
-    if (ticketKind === "buy" && !regime.allowBuy && !paper && ticketConf < 0.4) {
+    if (
+      ticketKind === "buy" &&
+      !regime.allowBuy &&
+      !paper &&
+      ticketConf < 0.4 &&
+      playbook === "scalp"
+    ) {
       bumpAgent("regime", "fade blocked", 1);
       pushQueue({
         title: "REGIME BLOCK",

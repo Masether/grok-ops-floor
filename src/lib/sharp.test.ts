@@ -53,4 +53,22 @@ describe("liveEntry", () => {
     assert.equal(cashBlock.ok, false);
     if (!cashBlock.ok) assert.equal(cashBlock.why, "daily sit USD");
   });
+
+  it("quiet grid survives low conf; scalp still gets weak tape", () => {
+    const quiet = liveEntry({
+      ...base,
+      playbook: "grid",
+      conf: 0.18,
+      grokKind: "hold",
+      readKind: "hold",
+      lane: "chop",
+      changePct: 0.1,
+      expectedMovePct: 0.001,
+      hot: false,
+    });
+    assert.equal(quiet.ok, true);
+    const weak = liveEntry({ ...base, conf: 0.18, changePct: 0.1, expectedMovePct: 0.001, hot: false });
+    assert.equal(weak.ok, false);
+    if (!weak.ok) assert.equal(weak.why, "weak tape");
+  });
 });
