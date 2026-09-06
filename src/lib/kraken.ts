@@ -293,13 +293,17 @@ export const PAIR_BY_WS: Record<string, PairDef> = Object.fromEntries(
   PAIRS.map((a) => [a.wsSymbol, a]),
 );
 
+/** All tradeable core USD majors (BTC is reserve — never on the ticket book). */
 export const DEFAULT_PAIRS: PairId[] = [
   "ETHUSD",
   "SOLUSD",
   "XRPUSD",
+  "ADAUSD",
   "LINKUSD",
   "AVAXUSD",
   "SUIUSD",
+  "TAOUSD",
+  "NEARUSD",
 ];
 
 /** Every Kraken USD meme in the catalog. Scout adds more at runtime. */
@@ -449,9 +453,10 @@ export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = f
     if (!btcBookArmed(btcUsd) && isBtcQuote(id)) return false;
     return true;
   });
-  // Stuck meme-only book → inject majors so grid/DCA can print.
-  if (!book.some((id) => getPair(id)?.sleeve === "core")) {
-    book = [...DEFAULT_PAIRS.filter((id) => id !== "XBTUSD"), ...book];
+  // Always keep every core major on the ticket book (BTC stays reserve / off).
+  const coreTrade = DEFAULT_PAIRS.filter((id) => id !== "XBTUSD" && Boolean(getPair(id)));
+  for (const id of coreTrade) {
+    if (!book.includes(id)) book.push(id);
   }
   if (btcBookArmed(btcUsd)) {
     for (const id of BTC_BOOK) {

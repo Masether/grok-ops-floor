@@ -7,6 +7,9 @@ describe("defaultTradeBook", () => {
     const d = defaultTradeBook();
     assert.ok(d.includes("ETHUSD"));
     assert.ok(d.includes("SOLUSD"));
+    assert.ok(d.includes("ADAUSD"));
+    assert.ok(d.includes("TAOUSD"));
+    assert.ok(d.includes("NEARUSD"));
     assert.ok(d.includes("PEPEUSD"));
     assert.ok(!d.includes("XBTUSD"));
   });

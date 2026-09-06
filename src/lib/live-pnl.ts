@@ -1,5 +1,6 @@
 import type { PairId, Position, Ticker } from "./types.ts";
 import { sessionProfit } from "./desk-pnl.ts";
+import { isBtcUsd } from "./kraken.ts";
 import { isSyncedLot } from "./live-budget.ts";
 
 export function lotsMark(
@@ -14,8 +15,8 @@ export function lotsMark(
     const qty = p.qty;
     const notion = mark * qty;
     lots += notion;
-    // Synced Kraken inventory is tracked for sells — never invent open P&L from it.
-    if (isSyncedLot(p)) {
+    // Synced bags + BTC reserve: track mark, never invent trade open P&L.
+    if (isSyncedLot(p) || isBtcUsd(p.pair)) {
       cost += notion;
       continue;
     }

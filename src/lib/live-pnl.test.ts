@@ -66,3 +66,23 @@ describe("lotsMark fee basis", () => {
     assert.equal(Number(marked.unrealized.toFixed(2)), -0.16);
   });
 });
+
+describe("lotsMark BTC reserve", () => {
+  it("does not invent open PnL from an XBTUSD lot", () => {
+    const btc = {
+      id: "btc1",
+      pair: "XBTUSD" as const,
+      side: "buy" as const,
+      qty: 0.00122,
+      entry: 80_000,
+      mark: 98_000,
+      stop: 0,
+      take: 0,
+      openedAt: 1,
+      mode: "live" as const,
+    };
+    const marked = lotsMark([btc], { XBTUSD: { last: 98_000 } as never });
+    assert.equal(marked.unrealized, 0);
+    assert.ok(marked.lots > 0);
+  });
+});

@@ -81,3 +81,15 @@ describe("wallet sync", () => {
     assert.equal(r.positions[0]?.costUsd, 0);
   });
 });
+
+describe("wallet sync BTC reserve", () => {
+  it("drops an XBTUSD trading lot so it cannot invent open PnL", () => {
+    const r = reconcileLiveLotsWithWallet({
+      positions: [lot({ pair: "XBTUSD", qty: 0.00122, entry: 80_000, mark: 98_000 })],
+      liveBalance: { ZUSD: "200", XXBT: "0.00122" },
+      tickers: { XBTUSD: { last: 98_000 } as never },
+    });
+    assert.equal(r.positions.some((p) => p.pair === "XBTUSD"), false);
+    assert.ok(r.dropped.includes("XBTUSD"));
+  });
+});

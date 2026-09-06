@@ -58,9 +58,9 @@ export function reconcileLiveLotsWithWallet(input: {
       next.push(p);
       continue;
     }
+    // BTC is wallet reserve — never a desk IN lot (was inventing fake open PnL).
     if (isBtcUsd(p.pair)) {
-      next.push(p);
-      open.add(p.pair);
+      dropped.push(p.pair);
       continue;
     }
     const def = getPair(p.pair);
