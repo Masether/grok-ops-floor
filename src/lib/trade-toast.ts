@@ -279,6 +279,17 @@ export function toastSweep(amount: number): void {
   });
 }
 
+/** Live win — make the USD hit obvious before the next buy. */
+export function toastKrakenWin(amount: number): void {
+  pushTradeToast({
+    priority: 2,
+    title: `YOU MADE ${money(amount)}`,
+    detail: "After fees · sitting as USD on Kraken — look, then the desk can buy again",
+    tone: "good",
+    id: `kraken-win-${Math.round(amount * 100)}-${Date.now() % 10_000}`,
+  });
+}
+
 export function toastLiveReject(order: Pick<Order, "pair" | "side">, detail: string): void {
   const base = pairBase(order.pair);
   pushTradeToast({

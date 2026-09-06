@@ -36,6 +36,12 @@ import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
 import { pairSleeve } from "./book-balance.ts";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
 import { isPaperDayLeak } from "./book-sync.ts";
+import {
+  PROFIT_SHOW_MIN_USD,
+  profitShowBlocksBuys,
+  profitShowSecsLeft,
+  profitShowUntil,
+} from "./profit-show.ts";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
@@ -52,6 +58,7 @@ import {
   toastVenueBlock,
   toastAwayReplay,
   toastSweep,
+  toastKrakenWin,
 } from "./trade-toast.ts";
 import type {
   AgentId,
@@ -75,6 +82,8 @@ const STAGE_CYCLE: PipelineStage[] = [
 
 const lastSignalAt = new Map<PairId, number>();
 let running = false;
+/** Pause new buys so a live win is visible as Kraken USD first. */
+let profitShowHoldUntil = 0;
 let timers: number[] = [];
 let stopWs: (() => void) | null = null;
 let lastEquitySample = 0;
@@ -1246,6 +1255,14 @@ function sizeTicket(
     return { ok: true, qty: existing.qty, side: "sell" };
   }
 
+  if (live && profitShowBlocksBuys(Date.now(), profitShowHoldUntil)) {
+    const secs = profitShowSecsLeft(Date.now(), profitShowHoldUntil);
+    return {
+      ok: false,
+      why: `win sitting as Kraken USD — look first, new buys in ${secs}s`,
+    };
+  }
+
   if (existing && playbook === "scalp") return { ok: false, why: "already long this pair" };
   if (existing && playbook !== "scalp") {
     const cap = playbook === "grid" ? GRID.maxAdds : DCA.maxAdds;
@@ -1809,19 +1826,23 @@ function applyFill(order: Order) {
   emitPulse({ from: "runner", to: "archivist" });
   sampleEquity(true);
   toastOrderFill(order, closePnl);
-  if (closePnl != null && closePnl >= 0.5 && useFloor.getState().autoSweep) {
+  if (closePnl != null && closePnl >= PROFIT_SHOW_MIN_USD) {
     const profit = closePnl;
     if (order.mode === "live") {
-      useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + profit }));
-      toastSweep(profit);
+      // Let the USD hit show on Kraken before the next buy — not forever, just a look.
+      profitShowHoldUntil = profitShowUntil(Date.now());
+      toastKrakenWin(profit);
       pushEvent({
         agent: "treasury",
         stage: "signed",
-        title: `SWEEP ${money(profit)}`,
-        detail: "Profit is USD on Kraken — dry powder for the next ticket",
+        title: `WIN ${money(profit)}`,
+        detail: "After fees · USD on Kraken — desk pauses new buys so you can see it",
         tone: "good",
       });
-    } else {
+      if (useFloor.getState().autoSweep) {
+        useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + profit }));
+      }
+    } else if (useFloor.getState().autoSweep) {
       const swept = useFloor.getState().sweepProfit();
       if (swept.ok) {
         toastSweep(swept.amount);
