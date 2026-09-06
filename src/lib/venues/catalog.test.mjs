@@ -14,13 +14,13 @@ describe("venue registry", () => {
     assert.equal(v.id, "kraken");
     assert.equal(v.label, "Kraken");
     assert.ok(VENUE_IDS.includes("kraken"));
-    assert.ok(VENUE_IDS.includes("paper"));
+    assert.ok(VENUE_IDS.includes("kraken"));
   });
 
-  it("getVenue(paper) exists", () => {
+  it("getVenue(paper) coerces to Kraken", () => {
     const v = getVenue("paper");
-    assert.equal(v.id, "paper");
-    assert.equal(v.label, "Paper");
+    assert.equal(v.id, "kraken");
+    assert.equal(v.label, "Kraken");
   });
 
   it("unknown id throws", () => {
@@ -31,7 +31,7 @@ describe("venue registry", () => {
   it("live unknown id falls back to kraken", () => {
     assert.equal(resolveLiveVenueId("nope"), DEFAULT_LIVE_VENUE);
     assert.equal(resolveLiveVenueId("kraken"), "kraken");
-    assert.equal(resolveLiveVenueId("paper"), "paper");
+    assert.equal(resolveLiveVenueId("paper"), "kraken");
   });
 
   it("coming-soon venues are labeled next and are not live ids", () => {

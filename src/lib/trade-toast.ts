@@ -80,17 +80,16 @@ export function isTakeReason(reason: string): boolean {
   return reason === "TP" || /(^|[^A-Za-z])TP([^A-Za-z]|$)/.test(reason);
 }
 
-export type FillToastKind = "live" | "stop" | "take" | "paper-buy" | "paper-sell";
+export type FillToastKind = "live" | "stop" | "take";
 
 export function classifyFillToast(order: {
   mode: TradeMode;
   side: Side;
   reason: string;
 }): FillToastKind {
-  if (order.mode === "live") return "live";
-  if (isStopReason(order.reason)) return "stop";
-  if (isTakeReason(order.reason)) return "take";
-  return order.side === "buy" ? "paper-buy" : "paper-sell";
+  // Live-only desk — every fill is a live toast.
+  void order;
+  return "live";
 }
 
 function pairBase(pair: Order["pair"]): string {

@@ -378,7 +378,7 @@ function SendPane() {
       <p className="text-2xs text-muted">
         {mode === "live" || liveArmed
           ? "Live cash is already on Kraken. Sending to Kraken releases this wallet bucket. Sending to Coinbase books the take-off — finish Funding → Withdraw in the Kraken app. No seed, no withdrawal key in this app."
-          : "Paper send so you can rehearse. On live, USD is already on Kraken; Coinbase is a Kraken withdraw you finish yourself."}
+          : "USD is already on Kraken. Coinbase send is a Kraken withdraw you finish yourself."}
       </p>
       <div className="grid grid-cols-2 gap-2">
         <button

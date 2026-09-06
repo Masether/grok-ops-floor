@@ -264,7 +264,7 @@ export function TheDesk() {
         >
           <span className="panel-kicker">The desk</span>
           <p className="panel-sub">
-            Same dollars as Kraken. Brain journal is this book, not paper stocks.
+            Same dollars as Kraken. Live book only — no paper mode.
           </p>
         </button>
         <span
@@ -497,7 +497,7 @@ export function PairStrip() {
             type="button"
             onClick={() => {
               setInspect(on ? null : id);
-              if (!on && opsMode === "paper") setDeskOpen(true);
+              if (!on && opsMode === "auto") setDeskOpen(true);
             }}
             className={cn(
               "min-h-11 min-w-[7.5rem] rounded-sm px-2.5 py-1.5 text-left shadow-[0_0_0_1px_var(--color-border)] transition-transform duration-150 ease-out active:scale-[0.96]",

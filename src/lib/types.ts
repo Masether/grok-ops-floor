@@ -15,8 +15,8 @@ export type AgentId =
 export type AgentStatus = "idle" | "working" | "handoff" | "blocked" | "halted";
 
 export type Side = "buy" | "sell";
-export type TradeMode = "paper" | "live";
-export type OpsMode = "paper" | "auto" | "learn";
+export type TradeMode = "live";
+export type OpsMode = "auto" | "learn";
 export type OrderStatus = "queued" | "working" | "filled" | "rejected" | "cancelled";
 export type PipelineStage =
   | "brief"
@@ -146,6 +146,8 @@ export type Order = {
   pnl?: number;
   /** Avg entry used when this order closed a lot (for Kraken fee settle). */
   entryPrice?: number;
+  /** Kraken QueryOrders already reconciled this fill. */
+  feeSettled?: boolean;
   krakenTxid?: string;
   book?: "scalp" | "grid" | "dca";
 };

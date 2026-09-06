@@ -248,7 +248,7 @@ export type FloorState = {
     to: WalletId,
     amount: number,
   ) => { ok: true } | { ok: false; reason: string };
-  resetPaper: () => void;
+  resetLiveBook: () => void;
   selectAgent: (id: AgentId | null) => void;
   setPendingLive: (order: Order | null) => void;
   setInspectPair: (pair: PairId | null) => void;
@@ -447,8 +447,8 @@ export const useFloor = create<FloorState>()(
       scoutDropped: 0,
       lastScoutAt: 0,
       risk: DEFAULT_RISK,
-      startingCash: 10_000,
-      cash: 10_000,
+      startingCash: DEFAULT_LIVE_BUDGET,
+      cash: DEFAULT_LIVE_BUDGET,
       fundingCash: 0,
       vault: [],
       autoSweep: true,
@@ -456,7 +456,7 @@ export const useFloor = create<FloorState>()(
       lifetimePnl: 0,
       transfers: [],
       realized: 0,
-      dayStartEquity: 10_000,
+      dayStartEquity: DEFAULT_LIVE_BUDGET,
       positions: [],
       orders: [],
       events: [],
@@ -509,7 +509,7 @@ export const useFloor = create<FloorState>()(
         if (open && !get().launched) return;
         set({ floorOpen: open });
       },
-      setMode: (mode) => set({ mode, liveArmed: mode === "live" ? get().liveArmed : false }),
+      setMode: (_mode) => set({ mode: "live", venueId: "kraken" }),
       setOpsMode: (opsMode) => {
         if (!get().launched) return;
         set({
@@ -531,7 +531,7 @@ export const useFloor = create<FloorState>()(
         if (v && !get().launched) return;
         set({
           autoTrade: v,
-          opsMode: v ? "auto" : get().opsMode === "learn" ? "learn" : "paper",
+          opsMode: v ? "auto" : get().opsMode === "learn" ? "learn" : "auto",
           floorOpen: v ? true : get().floorOpen,
         });
       },
@@ -578,23 +578,26 @@ export const useFloor = create<FloorState>()(
         });
         queueMicrotask(flushFloorPersist);
       },
-      setVenueId: (id) => set({ venueId: id === "paper" ? "paper" : "kraken" }),
+      setVenueId: (_id) => set({ venueId: "kraken" }),
       setHumanVerified: (v) => set({ humanVerified: v }),
       launchDesk: (input) => {
         launchedThisSession = true;
         const payload = clampLaunch(input);
         const minutes = normalizeSessionMinutes(input.sessionMinutes ?? 0);
+        const budget = clampLiveBudget(payload.startingCash);
         set({
           launched: true,
           floorOpen: true,
           autoTrade: true,
           opsMode: "auto",
           selfLearn: true,
-          mode: "paper",
+          mode: "live",
+          venueId: "kraken",
           liveArmed: false,
-          startingCash: payload.startingCash,
-          cash: payload.startingCash,
-          dayStartEquity: payload.startingCash,
+          liveBudget: budget,
+          startingCash: budget,
+          cash: budget,
+          dayStartEquity: budget,
           risk: {
             ...get().risk,
             sizePct: payload.sizePct,
@@ -610,7 +613,7 @@ export const useFloor = create<FloorState>()(
           goalDays: input.goalDays != null ? normalizeGoalDays(input.goalDays) : get().goalDays,
           goalLevel: input.goalLevel != null ? asGoalLevel(input.goalLevel) : get().goalLevel,
         });
-        get().resetPaper();
+        get().resetLiveBook();
         queueMicrotask(flushFloorPersist);
       },
       stopDesk: () => set({ floorOpen: false, autoTrade: false, sessionEndsAt: null }),
@@ -784,10 +787,15 @@ export const useFloor = create<FloorState>()(
         });
         return { ok: true as const };
       },
-      resetPaper: () => {
-        const cash = get().startingCash;
+      resetLiveBook: () => {
+        // Live journal reset only — never invent paper $10k.
+        const s = get();
+        const cash = s.liveBudget > 0 ? s.liveBudget : DEFAULT_LIVE_BUDGET;
         set({
+          mode: "live",
+          venueId: "kraken",
           cash,
+          startingCash: cash,
           realized: 0,
           dayStartEquity: cash,
           positions: [],
@@ -963,7 +971,7 @@ export const useFloor = create<FloorState>()(
           },
         );
         const launched = launchedThisSession || inferLaunched(p);
-        const venueId: VenueId = p.liveArmed || p.mode === "live" ? "kraken" : p.venueId === "paper" ? "paper" : "kraken";
+        const venueId: VenueId = "kraken";
         const keyed =
           typeof (p.keys ?? current.keys)?.apiKey === "string" &&
           ((p.keys ?? current.keys)?.apiKey?.trim().length ?? 0) > 8 &&
@@ -1099,6 +1107,14 @@ export function bootFloorFromDisk() {
     const p = (parsed.state ?? parsed) as Partial<FloorState>;
     const keyed = Boolean(krakenKeysOn(p.keys));
     const cur = useFloor.getState();
+    const budget = restoreLiveBudget(p.liveBudget ?? cur.liveBudget);
+    // Scrub legacy paper $10k baselines so they never paint live meters.
+    const dayStart =
+      typeof p.dayStartEquity === "number" && p.dayStartEquity > budget * 3
+        ? budget
+        : typeof p.dayStartEquity === "number"
+          ? p.dayStartEquity
+          : cur.dayStartEquity;
     useFloor.setState({
       launched: true,
       floorOpen: true,
@@ -1111,20 +1127,21 @@ export function bootFloorFromDisk() {
       keys: p.keys ?? cur.keys,
       // Keep last known auth when keys are already on disk — don't force a re-test wipe.
       keysOk: keyed ? (typeof p.keysOk === "boolean" ? p.keysOk : cur.keysOk) : false,
-      liveBudget: restoreLiveBudget(p.liveBudget),
+      liveBudget: budget,
       liveBalance: p.liveBalance ?? cur.liveBalance ?? null,
       liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : cur.liveTakerPct,
       pairs: liveWatchPairs([...(Array.isArray(p.pairs) ? p.pairs : []), ...defaultTradeBook()], 0, false),
       lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : cur.lastEngineAt,
       shiftStartedAt: typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : cur.shiftStartedAt,
-      dayStartEquity: typeof p.dayStartEquity === "number" ? p.dayStartEquity : cur.dayStartEquity,
+      dayStartEquity: dayStart,
+      startingCash: budget,
+      cash: typeof p.cash === "number" && p.cash <= budget * 3 ? p.cash : budget,
       realized: typeof p.realized === "number" ? p.realized : cur.realized,
       lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : cur.lifetimePnl,
       positions: Array.isArray(p.positions) ? p.positions : cur.positions,
       orders: Array.isArray(p.orders) ? p.orders : cur.orders,
       events: Array.isArray(p.events) ? p.events : cur.events,
       equityHistory: Array.isArray(p.equityHistory) ? p.equityHistory : cur.equityHistory,
-      cash: typeof p.cash === "number" ? p.cash : cur.cash,
       sweptTotal: typeof p.sweptTotal === "number" ? p.sweptTotal : cur.sweptTotal,
     });
   } catch {

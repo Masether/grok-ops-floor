@@ -6,7 +6,7 @@
 /** @typedef {{ startingCash?: number, sizePct?: number, stopPct?: number, takePct?: number, maxDailyLossPct?: number, maxPositions?: number }} LaunchInput */
 
 export const LAUNCH_DEFAULTS = {
-  startingCash: 10_000,
+  startingCash: 200,
   sizePct: 0.05,
   stopPct: 0.015,
   takePct: 0.025,
@@ -111,12 +111,12 @@ function fmtPct(fraction) {
 export function launchPreviewLine(input) {
   const p = clampLaunch(input);
   const ticket = ticketNotional(p.startingCash, p.sizePct);
-  return `A $${fmtMoney(p.startingCash)} book → ~$${fmtMoney(ticket)} per ticket, stop ${fmtPct(p.stopPct)}%, take ${fmtPct(p.takePct)}%. Paper. Can still lose.`;
+  return `A $${fmtMoney(p.startingCash)} live budget → ~$${fmtMoney(ticket)} per ticket, stop ${fmtPct(p.stopPct)}%, take ${fmtPct(p.takePct)}%. Real Kraken USD. Can still lose.`;
 }
 
 /**
  * Grandfather persisted desks: missing `launched` + existing book activity
- * counts as already launched so we do not brick a running paper test.
+ * counts as already launched so we do not brick a running live desk.
  * @param {unknown} persisted
  */
 export function inferLaunched(persisted) {

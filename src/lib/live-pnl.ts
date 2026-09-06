@@ -11,9 +11,13 @@ export function lotsMark(
   for (const p of positions) {
     const mark = tickers?.[p.pair]?.last ?? p.mark;
     const qty = p.qty;
-    lots += mark * qty;
-    cost += p.entry * qty;
-    unrealized += (mark - p.entry) * qty;
+    const notion = mark * qty;
+    // costUsd includes entry fee when set — stops fresh buys looking like instant losses.
+    const basis =
+      typeof p.costUsd === "number" && p.costUsd > 0 ? p.costUsd : p.entry * qty;
+    lots += notion;
+    cost += basis;
+    unrealized += notion - basis;
   }
   return { lots, cost, unrealized };
 }

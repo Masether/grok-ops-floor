@@ -28,17 +28,10 @@ describe("classifyFillToast", () => {
     assert.equal(classifyFillToast({ mode: "live", side: "sell", reason: "TP" }), "live");
   });
 
-  it("splits paper SL / TP / flat closes", () => {
-    assert.equal(classifyFillToast({ mode: "paper", side: "sell", reason: "SL" }), "stop");
-    assert.equal(classifyFillToast({ mode: "paper", side: "sell", reason: "TP" }), "take");
-    assert.equal(
-      classifyFillToast({ mode: "paper", side: "buy", reason: "EMA cross" }),
-      "paper-buy",
-    );
-    assert.equal(
-      classifyFillToast({ mode: "paper", side: "sell", reason: "EMA cross" }),
-      "paper-sell",
-    );
+  it("live-only desk classifies every fill as live", () => {
+    assert.equal(classifyFillToast({ mode: "live", side: "sell", reason: "SL" }), "live");
+    assert.equal(classifyFillToast({ mode: "live", side: "sell", reason: "TP" }), "live");
+    assert.equal(classifyFillToast({ mode: "live", side: "buy", reason: "EMA cross" }), "live");
   });
 });
 
@@ -53,7 +46,7 @@ describe("SL/TP reason tokens", () => {
 });
 
 describe("describeFillToast copy", () => {
-  it("formats a paper buy like PAPER BUY BTC · qty @ price", () => {
+  it("formats a live buy like LIVE FILL BTC · qty @ price", () => {
     const t = describeFillToast({
       id: "ord_1",
       pair: "XBTUSD",
@@ -61,12 +54,12 @@ describe("describeFillToast copy", () => {
       qty: 0.01,
       price: 78120,
       fillPrice: 78120,
-      mode: "paper",
+      mode: "live",
       reason: "EMA cross",
     });
-    assert.equal(t.priority, 3);
-    assert.equal(t.tone, "info");
-    assert.match(t.title, /PAPER BUY BTC/);
+    assert.equal(t.priority, 1);
+    assert.equal(t.tone, "danger");
+    assert.match(t.title, /LIVE FILL BUY BTC/);
     assert.match(t.title, /0\.01/);
     assert.match(t.title, /78120/);
   });
@@ -80,14 +73,14 @@ describe("describeFillToast copy", () => {
         qty: 0.5,
         price: 2400,
         fillPrice: 2400,
-        mode: "paper",
+        mode: "live",
         reason: "SL",
       },
       -12.4,
     );
-    assert.equal(t.priority, 2);
-    assert.equal(t.tone, "warn");
-    assert.match(t.title, /STOP closed ETH/);
+    assert.equal(t.priority, 1);
+    assert.equal(t.tone, "danger");
+    assert.match(t.title, /LIVE STOP ETH|STOP closed ETH/);
     assert.match(t.title, /-\$12\.40/);
   });
 
@@ -100,14 +93,14 @@ describe("describeFillToast copy", () => {
         qty: 0.4,
         price: 2500,
         fillPrice: 2500,
-        mode: "paper",
+        mode: "live",
         reason: "TP",
       },
       18,
     );
-    assert.equal(t.priority, 2);
-    assert.equal(t.tone, "good");
-    assert.match(t.title, /TAKE closed ETH/);
+    assert.equal(t.priority, 1);
+    assert.equal(t.tone, "danger");
+    assert.match(t.title, /LIVE TAKE ETH|TAKE closed ETH/);
   });
 
   it("formats a live fill as P1 danger", () => {

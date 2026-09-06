@@ -113,10 +113,10 @@ export function LaunchSetup() {
             <img src="/favicon.svg" alt="" className="size-8 shrink-0 rounded-sm" />
             <div>
               <p className="panel-kicker" id="launch-title">
-                Paper or live
+                Live Kraken
               </p>
               <p className="panel-sub">
-                Paper first — play money on live prices, 24/7 until you stop. Live is USD from
+                Real Kraken USD only. Live prices, real fills, 24/7 until you stop. USD from
                 your exchange when you attach a wallet. No $10k-in-7-days target.
               </p>
               <SignedOut>
@@ -124,7 +124,7 @@ export function LaunchSetup() {
                   <Link to="/login" className="underline-offset-4 hover:text-fg hover:underline">
                     Sign in
                   </Link>{" "}
-                  to keep the paper book on your profile. Wallet keys stay optional.
+                  to keep your desk book on your profile. Paste Kraken Query + Orders keys to trade.
                 </p>
               </SignedOut>
             </div>
@@ -136,10 +136,10 @@ export function LaunchSetup() {
             <p className="text-sm text-muted">
               300 agents coordinate: one finds a setup, another challenges it, data and risk
               check the tape, Grok merges one signal and keeps the dissent. Hot tape, alts, and
-              memes. $10k paper. Live stays off.
+              memes. Live Kraken budget — real USD.
             </p>
             <Button type="button" className="min-h-11 w-full" variant="good" onClick={() => commitLaunch()}>
-              Start paper desk
+              Start live desk
             </Button>
             <Button
               type="button"
@@ -147,18 +147,18 @@ export function LaunchSetup() {
               variant="outline"
               onClick={() => setTune(true)}
             >
-              Tune paper cash and book
+              Tune live budget and book
             </Button>
             <p className="text-2xs text-subtle">
-              Not financial advice. Paper can still lose. The bot cannot deposit or withdraw.
-              Add USD on the Desk when you want more paper, or arm live from your exchange.
+              Not financial advice. Live can lose real money. The bot cannot deposit or withdraw.
+              Fund USD on Kraken, set your budget, then arm.
             </p>
           </div>
         ) : (
           <form className="flex min-h-0 flex-1 flex-col" noValidate onSubmit={commitLaunch}>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
               <div className="space-y-1.5">
-                <Label htmlFor="launch-cash">Paper cash $</Label>
+                <Label htmlFor="launch-cash">Live budget $</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {FUND_PRESETS.map((n) => (
                     <Chip key={n} active={cash === n} onClick={() => setCash(n)}>
@@ -295,7 +295,7 @@ export function LaunchSetup() {
             </div>
             <div className="shrink-0 space-y-2 border-t border-border px-4 py-3">
               <Button type="submit" className="min-h-11 w-full" variant="good">
-                Start paper desk
+                Start live desk
               </Button>
               <Button
                 type="button"
@@ -306,7 +306,7 @@ export function LaunchSetup() {
                 Back
               </Button>
               <p className="text-2xs text-subtle">
-                Not financial advice. Paper can still lose. Live stays off until you attach an
+                Not financial advice. Live Kraken only. Attach
                 exchange, test the connection, and arm.
               </p>
             </div>

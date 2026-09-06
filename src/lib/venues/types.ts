@@ -1,6 +1,6 @@
 import type { PairId } from "../types.ts";
 
-export type VenueId = "paper" | "kraken";
+export type VenueId = "kraken";
 
 export type VenueKeys = {
   apiKey: string;

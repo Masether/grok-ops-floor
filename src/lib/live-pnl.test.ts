@@ -34,13 +34,35 @@ describe("livePnl", () => {
   it("marks unrealized off the live last, not the stale lot mark", () => {
     const marked = lotsMark([lot], { ETHUSD: tick(2010) });
     assert.equal(marked.lots, 20.1);
-    assert.equal(marked.unrealized, 0.1);
+    assert.equal(Number(marked.unrealized.toFixed(4)), 0.1);
     const snap = livePnl({
       realized: 1.5,
       positions: [lot],
       tickers: { ETHUSD: tick(2010) },
     });
-    assert.equal(snap.profit, 1.6);
+    assert.equal(Number(snap.profit.toFixed(4)), 1.6);
     assert.deepEqual(pnlRange([0, 2, -1], 1.6), { high: 2, low: -1 });
+  });
+});
+
+describe("lotsMark fee basis", () => {
+  it("counts entry fee in cost so a flat mark is not a fake loss", () => {
+    const lot = {
+      id: "p1",
+      pair: "ETHUSD" as const,
+      side: "buy" as const,
+      qty: 0.01,
+      entry: 2000,
+      mark: 2000,
+      stop: 0,
+      take: 0,
+      openedAt: 1,
+      mode: "live" as const,
+      costUsd: 20.16, // 20 notional + 0.16 fee
+    };
+    const marked = lotsMark([lot], { ETHUSD: { last: 2000 } as never });
+    assert.ok(marked.unrealized < 0);
+    assert.ok(marked.unrealized > -0.2);
+    assert.equal(Number(marked.unrealized.toFixed(2)), -0.16);
   });
 });

@@ -153,7 +153,7 @@ function openLot(book: AwayBook, pair: PairId, qty: number, price: number, ts: n
     stop: band.stop,
     take: band.take,
     openedAt: ts,
-    mode: "paper",
+    mode: "live",
     note: `AWAY ${reason}`,
   });
   book.orders = [
@@ -166,7 +166,7 @@ function openLot(book: AwayBook, pair: PairId, qty: number, price: number, ts: n
       fillPrice: price,
       fee,
       status: "filled" as const,
-      mode: "paper" as const,
+      mode: "live" as const,
       reason: `AWAY IN · ${reason}`,
       ts,
     },
@@ -192,7 +192,7 @@ function closeLot(book: AwayBook, pos: Position, fill: number, ts: number, actio
       fee,
       pnl,
       status: "filled" as const,
-      mode: "paper" as const,
+      mode: "live" as const,
       reason: `AWAY OUT · ${tag}`,
       ts,
     },

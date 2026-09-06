@@ -24,11 +24,10 @@ describe("closedRealizedFromOrders", () => {
     const orders = [
       { status: "filled" as const, side: "sell" as const, mode: "live" as const, pnl: 2 },
       { status: "filled" as const, side: "buy" as const, mode: "live" as const, pnl: undefined },
-      { status: "filled" as const, side: "sell" as const, mode: "paper" as const, pnl: 9 },
       { status: "filled" as const, side: "sell" as const, mode: "live" as const, pnl: -0.5 },
     ];
     assert.equal(closedRealizedFromOrders(orders, true), 1.5);
-    assert.equal(closedRealizedFromOrders(orders, false), 9);
+    assert.equal(closedRealizedFromOrders(orders, false), 0);
   });
 });
 

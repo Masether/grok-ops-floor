@@ -604,7 +604,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
     const minConf =
       sleeve === "heat"
         ? 0.28
-        : s0.mode === "paper"
+        : false /* live-only */
           ? Math.min(pairMinConf(brain, pair), SCALP.minConf)
           : Math.max(0.38, Math.min(pairMinConf(brain, pair), 0.5));
     const swarmSleeve =
@@ -1167,7 +1167,7 @@ async function evaluatePair(pair: PairId, candles: { close: number; volume: numb
       qty: verdict.qty,
       price,
       status: "queued",
-      mode: liveDesk ? "live" : "paper",
+      mode: "live",
       reason: `${(playbook ?? "scalp").toUpperCase()} · MACD ${lane} · ${read.reason}`,
       book: playbook ?? "scalp",
       ts: Date.now(),
@@ -1490,28 +1490,16 @@ async function executeOrderNow(order: Order) {
     return;
   }
 
-  const ticker = useFloor.getState().tickers[order.pair];
-  const last = ticker?.last ?? order.price;
-  const slip = 0.00035 + Math.random() * 0.0004;
-  const fillPrice = order.side === "buy" ? last * (1 + slip) : last * (1 - slip);
-  const fee = fillPrice * order.qty * 0.0026;
-  const filled: Order = {
+  // Live-only desk: never simulate a paper fill.
+  const rejected: Order = {
     ...order,
-    status: "filled",
-    fillPrice,
-    fee,
+    status: "rejected",
+    reason: "Live Kraken only — paste Query + Orders keys",
     ts: Date.now(),
   };
-  applyFill(filled);
-  pushEvent({
-    agent: "runner",
-    next: "archivist",
-    stage: "signed",
-    pair: order.pair,
-    title: `PAPER FILL ${order.side.toUpperCase()} ${pairLabel(order.pair)}`,
-    detail: `${order.qty} @ ${px(fillPrice)} · fee ${fee.toFixed(2)}`,
-    tone: "good",
-  });
+  patch({ orders: [rejected, ...useFloor.getState().orders].slice(0, 80) });
+  bumpAgent("runner", "needs Kraken keys", 1);
+  toastLiveReject(order, "Live Kraken only — paste Query + Orders keys");
 }
 
 export async function placeManualTicket(input: {
@@ -1537,7 +1525,7 @@ export async function placeManualTicket(input: {
       qty: pos.qty,
       price,
       status: "queued",
-      mode: s.mode,
+      mode: "live",
       reason: "manual ticket",
       ts: Date.now(),
     };
@@ -1559,7 +1547,7 @@ export async function placeManualTicket(input: {
     qty,
     price,
     status: "queued",
-    mode: s.liveArmed ? "live" : "paper",
+    mode: "live",
     reason: "manual ticket",
     ts: Date.now(),
   };
@@ -1667,18 +1655,25 @@ async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiS
     if (!(q.fee > 0) && !(q.price > 0) && !(q.cost > 0)) return;
     const notion = q.cost > 0 ? q.cost : 0;
     const sample = q.fee > 0 ? learnTaker(notion || 1, q.fee) : 0;
+    let announcedWin: number | null = null;
     useFloor.setState((s) => {
       const prev = s.orders.find((o) => o.id === orderId);
       if (!prev) {
         return sample > 0 ? { liveTakerPct: blendTaker(s.liveTakerPct, sample) } : {};
       }
-      const fillPx =
-        q.price > 0 ? q.price : (prev.fillPrice ?? prev.price);
+      // Idempotent — never re-apply fee deltas (that was draining the meter).
+      if (prev.feeSettled) {
+        return sample > 0 ? { liveTakerPct: blendTaker(s.liveTakerPct, sample) } : {};
+      }
+      const fillPx = q.price > 0 ? q.price : (prev.fillPrice ?? prev.price);
       const fee = q.fee > 0 ? q.fee : (prev.fee ?? 0);
       const qty = q.vol > 0 ? q.vol : prev.qty;
+      const priorFee = typeof prev.fee === "number" && prev.fee > 0 ? prev.fee : 0;
+      const feeDelta = fee - priorFee;
       let pnl = prev.pnl;
       let realized = s.realized;
       let lifetimePnl = s.lifetimePnl;
+      let dayStartEquity = s.dayStartEquity;
       if (prev.side === "sell" && prev.status === "filled") {
         const entryPx = resolveLotEntry({ entry: prev.entryPrice, qty });
         if (entryPx > 0 && fillPx > 0 && qty > 0) {
@@ -1694,7 +1689,11 @@ async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiS
           pnl = nextPnl;
           realized = s.realized + delta;
           lifetimePnl = s.lifetimePnl + delta;
+          if (nextPnl >= PROFIT_SHOW_MIN_USD) announcedWin = nextPnl;
         }
+      } else if (prev.side === "buy" && feeDelta > 0) {
+        // Extra Kraken fee vs estimate — keep DAY flat and bake into lot cost.
+        dayStartEquity = Math.max(0, s.dayStartEquity - feeDelta);
       }
       const orders = s.orders.map((o) =>
         o.id === orderId
@@ -1705,42 +1704,48 @@ async function settleLiveFee(txid: string, orderId: string, apiKey: string, apiS
               qty,
               pnl,
               entryPrice: o.entryPrice ?? prev.entryPrice,
+              feeSettled: true,
             }
           : o,
       );
       const order = orders.find((o) => o.id === orderId);
-      const positions = s.positions.map((p) =>
-        order && p.pair === order.pair && order.side === "buy"
-          ? { ...p, fee, entry: p.entry > 0 ? p.entry : fillPx }
-          : p,
-      );
+      const positions = s.positions.map((p) => {
+        if (!(order && p.pair === order.pair && order.side === "buy")) return p;
+        const basis = (p.costUsd ?? p.entry * p.qty) + Math.max(0, feeDelta);
+        return {
+          ...p,
+          fee: (p.fee ?? 0) + Math.max(0, feeDelta),
+          entry: p.entry > 0 ? p.entry : fillPx,
+          costUsd: basis,
+        };
+      });
       return {
         orders,
         positions,
         realized,
         lifetimePnl,
+        dayStartEquity,
         liveTakerPct: sample > 0 ? blendTaker(s.liveTakerPct, sample) : s.liveTakerPct,
       };
     });
-    const settled = useFloor.getState().orders.find((o) => o.id === orderId);
-    const settledPnl = settled?.side === "sell" && typeof settled.pnl === "number" ? settled.pnl : null;
-    if (settledPnl != null && settledPnl >= PROFIT_SHOW_MIN_USD) {
+    if (announcedWin != null) {
       profitShowHoldUntil = profitShowUntil(Date.now());
-      toastKrakenWin(settledPnl);
+      toastKrakenWin(announcedWin);
       pushEvent({
         agent: "treasury",
         stage: "signed",
-        title: `WIN ${money(settledPnl)}`,
+        title: `WIN ${money(announcedWin)}`,
         detail: "Kraken fill + fees · USD on Kraken — look before the next buy",
         tone: "good",
       });
       if (useFloor.getState().autoSweep) {
-        useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + settledPnl }));
+        const win = announcedWin;
+        useFloor.setState((s) => ({ sweptTotal: s.sweptTotal + win }));
       }
     } else {
       bumpAgent(
         "treasury",
-        q.fee > 0 ? `Kraken fee ${q.fee.toFixed(2)} · PnL settled` : "Kraken fill settled",
+        q.fee > 0 ? `Kraken fee ${q.fee.toFixed(2)} · settled` : "Kraken fill settled",
         0.7,
       );
     }
@@ -1840,7 +1845,7 @@ function applyFill(order: Order) {
               adds: (existing.adds ?? 1) + 1,
               book: pb,
               fee: (existing.fee ?? 0) + fee,
-              costUsd: (existing.costUsd ?? existing.entry * existing.qty) + fill * order.qty,
+              costUsd: (existing.costUsd ?? existing.entry * existing.qty) + fill * order.qty + fee,
             }
           : p,
       );
@@ -1868,7 +1873,7 @@ function applyFill(order: Order) {
           adds: 1,
           book: pb,
           fee,
-          costUsd: fill * order.qty,
+          costUsd: fill * order.qty + fee,
           peakPnlUsd: 0,
         },
       ];
@@ -1879,11 +1884,18 @@ function applyFill(order: Order) {
       order.side === "sell" && existing
         ? resolveLotEntry(existing)
         : order.entryPrice;
+    // Live buy: Kraken fee leaves the sleeve immediately — shift dayStart so DAY
+    // doesn't read the fee as a price loss (stops the -$0.05 bleed on every entry).
+    const dayStartEquity =
+      liveFill && order.side === "buy" && fee > 0
+        ? Math.max(0, s.dayStartEquity - fee)
+        : s.dayStartEquity;
     return {
       cash,
       realized,
       lifetimePnl,
       positions,
+      dayStartEquity,
       orders: [{ ...order, fee, reason, pnl: closePnl, entryPrice }, ...s.orders].slice(0, 80),
       pendingLive: null,
     };
@@ -2140,7 +2152,7 @@ function idleChatter() {
   const lines: Record<AgentId, string> = {
     scanner: `watching ${label}`,
     runner:
-      s.opsMode === "paper"
+      false /* live-only */
         ? "waiting on your ticket"
         : s.opsMode === "learn"
           ? "studying — no ticket"
@@ -2353,80 +2365,18 @@ export async function haltLive() {
 
 async function catchUpAway(now = Date.now()): Promise<AwayReport | null> {
   const s = useFloor.getState();
-  if (s.mode === "live" || s.liveArmed) {
-    useFloor.setState({ lastEngineAt: now, launched: true, floorOpen: true, autoTrade: true });
-    if (s.keys.apiKey && s.keys.apiSecret) void refreshTreasury();
-    void refreshTickersRest().then(() => refreshOhlcAll());
-    return null;
-  }
-  if (!s.launched || s.mode !== "paper") {
-    useFloor.setState({ lastEngineAt: now });
-    return null;
-  }
-  const from = s.lastEngineAt > 0 ? s.lastEngineAt : s.shiftStartedAt;
-  const gap = now - from;
-  if (!(from > 0) || gap < AWAY_MIN_MS) {
-    useFloor.setState({ lastEngineAt: now });
-    return null;
-  }
-  const span = Math.min(gap, AWAY_MAX_MS);
-  const since = now - span;
-  const bars: AwayBar[] = [];
-  await Promise.all(
-    s.pairs.map(async (pair) => {
-      try {
-        const rows = await fetchOhlc({ data: { pair, interval: 1, since } });
-        for (const c of rows) {
-          if (c.time < since) continue;
-          bars.push({
-            time: c.time,
-            pair,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          });
-        }
-      } catch {
-        /* pair miss */
-      }
-    }),
-  );
-  const { book, report } = replayAway(
-    {
-      cash: s.cash,
-      realized: s.realized,
-      positions: s.positions,
-      orders: s.orders,
-      risk: { sizePct: s.risk.sizePct, maxPositions: s.risk.maxPositions },
-      pairs: s.pairs,
-    },
-    bars,
-  );
+  // Live-only desk: refresh wallet/tape; never simulate paper away fills.
   useFloor.setState({
-    cash: book.cash,
-    realized: book.realized,
-    positions: book.positions,
-    orders: book.orders,
     lastEngineAt: now,
+    launched: true,
+    floorOpen: true,
+    autoTrade: true,
+    mode: "live",
+    venueId: "kraken",
   });
-  report.awayMs = gap;
-  if (report.fills > 0) {
-    const ev: TapeEvent = {
-      id: uid("ev"),
-      ts: now,
-      agent: "archivist",
-      stage: "signed",
-      title: `AWAY ${Math.max(1, Math.round(gap / 60_000))}m`,
-      detail: `${report.fills} fills · ${report.takes} takes · ${report.stops} stops · replayed tape`,
-      tone: report.pnl >= 0 ? "good" : "bad",
-    };
-    useFloor.setState((st) => ({
-      events: [ev, ...st.events].slice(0, 40),
-      grokNote: `Away replay · ${report.fills} fills · tape walked while the phone was closed`,
-    }));
-  }
-  return report;
+  if (s.keys.apiKey && s.keys.apiSecret) void refreshTreasury();
+  void refreshTickersRest().then(() => refreshOhlcAll());
+  return null;
 }
 
 function tabShouldRun(): boolean {

@@ -9,11 +9,11 @@ const PROFILE = "https://github.com/Masether";
 export const Route = createFileRoute("/site")({
   head: () => ({
     meta: [
-      { title: "Ops Floor — multi-agent paper/live trading desk" },
+      { title: "Ops Floor — multi-agent live Kraken trading desk" },
       {
         name: "description",
         content:
-          "Ops Floor is a multi-agent paper/live trading desk. Paper first. Live only after a human check, venue keys, and arm. Not financial advice.",
+          "Ops Floor is a multi-agent live Kraken trading desk. Paper first. Live only after a human check, venue keys, and arm. Not financial advice.",
       },
     ],
   }),
@@ -70,13 +70,13 @@ function Hero() {
     <section id="top" className="border-b border-border">
       <div className="mx-auto max-w-3xl px-4 py-14 sm:py-20">
         <p className="font-display text-2xs tracking-[0.22em] text-accent uppercase">
-          Paper first · live only when you arm
+          Live Kraken · arm when keys test clean
         </p>
         <h1 className="font-display mt-3 text-5xl leading-[0.92] font-semibold tracking-[0.04em] uppercase sm:text-6xl">
           Ops Floor
         </h1>
         <p className="mt-4 max-w-xl text-lg leading-snug text-muted sm:text-xl">
-          Multi-agent paper/live trading desk.
+          Multi-agent live Kraken trading desk.
         </p>
         <div className="mt-8 flex flex-wrap gap-2.5">
           <Button asChild size="lg">
@@ -101,8 +101,8 @@ function WhatItDoes() {
   const points = [
     {
       k: "01",
-      t: "Paper first",
-      d: "Live Kraken prices, fake cash. Auto-trade on. Fills say PAPER FILL. No venue cash moves until you go live.",
+      t: "Live Kraken",
+      d: "Real USD on Kraken. Auto-trade when armed. Fills hit your exchange wallet.",
     },
     {
       k: "02",
@@ -127,7 +127,7 @@ function WhatItDoes() {
     {
       k: "06",
       t: "Live is gated",
-      d: "Live only after a human check, venue keys that test clean, and Arm. Withdrawal permission stays off. Paper is the default.",
+      d: "Trade only after a human check, venue keys that test clean, and Arm. Withdrawal permission stays off.",
     },
   ];
   return (
@@ -345,7 +345,7 @@ function LaunchSketch() {
   return (
     <div className="flex h-full flex-col justify-center gap-1.5 p-3">
       <SketchLine label="Goal" value="target" />
-      <SketchLine label="Capital" value="paper cash" />
+      <SketchLine label="Capital" value="Kraken USD" />
       <SketchLine label="Risk" value="steady · balanced · push" />
       <SketchLine label="Session" value="15m → until stop" />
     </div>

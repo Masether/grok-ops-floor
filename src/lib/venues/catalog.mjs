@@ -3,7 +3,7 @@
  * Kraken REST server functions.
  */
 
-export const VENUE_IDS = ["paper", "kraken"];
+export const VENUE_IDS = ["kraken"];
 export const DEFAULT_LIVE_VENUE = "kraken";
 
 export const COMING_SOON_VENUES = [
@@ -14,20 +14,18 @@ export const COMING_SOON_VENUES = [
 
 /** @param {unknown} id */
 export function isVenueId(id) {
-  return id === "paper" || id === "kraken";
+  return id === "kraken" || id === "paper";
 }
 
 /** @param {unknown} id */
 export function getVenue(id) {
-  if (id === "paper") return { id: "paper", label: "Paper" };
-  if (id === "kraken") return { id: "kraken", label: "Kraken" };
+  // Legacy "paper" id maps to Kraken — this desk is live-only.
+  if (id === "paper" || id === "kraken") return { id: "kraken", label: "Kraken" };
   throw new Error(`Unknown venue: ${String(id)}`);
 }
 
-/** Live runner: unknown ids fall back to Kraken instead of throwing mid-ticket.
- * @param {unknown} id
- */
-export function resolveLiveVenueId(id) {
-  if (isVenueId(id)) return /** @type {"paper" | "kraken"} */ (id);
-  return DEFAULT_LIVE_VENUE;
+/** Live runner: unknown / paper ids fall back to Kraken. */
+/** @param {unknown} [_id] */
+export function resolveLiveVenueId(_id) {
+  return "kraken";
 }

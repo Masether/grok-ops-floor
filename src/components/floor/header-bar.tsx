@@ -58,8 +58,8 @@ export function HeaderBar() {
   for (const p of pairs) last[p] = tickers[p]?.last;
   const walletUsd = fundingCash + vaultMark(vault, last);
   const live = deskIsLive({ mode, liveArmed, liveBalance });
-  // Live: sleeve day change from Kraken wallet facts. Paper: journal closed+open.
-  const profit = live ? desk.dayPnl : sessionProfit(desk.realized, desk.unrealized);
+  // Sleeve day change from Kraken wallet facts (live-only desk).
+  const profit = desk.dayPnl;
   const krakenUsd = usdOnBook(liveBalance);
   const barBase = live ? liveBudget : startingCash;
   const barPct = profitBarPct(profit, barBase);
@@ -77,7 +77,7 @@ export function HeaderBar() {
       <div className="border-b border-border px-3 py-1.5 lg:px-4">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-display text-micro tracking-[0.16em] text-subtle uppercase">
-            {live ? "Sleeve PnL" : "Live PnL"}
+            "Sleeve PnL"
           </span>
           <span
             className={cn(

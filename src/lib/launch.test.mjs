@@ -21,7 +21,7 @@ describe("asFraction", () => {
 describe("clampLaunch", () => {
   it("defaults a blank payload", () => {
     const p = clampLaunch({});
-    assert.equal(p.startingCash, 10_000);
+    assert.equal(p.startingCash, 200);
     assert.equal(p.sizePct, 0.05);
     assert.equal(p.stopPct, 0.015);
     assert.equal(p.takePct, 0.025);
@@ -71,15 +71,15 @@ describe("ticketNotional", () => {
 });
 
 describe("launchPreviewLine", () => {
-  it("matches the $10,000 book copy", () => {
+  it("matches the live budget copy", () => {
     assert.equal(
       launchPreviewLine({
-        startingCash: 10_000,
-        sizePct: 0.02,
+        startingCash: 200,
+        sizePct: 0.05,
         stopPct: 0.015,
         takePct: 0.025,
       }),
-      "A $10,000 book → ~$200 per ticket, stop 1.5%, take 2.5%. Paper. Can still lose.",
+      "A $200 live budget → ~$10 per ticket, stop 1.5%, take 2.5%. Real Kraken USD. Can still lose.",
     );
   });
 });

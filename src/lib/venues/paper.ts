@@ -1,19 +1,8 @@
-import type { VenueAdapter } from "./types.ts";
+import { krakenAdapter } from "./kraken.ts";
 
-/** Paper fills stay in the engine. This adapter is a no-op live book. */
-export const paperAdapter: VenueAdapter = {
-  id: "paper",
-  label: "Paper",
-  async testConnection() {
-    return { ok: true, balance: {} };
-  },
-  async fetchBalance() {
-    return {};
-  },
-  async placeMarketOrder() {
-    throw new Error("Paper venue has no live book");
-  },
-  async cancelAll() {
-    return { count: 0 };
-  },
+/** @deprecated Live-only desk — paper adapter removed. */
+export const paperAdapter = {
+  ...krakenAdapter,
+  id: "kraken" as const,
+  label: "Kraken",
 };

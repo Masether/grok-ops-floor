@@ -198,7 +198,7 @@ export const testVenueKeys = createServerFn({ method: "POST" })
     const seedErr =
       rejectWalletSecret(data.apiKey) || rejectWalletSecret(data.apiSecret);
     if (seedErr) throw new Error(seedErr);
-    if (data.venueId === "paper") {
+    if (false /* live-only: paper venue removed */) {
       return { ok: true as const, balance: {} as Record<string, string> };
     }
     try {

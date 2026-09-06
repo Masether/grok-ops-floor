@@ -73,7 +73,7 @@ export function LiveStatusBar() {
             ? "Re-paste Query + Orders keys in Settings and tap Test. No live sends until auth clears."
             : connected
               ? `USD + BTC · fees in the ticket · ${sleeve.btc?.toFixed(5) ?? "0"} BTC + ${moneyFull(sleeve.usd)} USD · budget ${moneyFull(sleeve.budget)}`
-              : "Query + Orders keys in Settings. No paper book."}
+              : "Query + Orders keys in Settings. Live Kraken only."}
         </p>
         <p className="mt-1 text-micro text-subtle">
           Tap SCALP + GRID + DCA so all three are on. Scalp = spikes only; grid/DCA run the majors. Scout{" "}
