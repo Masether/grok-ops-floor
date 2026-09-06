@@ -396,14 +396,22 @@ export function TheDesk() {
                       <span
                         className={cn(
                           "stat-num",
-                          synced ? "text-muted" : pnl >= 0 ? "text-good" : "text-danger",
+                          synced
+                            ? "text-muted"
+                            : pnl >= 0
+                              ? "text-good"
+                              : Math.abs(pnl) < Math.max(0.35, cost * 0.004)
+                                ? "text-muted"
+                                : "text-danger",
                         )}
                       >
                         {synced
                           ? `bag ${money(notion)}`
                           : Math.abs((notion - cost) / Math.max(cost, 1e-9)) > 0.8
                             ? `${money(pnl)} · check cost`
-                            : `${money(pnl)} ${pct(pnlPct, 2)}`}
+                            : pnl < 0 && Math.abs(pnl) < Math.max(0.35, cost * 0.004)
+                              ? `${money(pnl)} fee drag`
+                              : `${money(pnl)} ${pct(pnlPct, 2)}`}
                       </span>
                     </li>
                   );
@@ -418,7 +426,7 @@ export function TheDesk() {
                       <span
                         className={cn(
                           "font-display tracking-[0.08em] uppercase",
-                          out ? "text-danger" : "text-good",
+                          out ? "text-muted" : "text-good",
                         )}
                       >
                         {out ? "OUT" : "IN"}

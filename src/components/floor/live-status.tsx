@@ -6,7 +6,7 @@ import { HEAT_BUDGET_PCT, heatAllowed, heatLotCount, heatOpenUsd } from "@/lib/b
 import { sessionProfit } from "@/lib/desk-pnl";
 import { lotsMark } from "@/lib/live-pnl";
 import { livePositions, liveSleeve } from "@/lib/live-budget";
-import { HEAT_MAX_LOTS, HEAT_PAIRS } from "@/lib/kraken";
+import { HEAT_MAX_LOTS } from "@/lib/kraken";
 import { useFloor } from "@/lib/store";
 import { SignedIn, SignedOut } from "@/lib/auth/gates";
 import { cn } from "@/lib/utils";

@@ -220,10 +220,20 @@ function BlotterTab({ onTicket, onEditGoal }: { onTicket: () => void; onEditGoal
                     <span
                       className={cn(
                         "stat-num text-sm",
-                        synced ? "text-muted" : signedClass(rowPnl),
+                        synced
+                          ? "text-muted"
+                          : rowPnl >= 0
+                            ? "text-good"
+                            : m.underwater && m.fromEntryPct > -0.35
+                              ? "text-muted"
+                              : "text-danger",
                       )}
                     >
-                      {synced ? `bag ${money(notion)}` : money(rowPnl)}
+                      {synced
+                        ? `bag ${money(notion)}`
+                        : m.underwater && m.fromEntryPct > -0.35
+                          ? `${money(rowPnl)} fee drag`
+                          : money(rowPnl)}
                     </span>
                   </div>
                   <p className="mt-0.5 text-2xs text-muted">
@@ -293,7 +303,7 @@ function FillRow({ order }: { order: Order }) {
       <span
         className={cn(
           "font-display w-8 shrink-0 text-micro tracking-[0.12em] uppercase",
-          out ? "text-danger" : "text-good",
+          out ? "text-muted" : "text-good",
         )}
       >
         {out ? "OUT" : "IN"}
