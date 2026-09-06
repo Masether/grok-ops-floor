@@ -1,6 +1,7 @@
 import { usdOnBook } from "./specialists.ts";
 import { BTC_BOOK, getPair, isBtcQuote, isBtcUsd, PAIRS } from "./kraken.ts";
 import type { Position, Ticker, PairId } from "./types.ts";
+import { resolveLiveDayBase } from "./book-sync.ts";
 
 export const DEFAULT_LIVE_BUDGET = 200;
 export const MAX_LIVE_TICKET = 100;
@@ -27,10 +28,7 @@ export function liveDayBase(input: {
   equity: number;
   openLots: number;
 }): number {
-  const start = input.dayStart;
-  if (start > 0 && start <= input.budget * 1.25 && start >= input.budget * 0.4) return start;
-  if (!(input.openLots > 0)) return input.equity;
-  return input.equity;
+  return resolveLiveDayBase(input);
 }
 
 export function deskIsLive(s: {

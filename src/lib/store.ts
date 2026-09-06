@@ -8,6 +8,11 @@ import { defaultTradeBook } from "./universe.ts";
 import { modOn } from "./desk-mods.ts";
 import { btcOnBook, clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, pairsFromWallet, restoreLiveBudget } from "./live-budget.ts";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
+import {
+  closedRealizedFromOrders,
+  dayStartOnLiveArm,
+  syncClosedRealized,
+} from "./book-sync.ts";
 import { clampLaunch, inferLaunched, rejectWalletSecret } from "./launch.mjs";
 import { bookDayPnl } from "./desk-pnl.ts";
 import {
@@ -291,9 +296,8 @@ export function computeDesk(s: FloorState): DeskSnapshot {
   );
   const wins = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) > 0).length;
   const losses = fills.filter((o) => o.side === "sell" && (o.pnl ?? 0) < 0).length;
-  const realized = live
-    ? fills.filter((o) => o.side === "sell").reduce((a, o) => a + (o.pnl ?? 0), 0)
-    : s.realized;
+  const fromOrders = closedRealizedFromOrders(fills, live);
+  const realized = live ? syncClosedRealized(s.realized, fromOrders) : s.realized;
   const dayBase = live
     ? liveDayBase({
         dayStart: s.dayStartEquity,
@@ -539,6 +543,12 @@ export const useFloor = create<FloorState>()(
             positions: s.positions,
             tickers: s.tickers,
           });
+          const day = dayStartOnLiveArm({
+            dayStartEquity: s.dayStartEquity,
+            shiftStartedAt: s.shiftStartedAt,
+            sleeveEquity: sleeve.equity,
+            liveBudget: s.liveBudget,
+          });
           set({
             liveArmed: true,
             mode: "live",
@@ -549,7 +559,8 @@ export const useFloor = create<FloorState>()(
             autoSweep: true,
             playbooks: [...ALL_PLAYBOOKS],
             pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], sleeve.btcUsd, false),
-            dayStartEquity: sleeve.equity > 0 ? sleeve.equity : s.liveBudget,
+            dayStartEquity: day.dayStartEquity,
+            shiftStartedAt: day.shiftStartedAt,
           });
           return;
         }
@@ -606,7 +617,13 @@ export const useFloor = create<FloorState>()(
         const apiKey = keys.apiKey.replace(/\s+/g, "").trim();
         const apiSecret = keys.apiSecret.replace(/\s+/g, "").trim();
         if (rejectWalletSecret(apiKey) || rejectWalletSecret(apiSecret)) return;
-        set({ keys: { apiKey, apiSecret }, keysOk: null, humanVerified: true });
+        const prev = get().keys;
+        const same = prev.apiKey === apiKey && prev.apiSecret === apiSecret;
+        set({
+          keys: { apiKey, apiSecret },
+          keysOk: same ? get().keysOk : null,
+          humanVerified: true,
+        });
         queueMicrotask(flushFloorPersist);
       },
       setKeysOk: (v) => set({ keysOk: v }),
@@ -997,7 +1014,7 @@ export const useFloor = create<FloorState>()(
           vault: Array.isArray(p.vault) ? p.vault : [],
           autoSweep: p.autoSweep !== false,
           sweptTotal: typeof p.sweptTotal === "number" && p.sweptTotal >= 0 ? p.sweptTotal : 0,
-          lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : 0,
+          lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : current.lifetimePnl,
           transfers: Array.isArray(p.transfers) ? p.transfers.slice(0, 24) : [],
           brain: {
             ...DEFAULT_BRAIN,
@@ -1052,6 +1069,7 @@ export function bootFloorFromDisk() {
     const parsed = JSON.parse(raw) as { state?: Partial<FloorState> };
     const p = (parsed.state ?? parsed) as Partial<FloorState>;
     const keyed = Boolean(krakenKeysOn(p.keys));
+    const cur = useFloor.getState();
     useFloor.setState({
       launched: true,
       floorOpen: true,
@@ -1061,15 +1079,24 @@ export function bootFloorFromDisk() {
       venueId: "kraken",
       playbooks: [...ALL_PLAYBOOKS],
       liveArmed: keyed,
-      keys: p.keys ?? useFloor.getState().keys,
-      keysOk: keyed ? null : false,
+      keys: p.keys ?? cur.keys,
+      // Keep last known auth when keys are already on disk — don't force a re-test wipe.
+      keysOk: keyed ? (typeof p.keysOk === "boolean" ? p.keysOk : cur.keysOk) : false,
       liveBudget: restoreLiveBudget(p.liveBudget),
-      liveBalance: p.liveBalance ?? null,
-      liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : 0,
+      liveBalance: p.liveBalance ?? cur.liveBalance ?? null,
+      liveTakerPct: typeof p.liveTakerPct === "number" ? p.liveTakerPct : cur.liveTakerPct,
       pairs: liveWatchPairs([...(Array.isArray(p.pairs) ? p.pairs : []), ...defaultTradeBook()], 0, false),
-      lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : 0,
-      shiftStartedAt:
-        typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : useFloor.getState().shiftStartedAt,
+      lastEngineAt: typeof p.lastEngineAt === "number" ? p.lastEngineAt : cur.lastEngineAt,
+      shiftStartedAt: typeof p.shiftStartedAt === "number" ? p.shiftStartedAt : cur.shiftStartedAt,
+      dayStartEquity: typeof p.dayStartEquity === "number" ? p.dayStartEquity : cur.dayStartEquity,
+      realized: typeof p.realized === "number" ? p.realized : cur.realized,
+      lifetimePnl: typeof p.lifetimePnl === "number" ? p.lifetimePnl : cur.lifetimePnl,
+      positions: Array.isArray(p.positions) ? p.positions : cur.positions,
+      orders: Array.isArray(p.orders) ? p.orders : cur.orders,
+      events: Array.isArray(p.events) ? p.events : cur.events,
+      equityHistory: Array.isArray(p.equityHistory) ? p.equityHistory : cur.equityHistory,
+      cash: typeof p.cash === "number" ? p.cash : cur.cash,
+      sweptTotal: typeof p.sweptTotal === "number" ? p.sweptTotal : cur.sweptTotal,
     });
   } catch {
     /* corrupt disk — keep defaults */

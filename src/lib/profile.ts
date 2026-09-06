@@ -4,6 +4,7 @@ import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql } from "@/lib/db";
 import type { PairId, Order, Position, TapeEvent, EquityPoint } from "./types.ts";
 import { useFloor, type FloorState, type TransferRow } from "./store.ts";
+import { mergeRemotePnlFields } from "./book-sync.ts";
 
 const riskSchema = z
   .object({
@@ -126,6 +127,24 @@ export function persistDeskBook() {
 export function applyRemoteBook(book: ProfileBook) {
   const local = useFloor.getState();
   if ((book.lastEngineAt ?? 0) < (local.lastEngineAt ?? 0)) return;
+  const pnl = mergeRemotePnlFields(
+    {
+      realized: local.realized,
+      lifetimePnl: local.lifetimePnl,
+      dayStartEquity: local.dayStartEquity,
+      lastEngineAt: local.lastEngineAt,
+      shiftStartedAt: local.shiftStartedAt,
+      orders: local.orders,
+    },
+    {
+      realized: book.realized,
+      lifetimePnl: book.lifetimePnl,
+      dayStartEquity: book.dayStartEquity,
+      lastEngineAt: book.lastEngineAt,
+      shiftStartedAt: book.shiftStartedAt,
+      orders: book.orders,
+    },
+  );
   useFloor.setState({
     launched: book.launched || local.launched,
     cash: book.cash,
@@ -134,18 +153,18 @@ export function applyRemoteBook(book: ProfileBook) {
     vault: Array.isArray(book.vault) ? book.vault : local.vault,
     autoSweep: book.autoSweep !== false,
     sweptTotal: typeof book.sweptTotal === "number" ? book.sweptTotal : local.sweptTotal,
-    realized: book.realized,
-    dayStartEquity: book.dayStartEquity,
+    realized: pnl.realized,
+    dayStartEquity: pnl.dayStartEquity,
     lastEngineAt: book.lastEngineAt,
-    shiftStartedAt: book.shiftStartedAt,
+    shiftStartedAt: pnl.shiftStartedAt,
     pairs: book.pairs?.length ? book.pairs : local.pairs,
     risk: book.risk ? { ...local.risk, ...book.risk } : local.risk,
     positions: Array.isArray(book.positions) ? book.positions : local.positions,
-    orders: Array.isArray(book.orders) ? book.orders : local.orders,
+    orders: Array.isArray(pnl.orders) ? pnl.orders : local.orders,
     events: Array.isArray(book.events) ? book.events : local.events,
     transfers: Array.isArray(book.transfers) ? book.transfers : local.transfers,
     equityHistory: Array.isArray(book.equityHistory) ? book.equityHistory : local.equityHistory,
-    lifetimePnl: typeof book.lifetimePnl === "number" ? book.lifetimePnl : local.lifetimePnl,
+    lifetimePnl: pnl.lifetimePnl,
     brain: book.brain ?? local.brain,
     liveBudget: typeof book.liveBudget === "number" ? book.liveBudget : local.liveBudget,
     floorOpen: book.launched || local.floorOpen,

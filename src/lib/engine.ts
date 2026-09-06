@@ -35,6 +35,7 @@ import { makeSimCandles, stepSim } from "./sim-feed.ts";
 import { hunterScore, readFlow, readRegime, usdOnBook } from "./specialists.ts";
 import { pairSleeve } from "./book-balance.ts";
 import { bookDayPnl, haltCapUsd } from "./desk-pnl.ts";
+import { isPaperDayLeak } from "./book-sync.ts";
 import { btcOnBook, hasKrakenBook, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
 import { lotsMark } from "./live-pnl.ts";
 import { finishRoll, pingSwarm, tallySwarm } from "./swarm.ts";
@@ -1761,9 +1762,12 @@ function applyFill(order: Order) {
         },
       ];
     }
+    const lifetimePnl =
+      closePnl != null && Number.isFinite(closePnl) ? s.lifetimePnl + closePnl : s.lifetimePnl;
     return {
       cash,
       realized,
+      lifetimePnl,
       positions,
       orders: [{ ...order, fee, reason, pnl: closePnl }, ...s.orders].slice(0, 80),
       pendingLive: null,
@@ -2342,11 +2346,11 @@ export function startEngine(): () => void {
       tickers: st0.tickers,
     });
     const openLive = livePositions(st0.positions).length;
+    // Only repair leftover paper dayStart (e.g. $10k) on a live sleeve — never reset a green day.
     if (
       openLive === 0 &&
       sleeve.equity > 0 &&
-      st0.dayStartEquity > 0 &&
-      st0.dayStartEquity < sleeve.equity * 0.6
+      isPaperDayLeak(st0.dayStartEquity, st0.liveBudget, sleeve.equity)
     ) {
       patch({ dayStartEquity: sleeve.equity });
     }
