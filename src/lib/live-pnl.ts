@@ -1,5 +1,6 @@
 import type { PairId, Position, Ticker } from "./types.ts";
 import { sessionProfit } from "./desk-pnl.ts";
+import { isSyncedLot } from "./live-budget.ts";
 
 export function lotsMark(
   positions: Position[],
@@ -12,10 +13,15 @@ export function lotsMark(
     const mark = tickers?.[p.pair]?.last ?? p.mark;
     const qty = p.qty;
     const notion = mark * qty;
+    lots += notion;
+    // Synced Kraken inventory is tracked for sells — never invent open P&L from it.
+    if (isSyncedLot(p)) {
+      cost += notion;
+      continue;
+    }
     // costUsd includes entry fee when set — stops fresh buys looking like instant losses.
     const basis =
       typeof p.costUsd === "number" && p.costUsd > 0 ? p.costUsd : p.entry * qty;
-    lots += notion;
     cost += basis;
     unrealized += notion - basis;
   }

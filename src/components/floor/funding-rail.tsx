@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const LIVE_STEPS = [
-  { id: "fund", n: "01", title: "Deposit $200", sub: "USD on Kraken" },
+  { id: "fund", n: "01", title: "Free USD on Kraken", sub: "≥$15 to buy" },
   { id: "keys", n: "02", title: "API keys", sub: "Query + orders" },
   { id: "arm", n: "03", title: "Arm live", sub: "budget cap on" },
   { id: "run", n: "04", title: "Auto desk", sub: "scans every 8s" },
@@ -38,7 +38,7 @@ export function FundingRail() {
           <p className="panel-sub">
             {armed
               ? `Live · budget $${sleeve.budget.toFixed(0)} · auto every 8s`
-              : "Deposit $200 USD on Kraken, attach Query + Orders keys. Auto-trade is on."}
+              : "Need ≥$15 free Kraken USD, then Query + Orders keys. $200 is the sleeve budget — not a deposit demand."}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}>

@@ -5,7 +5,7 @@ import { px, money, moneyFull, pct, qty, ago, clockHms } from "@/lib/format";
 import { useNow } from "@/lib/use-now";
 import { PAIR_BY_ID, getPair, pairBase, pairLabel } from "@/lib/kraken";
 import { winRate } from "@/lib/learn";
-import { deskIsLive } from "@/lib/live-budget";
+import { deskIsLive, isSyncedLot } from "@/lib/live-budget";
 import { usdOnBook } from "@/lib/specialists";
 import { useDesk, useFloor } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -375,19 +375,35 @@ export function TheDesk() {
               <>
                 {bookPos.map((p) => {
                   const mark = tickers[p.pair]?.last ?? p.mark;
+                  const synced = isSyncedLot(p);
                   const cost =
                     typeof p.costUsd === "number" && p.costUsd > 0
                       ? p.costUsd
                       : p.entry * p.qty;
-                  const pnl = mark * p.qty - cost;
-                  const pnlPct = cost > 0 ? (pnl / cost) * 100 : 0;
+                  const notion = mark * p.qty;
+                  // Synced wallet lots: show mark value, not invented open P&L.
+                  const pnl = synced ? 0 : notion - cost;
+                  let pnlPct = !synced && cost > 0 ? (pnl / cost) * 100 : 0;
+                  // Absurd % = bad cost basis — don't brag a fake rip.
+                  if (Math.abs(pnlPct) > 80) pnlPct = 0;
                   return (
                     <li key={p.id} className="flex items-center justify-between gap-2 text-2xs">
-                      <span className="font-display tracking-[0.08em] text-good uppercase">IN</span>
+                      <span className="font-display tracking-[0.08em] text-good uppercase">
+                        {synced ? "SYN" : "IN"}
+                      </span>
                       <span className="min-w-0 truncate text-fg">{label(p.pair)}</span>
                       <span className="stat-num text-muted">{qty(p.qty, 4)}</span>
-                      <span className={cn("stat-num", pnl >= 0 ? "text-good" : "text-danger")}>
-                        {money(pnl)} {pct(pnlPct, 2)}
+                      <span
+                        className={cn(
+                          "stat-num",
+                          synced ? "text-muted" : pnl >= 0 ? "text-good" : "text-danger",
+                        )}
+                      >
+                        {synced
+                          ? `bag ${money(notion)}`
+                          : Math.abs((notion - cost) / Math.max(cost, 1e-9)) > 0.8
+                            ? `${money(pnl)} · check cost`
+                            : `${money(pnl)} ${pct(pnlPct, 2)}`}
                       </span>
                     </li>
                   );
