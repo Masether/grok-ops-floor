@@ -1,8 +1,10 @@
 /** What actually fires. Boot writes this; engine reads it. */
 
+import { holdFocusOn } from "./focus-hold.ts";
+
 export const DESK_MOD_KEY = "ops-desk-mods";
 export const DESK_MOD_VER_KEY = "ops-desk-mods-ver";
-export const DESK_MOD_VER = "10";
+export const DESK_MOD_VER = "11";
 
 export const DESK_MODS = [
   { id: "live", label: "Kraken live tape", hint: "prices, candles, fills", group: "must", on: true },
@@ -53,11 +55,45 @@ export function loadDeskMods(): DeskModMap {
     /* keep defaults */
   }
   base.live = true;
-  // Never let a stale save leave the desk meme-stuck.
-  base.core = true;
-  base.grid = true;
-  base.dca = true;
+  // Hold focus (BTC+TAO sit): do not force scalp/grid spray back on.
+  if (!holdFocusOn()) {
+    // Never let a stale save leave the desk meme-stuck in normal mode.
+    base.core = true;
+    base.grid = true;
+    base.dca = true;
+  }
   return base;
+}
+
+/** Calm desk: TAO only tickets, no scalp/heat/grid/scout. BTC stays wallet reserve. */
+export function applyHoldFocusMods() {
+  const next = {
+    ...loadDeskMods(),
+    live: true,
+    scalp: false,
+    heat: false,
+    scout: false,
+    grid: false,
+    dca: true,
+    core: true,
+  };
+  saveDeskMods(next);
+  return next;
+}
+
+export function restoreSprayMods() {
+  const next = {
+    ...loadDeskMods(),
+    live: true,
+    scalp: true,
+    heat: true,
+    scout: true,
+    grid: true,
+    dca: true,
+    core: true,
+  };
+  saveDeskMods(next);
+  return next;
 }
 
 /** Force the trade sleeves that seed majors. */

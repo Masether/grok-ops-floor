@@ -15,7 +15,8 @@ import { executeOrder, refreshTreasury } from "@/lib/engine-call";
 import { secondRead } from "@/lib/grok-brief";
 import { PAIRS, PAIR_BY_ID, SLEEVE_META, listBookPairs, liveWatchPairs, pairBase } from "@/lib/kraken";
 import { rejectWalletSecret } from "@/lib/launch.mjs";
-import { useDesk, useFloor, ensureLiveDesk } from "@/lib/store";
+import { useDesk, useFloor, ensureLiveDesk, enableBtcTaoHold, clearHoldFocus } from "@/lib/store";
+import { holdFocusOn, loadHoldFocus, HOLD_FOCUS_RELEASE_BTC } from "@/lib/focus-hold";
 import { persistDeskBook } from "@/lib/profile";
 import type { BookSleeve, PairId } from "@/lib/types";
 import { ALL_LANE_IDS, defaultTradeBook, pickHotBook } from "@/lib/universe";
@@ -489,7 +490,47 @@ export function SettingsPanel() {
               ) : null}
             </section>
 
-            <section className="space-y-3">
+                        <section className="space-y-2">
+              <Label>Hold focus</Label>
+              <p className="text-2xs text-muted">
+                Sit on BTC (wallet reserve) + TAO only. Scalp / grid / heat off. Soft DCA on TAO.
+                Auto-clears when BTC ≥ $82k, or tap Clear.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="live"
+                  onClick={() => {
+                    enableBtcTaoHold(HOLD_FOCUS_RELEASE_BTC);
+                    toast.success("Hold focus on · TAO only · until BTC $82k");
+                  }}
+                >
+                  BTC + TAO until 82k
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    clearHoldFocus();
+                    toast.message("Hold focus cleared · full book back");
+                  }}
+                >
+                  Clear hold
+                </Button>
+              </div>
+              {holdFocusOn() ? (
+                <p className="text-2xs text-good">
+                  Hold live · {loadHoldFocus().pairs.join(", ")} · release $
+                  {loadHoldFocus().releaseBtcUsd.toLocaleString()}
+                </p>
+              ) : (
+                <p className="text-2xs text-subtle">Hold off — full spray book.</p>
+              )}
+            </section>
+
+<section className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label>Book — grow the wallet</Label>
                 <div className="flex flex-wrap gap-1.5">

@@ -43,6 +43,8 @@ import {
   profitShowUntil,
 } from "./profit-show.ts";
 import { btcOnBook, hasKrakenBook, isSyncedLot, krakenKeysOn, livePositions, liveSleeve, MIN_LIVE_HALT_USD, MIN_LIVE_TICKET, spotQty } from "./live-budget.ts";
+import { holdFocusOn, loadHoldFocus, saveHoldFocus } from "./focus-hold.ts";
+import { restoreSprayMods } from "./desk-mods.ts";
 import { lotsMark } from "./live-pnl.ts";
 import {
   reconcileLiveLotsWithWallet,
@@ -292,6 +294,7 @@ function flushTickers() {
 }
 
 function sampleEquity(force = false) {
+  maybeReleaseHoldFocus();
   const now = Date.now();
   const s0 = useFloor.getState();
   const open = s0.positions.length > 0;
@@ -1322,6 +1325,25 @@ function workingPurse(): { ok: true; cash: number } | { ok: false; why: string }
   return { ok: true, cash: sleeve.cash };
 }
 
+
+function maybeReleaseHoldFocus() {
+  if (!holdFocusOn()) return;
+  const focus = loadHoldFocus();
+  const btc = useFloor.getState().tickers.XBTUSD?.last ?? 0;
+  if (!(btc >= focus.releaseBtcUsd)) return;
+  saveHoldFocus({ ...focus, on: false });
+  restoreSprayMods();
+  useFloor.setState({ playbooks: ["scalp", "grid", "dca"] });
+  bumpAgent("treasury", `BTC ${btc.toFixed(0)} ≥ ${focus.releaseBtcUsd} — hold focus off`, 0.9);
+  pushEvent({
+    agent: "treasury",
+    stage: "signed",
+    title: "HOLD FOCUS CLEAR",
+    detail: `BTC printed ${btc.toFixed(0)} · desk can widen again`,
+    tone: "good",
+  });
+}
+
 function sizeTicket(
   pair: PairId,
   side: "buy" | "sell",
@@ -1349,6 +1371,16 @@ function sizeTicket(
   if (side === "sell") {
     if (!existing) return { ok: false, why: "no inventory to sell" };
     return { ok: true, qty: existing.qty, side: "sell" };
+  }
+
+  if (holdFocusOn()) {
+    const focus = loadHoldFocus();
+    if (!focus.pairs.includes(pair)) {
+      return {
+        ok: false,
+        why: `hold focus — only ${focus.pairs.map((id) => id.replace("USD", "")).join("/")} until BTC $${Math.round(focus.releaseBtcUsd / 1000)}k`,
+      };
+    }
   }
 
   if (live && profitShowBlocksBuys(Date.now(), profitShowHoldUntil, profitShowSticky)) {

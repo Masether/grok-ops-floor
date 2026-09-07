@@ -5,7 +5,8 @@ import { AGENTS } from "./agents.ts";
 import { DEFAULT_BRAIN, type Brain, type BrainMsg } from "./learn.ts";
 import { DEFAULT_PAIRS, liveWatchPairs } from "./kraken.ts";
 import { defaultTradeBook } from "./universe.ts";
-import { modOn } from "./desk-mods.ts";
+import { holdFocusOn, loadHoldFocus, saveHoldFocus, HOLD_FOCUS_PAIRS, HOLD_FOCUS_RELEASE_BTC } from "./focus-hold.ts";
+import { applyHoldFocusMods, restoreSprayMods, modOn } from "./desk-mods.ts";
 import { btcOnBook, clampLiveBudget, DEFAULT_LIVE_BUDGET, deskIsLive, krakenKeysOn, liveDayBase, livePositions, liveSleeve, pairsFromWallet, restoreLiveBudget } from "./live-budget.ts";
 import { hydratePersistedShift, sliceShiftForPersist } from "./persist-shift.ts";
 import {
@@ -571,6 +572,7 @@ export const useFloor = create<FloorState>()(
             sleeveEquity: sleeve.equity,
             liveBudget: s.liveBudget,
           });
+          const hold = holdFocusOn();
           set({
             liveArmed: true,
             mode: "live",
@@ -579,8 +581,12 @@ export const useFloor = create<FloorState>()(
             autoTrade: true,
             floorOpen: true,
             autoSweep: true,
-            playbooks: [...ALL_PLAYBOOKS],
-            pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], sleeve.btcUsd, false),
+            playbooks: hold ? (["dca"] as const) : [...ALL_PLAYBOOKS],
+            pairs: liveWatchPairs(
+              hold ? [...loadHoldFocus().pairs, ...s.pairs] : [...defaultTradeBook(), ...s.pairs],
+              sleeve.btcUsd,
+              false,
+            ),
             dayStartEquity: day.dayStartEquity,
             shiftStartedAt: day.shiftStartedAt,
           });
@@ -1122,6 +1128,7 @@ export const useFloor = create<FloorState>()(
 export function ensureLiveDesk(): boolean {
   const s = useFloor.getState();
   const keyed = Boolean(krakenKeysOn(s.keys));
+  const hold = holdFocusOn();
   useFloor.setState({
     launched: true,
     floorOpen: true,
@@ -1130,10 +1137,46 @@ export function ensureLiveDesk(): boolean {
     mode: "live",
     venueId: "kraken",
     liveArmed: keyed ? true : s.liveArmed,
-    playbooks: [...ALL_PLAYBOOKS],
-    pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], 0, false),
+    playbooks: hold ? (["dca"] as const) : [...ALL_PLAYBOOKS],
+    pairs: liveWatchPairs(
+      hold ? [...loadHoldFocus().pairs, ...s.pairs] : [...defaultTradeBook(), ...s.pairs],
+      0,
+      false,
+    ),
   });
   return keyed;
+}
+
+/** Sit on BTC reserve + TAO until spot BTC hits release — no scalp spray. */
+export function enableBtcTaoHold(releaseBtcUsd = HOLD_FOCUS_RELEASE_BTC) {
+  saveHoldFocus({
+    on: true,
+    pairs: [...HOLD_FOCUS_PAIRS],
+    releaseBtcUsd: releaseBtcUsd > 0 ? releaseBtcUsd : HOLD_FOCUS_RELEASE_BTC,
+  });
+  applyHoldFocusMods();
+  const s = useFloor.getState();
+  useFloor.setState({
+    pairs: liveWatchPairs([...HOLD_FOCUS_PAIRS], 0, false),
+    playbooks: ["dca"],
+    autoTrade: true,
+    floorOpen: true,
+    opsMode: "auto",
+  });
+  flushFloorPersist();
+  return loadHoldFocus();
+}
+
+export function clearHoldFocus() {
+  const prev = loadHoldFocus();
+  saveHoldFocus({ ...prev, on: false });
+  restoreSprayMods();
+  const s = useFloor.getState();
+  useFloor.setState({
+    pairs: liveWatchPairs([...defaultTradeBook(), ...s.pairs], 0, false),
+    playbooks: [...ALL_PLAYBOOKS],
+  });
+  flushFloorPersist();
 }
 
 /** @deprecated live-only desk */

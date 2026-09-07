@@ -1,4 +1,5 @@
 import type { BookSleeve, PairId } from "./types.ts";
+import { holdFocusOn, holdFocusPairs } from "./focus-hold.ts";
 
 export type PairDef = {
   id: PairId;
@@ -435,6 +436,10 @@ export function btcBookArmed(btcUsd: number): boolean {
 
 /** Live watchlist. Respects the user's book. Never forces every meme back on. */
 export function liveWatchPairs(existing: PairId[] = [], btcUsd = 0, heatOnly = false): PairId[] {
+  if (holdFocusOn()) {
+    const focus = holdFocusPairs().filter((id) => id !== "XBTUSD" && Boolean(getPair(id)));
+    return (focus.length ? focus : (["TAOUSD"] as PairId[])).slice(0, 8);
+  }
   if (heatOnly) {
     // Even in heat-only, keep a tiny major seed so settings/core clicks aren't wiped forever.
     const heat = heatUniverse(existing.length ? existing : HEAT_PAIRS);
